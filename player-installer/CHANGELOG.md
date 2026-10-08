@@ -1,3 +1,12 @@
+## 0.1.0-beta.8 (Version 8)
+
+- Faster online starts: a private accelerated builder returns its fully verified match before its hidden intro/reset completes. It switches battle engines without rebooting and performs the online archive conversion in one guarded pass.
+- Settled lobby selections are prepared and downloaded in the background. Start reuses only the exact selected fighters, costumes, stage, rules and human slots; last-second changes use normal preparation. No Ready votes are delayed or changed by the cache.
+- Windows clients initialize their paused emulator in the lobby. Canceling, leaving or closing during initialization cannot load an old match or stop a new room's emulator.
+- Lobby downloads use tagged, hash-checked streams separate from live match/resync traffic, respect bandwidth limits, and fall back safely if incomplete or stale. Full participant loading checks and native introductions remain intact.
+- Concurrent foreground/background requests for the same checkpoint share one verified cache writer, preventing partial-file collisions when Start is pressed during preparation.
+- Retains Version 7 gameplay hooks, regional adapters, defaults and dependency/bootstrap checks. Pending scenario development remains excluded from the player payload.
+
 ## 0.1.0-beta.7 (Version 7)
 
 - Online accepts the new Version 7 numbering while retaining the existing game-code compatibility checks.

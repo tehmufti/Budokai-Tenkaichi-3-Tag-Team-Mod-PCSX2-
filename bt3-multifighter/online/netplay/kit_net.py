@@ -99,6 +99,12 @@ class Channel:
     def send_chunk(self, data):
         self._send(struct.pack('>I', len(data) + 1) + b'B' + data)
 
+    def send_prefetch_chunk(self, sha, data):
+        # A distinct, content-addressed stream can never be mistaken for a
+        # match/resync download when the host changes a roster during transfer.
+        body = bytes.fromhex(sha) + data
+        self._send(struct.pack('>I', len(body) + 1) + b'P' + body)
+
     def _send(self, frame):
         with self.send_lock:
             try:
@@ -171,6 +177,8 @@ class Channel:
                     pass
             elif body[:1] == b'B':
                 out.append(('B', body[1:]))
+            elif body[:1] == b'P' and len(body) > 33:
+                out.append(('P', body[1:]))
         return out
 
     def silent(self, now=None):

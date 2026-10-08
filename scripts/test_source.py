@@ -16,3 +16,4 @@ if __name__ == '__main__':
     run(['-m','unittest','discover','-s','iso_compatibility','-t','.','-p','test_*.py'])
     for name in ('test_rooms.py','test_loading_policy.py','test_version_numbering.py'):
         run(['release_tools/online-next/'+name])
+    run(['-m','unittest','discover','-s','release_tools/online-startup','-p','test_*.py'])

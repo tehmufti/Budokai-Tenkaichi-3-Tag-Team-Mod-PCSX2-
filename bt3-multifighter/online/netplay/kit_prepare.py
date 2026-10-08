@@ -30,6 +30,8 @@ The conversion (_convert, run by the installation copy's Python: the mod modules
       online;
   (i) netplay_core layout 3 + netplay_view (kit_match.build_netplay) with the players' slot mask;
   (j) kit_verify reads the finished match back and checks it against the lobby spec (TTM-NET-31 when it differs).
+The online writes and netplay hooks are composed as guarded sequential memory changes and exported together,
+so no intermediate 128MiB base archive is compressed and read again.
 """
 import json
 import os
@@ -38,6 +40,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -55,6 +58,10 @@ DORMANT = (('extra_reload_forms CONTROL', 0x0766F000), ('extra_reload_requests F
            ('extra_reload_requests CONTROL', 0x0764F000), ('extra_cell_absorption AUX_CONTROL', 0x0766E000))
 ASSIGNMENT, ASSIGNMENT_MAGIC, ASSIGNMENT_ARMED, ASSIGNMENT_PASS = 0x06933000, 0x43415331, 12, 0x30
 BG_CONTROL, BG_MAGIC = 0x0765E000, 0x424B4731  # extra_reload_quiet BG_CONTROL: the unheld IO driver (off online)
+# Held only while building in the PRIVATE copy (boot, menus and preparation). Client games
+# still use kit_emu's enforced 1x scalars, and the player's offline INI is untouched.
+PREP_SPEED_KEY = (0xBE, 0x34, 0, 'Period')
+PRIVATE_SPEED = 8.0
 HP_ROW, HP_SLOT, HP_STRIDE = 0x9E4, 0x994, 0xA4
 FOREIGN = ('        try { $own = [bool]($path -and $wanted -and [string]::Equals([System.IO.Path]::GetFullPath($path), $wanted, '
            '[System.StringComparison]::OrdinalIgnoreCase)) } catch { }\n')
@@ -62,6 +69,35 @@ FOREIGN = ('        try { $own = [bool]($path -and $wanted -and [string]::Equals
 SKIP_DIRS = {('game', 'analysis', 'autopilot'), ('game', 'analysis', 'prepared-states'), ('game', 'analysis', 'settings'),
              ('game', 'runtime28', 'sstates'), ('game', 'runtime28', 'snaps'), ('game', 'runtime28', 'logs'),
              ('game', 'runtime28', 'cache'), ('game', 'runtime28', 'videos'), ('game', 'runtime28', 'covers')}
+
+
+def immutable_dependency(path):
+    """Only dependency payloads may share storage with the private copy.
+
+    Game tools, launcher/config files, memory cards, saves and mod data always
+    receive independent copies. Python dependencies and emulator binaries are
+    read-only at runtime; their cache files are independently excluded below.
+    """
+    parts = Path(path).parts
+    if len(parts) >= 2 and parts[0] == '.venv':
+        return (parts[1:3] == ('Lib', 'site-packages') or
+                parts[1] == 'Scripts' and Path(path).suffix.lower() in ('.exe', '.dll'))
+    return (len(parts) >= 3 and parts[:2] == ('game', 'runtime28') and
+            Path(path).suffix.lower() in ('.exe', '.dll', '.pak', '.qm'))
+
+
+def independent_write(path, data):
+    """Replace the copy's inode: even an accidentally shared file cannot change its source."""
+    path = Path(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.ttm-private-', delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
 # USA addresses the copy is watched by (p23 fixture capture's words, live-checked there).
 BATTLE, RESULT, MODE, SCENE_SPLIT = A(0x2FEB38), A(0x333700), 0xD8080, A(0x331DC8) + 36
 PREP, WORKER, AUX = 0x0768F000, 0x0766F000, 0x0766E000
@@ -138,7 +174,21 @@ class Prepare:
                     st = s.stat()
                     if t.exists() and t.stat().st_size == st.st_size and int(t.stat().st_mtime) == int(st.st_mtime):
                         continue
-                    shutil.copy2(s, t)
+                    linked = False
+                    if immutable_dependency(rel / name):
+                        # A refreshed dependency must replace its old link, not
+                        # write through it into another private copy's inode.
+                        if t.exists():
+                            t.unlink()
+                        try:
+                            os.link(s, t)
+                            linked = True
+                        except OSError:
+                            # Different volumes, network shares and filesystems
+                            # without hardlinks use the same independent copy.
+                            pass
+                    if not linked:
+                        shutil.copy2(s, t)
                     copied += 1
                 except OSError as error:
                     raise KitError('TTM-NET-23', what=f'Could not copy {s}: {error}',
@@ -162,7 +212,7 @@ class Prepare:
                     raise KitError('TTM-NET-24', what=f'{rel} of the installation is not a file the kit knows '
                                                       f'(cannot change its PINE port safely).')
                 data = data.replace(old_b, new_b)
-            target.write_bytes(data)
+            independent_write(target, data)
         ini = self.dest / 'game' / 'runtime28' / 'inis' / 'PCSX2.ini'
         original = self.orig / 'game' / 'runtime28' / 'inis' / 'PCSX2.ini'
         if not original.exists():
@@ -175,11 +225,14 @@ class Prepare:
             pad2 = {'cross': '1', 'circle': '2', 'square': '3', 'triangle': '4', 'start': '5', 'select': '6',
                     'up': '7', 'down': '8', 'left': '9', 'right': '0', 'l1': 'M', 'r1': 'N'}
             keys += [('SPU2/Output', 'Backend', 'Null'), ('InputSources', 'SDL', 'false'),
-                     ('Hotkeys', 'Screenshot', 'Keyboard/F8')]
+                     ('Hotkeys', 'Screenshot', 'Keyboard/F8'),
+                     ('Hotkeys', 'HoldTurbo', 'Keyboard/Period'),
+                     ('Framerate', 'NominalScalar', '1'), ('Framerate', 'TurboScalar', str(int(PRIVATE_SPEED))),
+                     ('Framerate', 'SlomoScalar', '1'), ('EmuCore/GS', 'upscale_multiplier', '1')]
             keys += [('Pad1', kit_emu.PAD_NAMES[k], 'Keyboard/' + v[3]) for k, v in kit_emu.PAD1_KEYS.items()]
             keys += [('Pad2', kit_emu.PAD_NAMES[k], 'Keyboard/' + v) for k, v in pad2.items()]
         text = original.read_bytes().decode('utf-8-sig', errors='replace')
-        ini.write_bytes(ini_set(text, keys).encode('utf-8'))
+        independent_write(ini, ini_set(text, keys).encode('utf-8'))
 
     def python(self):
         return self.dest / '.venv' / 'Scripts' / 'python.exe'
@@ -276,7 +329,7 @@ def have_packages():
 
 
 def convert(capture, folder, names_file, python=None, say=print, spec=None, options=None):
-    """capture.p2s -> base.p2s (single view, opposing leader human, the online writes) -> netplay.p2s; returns the
+    """capture.p2s -> guarded in-memory online conversion -> netplay.p2s; returns the
     report. spec: the lobby spec the match must hold (checked, TTM-NET-31); options: {'test_ko': True} (test hooks
     only: Team 2 starts at 1 HP so bots reach a KO quickly)."""
     folder = Path(folder)
@@ -718,18 +771,10 @@ def _convert(capture, folder, names_file, spec=None, options=None):
     blocks += online + test
     folder = Path(folder)
     patch_state.OUTPUT_ROOT = folder
-    base = folder / 'base.p2s'
-    if base.exists():
-        base.unlink()
-    if blocks:
-        manifest = dict(serial=patch_state.SERIAL, crc=patch_state.CRC, blocks=[
-            dict(address=a, expected_hex=bytes(ram[a:a + len(d)]).hex(), data_hex=bytes(d).hex()) for a, d in blocks])
-        patch_state.patch(capture, manifest, base)
-    else:
-        shutil.copyfile(capture, base)
     mask = kit_spec.slot_mask(spec)
     try:
-        built = kit_match.build_netplay(base, folder / 'netplay.p2s', mask, spec)
+        built = kit_match.build_netplay(capture, folder / 'netplay.p2s', mask, spec,
+                                       prefix_blocks=blocks, source_ram=ram)
     except Exception as error:  # noqa: BLE001 - explained
         return dict(error=f'The online part could not be installed into this match: {type(error).__name__}: {error}',
                     fix='Start the match again.')
@@ -745,7 +790,7 @@ def _convert(capture, folder, names_file, spec=None, options=None):
     return dict(title=title, view=view, fighters=len(actors),
                 actors=[{k: v for k, v in a.items() if k != 'actor'} for a in actors], scene_teams=scene_teams,
                 blocks=len(blocks), online_blocks=[f'{a:#010x}:{d.hex()}' for a, d in online],
-                test_blocks=[f'{a:#010x}:{d.hex()}' for a, d in test], netplay=built, base=str(base),
+                test_blocks=[f'{a:#010x}:{d.hex()}' for a, d in test], netplay=built, base=str(capture),
                 words=words, verify_sha=kit_verify.sha(words), fingerprint=found, family=family['family'],
                 pnach=family['pnach'], director=director,
                 netplay_sha256=hashlib.sha256((folder / 'netplay.p2s').read_bytes()).hexdigest())

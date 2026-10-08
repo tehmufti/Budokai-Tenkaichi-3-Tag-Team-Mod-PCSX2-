@@ -262,6 +262,39 @@ class Emulator:
     def alive(self):
         return kit_win.pid_alive(self.pid)
 
+    def launch_idle(self, iso):
+        """Initialize the private Windows VM while players edit the lobby.
+
+        It stays paused and has no online match yet. The verified match is
+        subsequently loaded through the normal PINE path, after everyone loads.
+        """
+        owner = kit_win.listener_pid(self.pine_slot)
+        if owner is not None:
+            raise KitError('TTM-NET-22', what=f'PINE port {self.pine_slot} is already used by process {owner}.',
+                           logs=str(self.run_dir))
+        args = [self.root / EXE, '-batch', '-nogui', '-fastboot', '--', iso]
+        self.pid = kit_win.launch(args, self.root, self.run_dir / 'pcsx2.console.txt', self.desktop)
+        self.job = kit_win.kill_with_me(self.pid)
+        return self.pid
+
+    def wait_idle(self, timeout=60):
+        """Boot completed in the paused VM; no netplay code is expected yet."""
+        import pine
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if not self.alive():
+                raise KitError('TTM-NET-22', what='PCSX2 closed during lobby initialization.', logs=str(self.run_dir))
+            if self.pine_owner() == self.pid:
+                try:
+                    with pine.PineClient(port=self.pine_slot, timeout=3) as p:
+                        info = p.info()
+                    if info.get('status') == 'paused' and info.get('serial') == SERIAL:
+                        return info
+                except (OSError, RuntimeError):
+                    pass
+            time.sleep(.05)
+        raise KitError('TTM-NET-22', what='PCSX2 did not finish lobby initialization.', logs=str(self.run_dir))
+
     def wait_ready(self, magic_address, magic, timeout=120):
         """PINE answers from our PCSX2, the match is loaded (paused) and the netplay core is in it."""
         import pine
