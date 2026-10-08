@@ -30,7 +30,7 @@ def put(path, data, expected):
     temporary.replace(path)
 
 def bootstrap(zip_path=None, platform='both'):
-    cache = ROOT/'.downloads/version7.zip'
+    cache = ROOT/f'.downloads/version7-{RELEASE_SHA[:16]}.zip'
     path = Path(zip_path) if zip_path else cache
     if not path.is_file():
         if zip_path:
