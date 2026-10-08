@@ -15,8 +15,7 @@ RECEIPT=Path(__file__).with_name('bt4-port-manifest.json')
 # Entry points are feature behavior too. These used to be absent from the
 # receipt, allowing BT4's unconditional CMD pause to escape the port audit.
 ENTRYPOINTS={
-    'Play (any teams).cmd':'Play BT4 (any teams).cmd',
-    'Play (PCSX2 2.8.0).cmd':'Play (PCSX2 2.8.0).cmd',
+    'Play.cmd':'Play.cmd',
     'Mod settings.cmd':'Mod settings.cmd',
     'BT3 Workbench.cmd':'BT3 Workbench.cmd',
     'Install modder tools.cmd':'Install modder tools.cmd',

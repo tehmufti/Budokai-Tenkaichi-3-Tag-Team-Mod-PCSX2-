@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **beta.46 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.46).
+Download the **Version 7 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.7).
 Windows and Linux x86-64 downloads are available. Supply your own compatible
 game disc image, PS2 BIOS and PCSX2 installation; none is included here.
 The release includes English and Spanish mod interfaces.
@@ -54,10 +54,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing beta.46 Windows ZIP can be used instead of downloading it:
+An existing Version 7 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.46.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.7.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -71,14 +71,14 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Development source versus beta.46
+## Development source versus Version 7
 
 This repository starts from the current development source. The scenario
 builder, presets and associated runtime edits are included for development;
-they have not been merged into the beta.46 player installer. The downloadable
-beta.46 Windows and Linux installers are the exact previously tested artifacts.
+they have not been merged into the Version 7 player installer. The downloadable
+Version 7 Windows and Linux installers retain the exact previously tested gameplay payload; only version metadata changed.
 Building the current source creates a development payload, not those identical
-beta.46 binaries. Change the version before distributing a modified build.
+Version 7 binaries. Change the version before distributing a modified build.
 
 ## License
 

@@ -25,8 +25,8 @@ ENTRIES = {
                        'Build expanded maps.cmd', ''),
     'linux-player': ('Play.sh', 'Mod settings.sh', 'Check installation.sh', 'Scan compatibility.sh',
                      'Build expanded maps.sh', 'PCSX2 settings.sh'),
-    'dev-bt3': ('Play (any teams).cmd', 'Mod settings.cmd', '', '', '', ''),
-    'dev-bt4': ('Play BT4 (any teams).cmd', 'Mod settings.cmd', '', '', '', ''),
+    'dev-bt3': ('Play.cmd', 'Mod settings.cmd', '', '', '', ''),
+    'dev-bt4': ('Play.cmd', 'Mod settings.cmd', '', '', '', ''),
     'dev-linux': ('Play.sh', 'Mod settings.sh', '', '', '', ''),
 }
 # Translate from stable English keys first, then show the actual installed
