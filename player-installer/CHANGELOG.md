@@ -1,4 +1,4 @@
-## 0.1.0-beta.46
+## 0.1.0-beta.7 (Version 7)
 
 - Added a saved, host-only online setting: cancel the start if a player fails to load (default), or remove failed/timed-out players and continue after the remaining players load. The loading deadline is 120 seconds; the host is never dropped or replaced.
 - Missing players' fighters now receive a synchronized CPU handoff at startup and on rematches, rather than remaining idle. Dropped players can rejoin as spectators.

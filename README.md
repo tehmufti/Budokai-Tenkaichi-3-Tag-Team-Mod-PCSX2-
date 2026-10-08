@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **beta.46 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.46).
+Download the **Version 7 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.7).
 Windows and Linux x86-64 downloads are available. Supply your own compatible
 game disc image, PS2 BIOS and PCSX2 installation; none is included here.
 The release includes English and Spanish mod interfaces.
@@ -54,10 +54,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing beta.46 Windows ZIP can be used instead of downloading it:
+An existing Version 7 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.46.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.7.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -71,14 +71,14 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Beta.46 source checkpoint
+## Version 7 source checkpoint
 
-This tag includes the runtime source corresponding to the original beta.46
+This tag includes the runtime source corresponding to the original Version 7
 Windows and Linux installers. Documentation has been sanitized and line endings
 normalized. The verified region tables retain identical required mappings with
 unused development-tool entries removed. The optional Workbench/scenario-editor
 source is provided for developers; those scenario features are not part of the
-beta.46 player payload. The latest development integration is on `main`.
+Version 7 player payload. The latest development integration is on `main`.
 
 ## License
 

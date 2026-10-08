@@ -20,8 +20,8 @@ import story_missions as missions
 ROOT = Path(__file__).resolve().parents[1]
 REQUEST = missions.QUICK
 LIFETIME = 15 * 60  # seconds from the Workbench click to the main menu
-# This tree's ordinary Play launchers, most specific first (BT3 developer, BT4 developer, Linux developer).
-LAUNCHERS = ('Play (any teams).cmd', 'Play BT4 (any teams).cmd') if os.name == 'nt' else ('Play.sh',)
+# Player and developer folders share the same ordinary Play entry point.
+LAUNCHERS = ('Play.cmd',) if os.name == 'nt' else ('Play.sh',)
 CLEAN = ('PYTHONHOME', 'PYTHONPATH', 'TAGTEAM_DISC', 'TAGTEAM_ADAPTER')
 
 

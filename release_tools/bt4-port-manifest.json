@@ -1,17 +1,11 @@
 {
   "schema": 1,
   "files": {
-    "Play BT4 (any teams).cmd": {
+    "Play.cmd": {
       "bt3": "92b7d9e126e7072fa8b91d290062e85942ee374156c4cff0510e54665c9de24e",
       "bt4": "92b7d9e126e7072fa8b91d290062e85942ee374156c4cff0510e54665c9de24e",
       "shared": true,
-      "bt3_path": "Play (any teams).cmd"
-    },
-    "Play (PCSX2 2.8.0).cmd": {
-      "bt3": "8857f57333809a0c529b659668605e753dc967d1e92cdb1bf0f9946ae2d0065e",
-      "bt4": "8857f57333809a0c529b659668605e753dc967d1e92cdb1bf0f9946ae2d0065e",
-      "shared": true,
-      "bt3_path": "Play (PCSX2 2.8.0).cmd"
+      "bt3_path": "Play.cmd"
     },
     "Mod settings.cmd": {
       "bt3": "a5b5df4faab0ec500e2ac91633db353d28fe0d81484e6f947531a4c0b4f78ab2",
@@ -790,8 +784,8 @@
       "shared": true
     },
     "tools/localization.py": {
-      "bt3": "54848d095a3f9c0e1d8d3f59bdcf98936a9cf7e9f072227157275f6fb59cf6e8",
-      "bt4": "54848d095a3f9c0e1d8d3f59bdcf98936a9cf7e9f072227157275f6fb59cf6e8",
+      "bt3": "a366c3c59d2de2e6e39337969cc35be019cf7815f8d89844d7529d701474e27d",
+      "bt4": "a366c3c59d2de2e6e39337969cc35be019cf7815f8d89844d7529d701474e27d",
       "shared": false
     },
     "tools/lockoff_target.py": {
@@ -1245,8 +1239,8 @@
       "shared": true
     },
     "tools/story_quicklaunch.py": {
-      "bt3": "617f533b9b403a06c3d58d1b42f76d2ac7500449b439fe05232b49786f3f7fec",
-      "bt4": "617f533b9b403a06c3d58d1b42f76d2ac7500449b439fe05232b49786f3f7fec",
+      "bt3": "bddd7d647917e9be0a0dfb28e40e36200e1376254366b1f584949a857bdfb17e",
+      "bt4": "bddd7d647917e9be0a0dfb28e40e36200e1376254366b1f584949a857bdfb17e",
       "shared": true
     },
     "tools/story_rules.py": {
