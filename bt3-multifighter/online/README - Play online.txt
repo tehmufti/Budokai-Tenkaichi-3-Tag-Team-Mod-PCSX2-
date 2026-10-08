@@ -41,6 +41,15 @@ disabled online. Body Change and timed fusion are not supported online yet.
 CPU transformations are optional; extra resource changes briefly hold the match
 at an agreed frame so all PCs replace the model together.
 
+MATCH STARTUP
+The host prepares settled character/stage/rule selections while the room is
+open, and sends the checked match to guests before Start. New selections
+invalidate that preparation; Start can use the normal preparation path without
+waiting for a background download. Ready is never held back by this cache.
+The game still waits for all participating players to load before the native
+introductions begin together. The first room initialization is separate from
+subsequent starts. Actual wait depends on CPU, storage and connection speed.
+
 MATCH ROOM AND HANGOUT
 The match room is the window where you choose characters, teams and rules.
 After a match, Retry requires the players to agree within ten seconds. Return

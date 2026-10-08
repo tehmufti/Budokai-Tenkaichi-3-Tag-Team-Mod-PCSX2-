@@ -24,6 +24,48 @@ def _read_all(path):
         return infos, {info.filename: archive.read(info.filename) for info in infos}, archive.comment
 
 
+class StateArchive:
+    """An immutable source archive decoded once for selection and guarded edits.
+
+    Every payload is still read through zipfile's CRC checks. Reusing this
+    snapshot lets machine-copy selection and its write use exactly the same
+    bytes, rather than inflating 128 MiB twice.
+    """
+
+    def __init__(self, source):
+        self.source = Path(source)
+        self.source_sha256 = sha256(self.source)
+        self.infos, self.payloads, self.comment = _read_all(self.source)
+        if sha256(self.source) != self.source_sha256:
+            raise ValueError(f'{self.source.name} changed while reading')
+        self.memory = self.payloads.get(MEMORY)
+        if self.memory is None or len(self.memory) != EE_SIZE:
+            raise ValueError(f'{self.source.name} has no 128 MiB eeMemory.bin')
+        if len(self.payloads) != len(self.infos):
+            raise ValueError(f'{self.source.name} has duplicate archive entries')
+
+    def words(self, addresses):
+        return {a: struct.unpack_from('<I', self.memory, a)[0] for a in addresses}
+
+
+def _verify_all(path, infos, payloads, comment):
+    """Read back every byte and CRC without allocating another full EE image."""
+    with zipfile.ZipFile(path) as archive:
+        if archive.namelist() != [i.filename for i in infos] or archive.comment != comment:
+            return False
+        for info in infos:
+            expected = memoryview(payloads[info.filename])
+            offset = 0
+            with archive.open(info.filename) as stream:
+                for chunk in iter(lambda: stream.read(1 << 20), b''):
+                    if chunk != expected[offset:offset + len(chunk)]:
+                        return False
+                    offset += len(chunk)
+            if offset != len(expected):
+                return False
+    return True
+
+
 def read_words(path, addresses):
     """{address: u32} of eeMemory.bin words of a Deflate (or stored) state."""
     with zipfile.ZipFile(path) as archive:
@@ -46,16 +88,19 @@ def read_bytes(path, address, length):
     return bytes(data[address:address + length])
 
 
-def patch_words(source, target, words, blocks=None):
+def patch_words(source, target, words, blocks=None, *, archive=None):
     """Write `target` = `source` with eeMemory words {address: (expected, new)} and byte blocks {address:
     (expected bytes, new bytes)} changed (guarded: every old value must be the expected one). Returns the target
-    SHA-256."""
+    SHA-256. `archive`, when supplied, must be a StateArchive of this source;
+    it avoids a second decode after deriving the exact edits from its memory."""
     source, target = Path(source), Path(target)
-    infos, payloads, comment = _read_all(source)
-    memory = payloads.get(MEMORY)
-    if memory is None or len(memory) != EE_SIZE:
-        raise ValueError(f'{source.name} has no 128 MiB eeMemory.bin')
-    ram = bytearray(memory)
+    state = StateArchive(source) if archive is None else archive
+    if not isinstance(state, StateArchive) or state.source.resolve() != source.resolve():
+        raise ValueError('The decoded archive does not belong to this source')
+    if sha256(source) != state.source_sha256:
+        raise ValueError(f'{source.name} changed after reading')
+    infos, payloads, comment = state.infos, dict(state.payloads), state.comment
+    ram = bytearray(state.memory)
     for address, (expected, new) in sorted(words.items()):
         if address % 4 or not 0 <= address < EE_SIZE:
             raise ValueError(f'bad word address {address:#x}')
@@ -80,11 +125,15 @@ def patch_words(source, target, words, blocks=None):
             info.compress_type = zipfile.ZIP_STORED if old.compress_type == zipfile.ZIP_STORED else \
                 zipfile.ZIP_DEFLATED
             info.external_attr = old.external_attr
-            archive.writestr(info, payloads[old.filename])
-    _, check, _ = _read_all(tmp)                                     # read back: every entry, every byte
-    if list(check) != [i.filename for i in infos] or any(check[k] != payloads[k] for k in check):
+            # ZipFile's compresslevel is NOT inherited by explicit ZipInfo
+            # objects: omitting this silently uses the much slower level 6.
+            archive.writestr(info, payloads[old.filename], compresslevel=1)
+    if not _verify_all(tmp, infos, payloads, comment):               # read back: every entry, every byte
         tmp.unlink()
         raise ValueError(f'{target.name}: verification after writing failed')
+    if sha256(source) != state.source_sha256:
+        tmp.unlink()
+        raise ValueError(f'{source.name} changed during patching')
     tmp.replace(target)
     return sha256(target)
 

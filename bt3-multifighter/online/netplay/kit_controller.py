@@ -21,6 +21,7 @@ import os
 import re
 import socket
 import struct
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -39,6 +40,8 @@ import kit_lobby
 import kit_match
 import kit_net
 import kit_prepare_auto
+import kit_prefetch
+import kit_prebuild
 import kit_settings
 import kit_spec
 import kit_text
@@ -96,7 +99,7 @@ def iso_region(path):
         return None, serial
 
 
-class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
+class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.PrefetchMixin, kit_fight.FightMixin):
     def __init__(self, args, token):
         self.args = args
         self.ipc = kit_ipc.Server(token)
@@ -121,6 +124,8 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
         self.local = None
         self.emulator = None
         self.link = None
+        self.preboot_owner = None
+        self.preboot_lock = threading.Lock()
         self.listener = None
         self.udp = None                      # host: kit_net.HubSocket; guest: kit_net.PeerSocket
         self.members = {}                    # host: member id -> {channel, name, ip, rtt, token, ...}
@@ -145,6 +150,8 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
         self.join_password = ''
         self.advertiser = None
         self.init_fight()
+        self.init_prebuild()
+        self.init_prefetch()
         self.init_hub()
 
     # ---- settings, logs, UI ---------------------------------------------------------------------------------------------
@@ -607,10 +614,124 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
     def after_setup(self, local):
         self.local = local
         self.emulator = local['emulator']
+        self.preboot_game()
         if self.role == 'host':
             self.start_host()
         else:
             self.start_guest()
+
+    def preboot_game(self):
+        # Windows can keep an idle VM paused. Linux starts running immediately,
+        # so it retains the established statefile startup rather than exposing
+        # unowned gameplay while the room is being configured.
+        if self.quit or os.name != 'nt' or not kit_paths.INTEGRATED or self.emulator.alive() or self.busy('preboot'):
+            return
+        patch = kit_install.installation_pnach()
+        if patch is None:
+            return
+        self.emulator.install_pnach(patch)
+        owner = dict(emulator=self.emulator, local=self.local, role=self.role,
+                     cancel=threading.Event(), pid=None, link=None, stopped=False)
+        with self.preboot_lock:
+            if self.quit:
+                return
+            self.preboot_owner = owner
+        self.job('preboot', self.preboot_game_job, owner,
+                 then=lambda result, o=owner: self.preboot_game_ready(result, o),
+                 fail=lambda error, o=owner: self.preboot_game_failed(error, o))
+
+    def preboot_current(self, owner):
+        return owner is not None and self.preboot_owner is owner and not owner['cancel'].is_set() and \
+            not self.quit and self.emulator is owner['emulator'] and self.local is owner['local'] and \
+            self.role == owner['role']
+
+    def dispose_preboot(self, owner):
+        """Close only the link/VM this initialization owned, even after a rejoin."""
+        if owner is None:
+            return
+        with self.preboot_lock:
+            link, owner['link'] = owner['link'], None
+            em = owner['emulator']
+            stop = owner['pid'] is not None and em.pid == owner['pid'] and not owner['stopped']
+            if stop:
+                owner['stopped'] = True
+        if link is not None:
+            try:
+                link.close()
+            except (OSError, RuntimeError):
+                pass
+        if stop:
+            em.stop()
+
+    def invalidate_preboot(self):
+        # Serialized with the short launch itself: shutdown cannot stop an
+        # empty PID and then have the worker create a new VM afterward.
+        with self.preboot_lock:
+            owner, self.preboot_owner = self.preboot_owner, None
+            if owner is not None:
+                owner['cancel'].set()
+            self.pending_preboot_load = False
+        self.dispose_preboot(owner)
+
+    def preboot_game_job(self, owner):
+        from pinelink import PineLink
+        em = owner['emulator']
+        with self.preboot_lock:
+            if not self.preboot_current(owner):
+                return dict(cancelled=True)
+            pid = em.launch_idle(owner['local']['iso'])
+            owner['pid'] = pid
+            self.remember_pid(pid)
+        info = em.wait_idle()
+        with self.preboot_lock:
+            if not self.preboot_current(owner):
+                return dict(cancelled=True)
+        problems = kit_ident.runtime_problems(info)
+        if problems:
+            code, what = problems[0]
+            raise KitError(code, what=what, build=info.get('version'), tested=', '.join(kit_ident.TESTED_PINE))
+        link = PineLink(self.args.pine_slot, pid, owner=em.pine_owner).connect()
+        with self.preboot_lock:
+            owner['link'] = link
+            current = self.preboot_current(owner)
+            if current:
+                em.link = link
+        if not current:
+            self.dispose_preboot(owner)
+            return dict(cancelled=True)
+        em.minimise()
+        return dict(pid=pid, info=info, link=link)
+
+    def preboot_game_ready(self, result, owner):
+        with self.preboot_lock:
+            current = self.preboot_current(owner) and not result.get('cancelled')
+            if current:
+                self.link = result['link']
+                self.preboot_owner = None
+                owner['link'] = None             # the running room now owns it
+        if not current:
+            self.dispose_preboot(owner)
+            return
+        self.say('PCSX2 is initialized and waiting for the agreed match.')
+        if getattr(self, 'pending_preboot_load', False):
+            self.pending_preboot_load = False
+            if self.match and self.phase in ('sending', 'loading'):
+                self.load_match()
+
+    def preboot_game_failed(self, error, owner):
+        with self.preboot_lock:
+            current = self.preboot_current(owner)
+            if current:
+                self.preboot_owner = None
+        self.dispose_preboot(owner)
+        if not current:
+            return
+        self.say(f'Lobby initialization could not finish; the match will use the normal startup: {error}')
+        self.link = None
+        if getattr(self, 'pending_preboot_load', False):
+            self.pending_preboot_load = False
+            if self.match and self.phase in ('sending', 'loading'):
+                self.load_match()
 
     # ---- host: the room ---------------------------------------------------------------------------------------------------
     def start_host(self):
@@ -966,6 +1087,7 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
 
     def host_gone(self, error, said=None):
         """Guest: the host closed the room (BYE) or the connection was lost: back to Start."""
+        self.invalidate_preboot()
         self.say(said or str(error))
         if self.phase in ('fight', 'loading') and self.session is not None:
             self.abort_game()
@@ -985,6 +1107,10 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
 
     # ---- messages ----------------------------------------------------------------------------------------------------------
     def on_frame(self, ident, kind, payload):
+        if kind == 'P':
+            if self.role == 'guest':
+                self.on_prefetch_chunk(ident, payload)
+            return
         if kind == 'B':
             self.on_chunk(ident, payload)
             return
@@ -1276,6 +1402,7 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
 
     def close_room(self):
         """Host: Leave = the room closes for everybody."""
+        self.invalidate_preboot()
         if self.advertiser is not None:
             self.advertiser.close()
             self.advertiser = None
@@ -1353,7 +1480,7 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
         self.start_warm()
 
     def start_warm(self):
-        if self.prep is None or any(self.busy(n) for n in ('warm', 'prep')):
+        if self.prep is None or any(self.busy(n) for n in ('warm', 'prep', 'prebuild')):
             return
         self.lobby.warm = dict(state='warming', eta_s=sum(kit_prepare_auto.ETA[k] for k in
                                                         kit_prepare_auto.WARM_STEPS), why=None)
@@ -1367,12 +1494,12 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
     def warmed(self, _):
         self.sync_warm(force=True)
         if self.phase in ('loading', 'fight', 'results') and self.prep is not None and self.prep.state == 'warm' and \
-                not any(self.busy(n) for n in ('prep', 'suspend')):
+                not any(self.busy(n) for n in ('prep', 'prebuild', 'suspend')):
             self.job('suspend', self.prep.suspend, then=self.prep_suspended, fail=lambda e: None)
 
     def rewarm_if_cold(self):
         if self.role == 'host' and self.prep is not None and self.prep.state == 'cold' and self.lobby is not None \
-                and self.phase == 'lobby' and not any(self.busy(n) for n in ('warm', 'prep')):
+                and self.phase == 'lobby' and not any(self.busy(n) for n in ('warm', 'prep', 'prebuild')):
             self.start_warm()
 
     def warm_failed(self, error):
@@ -1422,24 +1549,36 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
         want = self.wanted_engine()
         if self.prep.engine == want:
             return
-        if any(self.busy(n) for n in ('warm', 'prep', 'suspend')) or                 self.prep.state not in ('warm', 'suspended', 'cold', 'failed'):
+        if any(self.busy(n) for n in ('warm', 'prep', 'prebuild', 'suspend')) or \
+                self.prep.state not in ('warm', 'suspended', 'cold', 'failed'):
             self.engine_check_at = now() + 2.0                # busy (the first warm-up): look again soon
             return
         self.say(f'The room now needs the {want} engine: the match-making copy gets ready in that mode.')
         prep = self.prep
 
         def switch():
-            prep.close()
-            prep.engine = want
             kit_match.ensure_elf(self.local['iso'])
-            return prep.warm()
+            return prep.switch_engine(want)
         self.lobby.warm = dict(state='warming', eta_s=sum(kit_prepare_auto.ETA[k] for k in kit_prepare_auto.WARM_STEPS),
                                why=None)
         self.dirty = True
         self.job('warm', switch, then=self.warmed, fail=self.warm_failed)
 
     def tick_prep(self):
+        self.rewarm_if_cold()
         self.tick_engine()
+        self.tick_prebuild()
+        self.tick_prefetch()
+        # Speculative preparation/reset has no committed-match callback, so
+        # publish its real state here as well as through explicit warm jobs.
+        self.sync_warm()
+        # A completed capture is delivered before the hidden copy returns to
+        # selection. Suspend it as soon as that background reset finishes.
+        idle_ready = self.phase == 'lobby' and self.prefetch_meta is not None and \
+            self._prefetch_meta_current(self.prefetch_meta)
+        if self.role == 'host' and (self.phase in ('loading', 'fight', 'results') or idle_ready) and self.prep is not None and \
+                self.prep.state == 'warm' and not any(self.busy(n) for n in ('warm', 'prep', 'prebuild', 'suspend')):
+            self.job('suspend', self.prep.suspend, then=self.prep_suspended, fail=lambda e: None)
         p = self.prep_progress
         if self.role != 'host' or p is None or p is self.prep_sent:
             return
@@ -1470,10 +1609,11 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
 
     def prep_suspended(self, pids):
         if pids:
-            self.say(f'The match-making copy is paused while the match runs ({len(pids)} processes).')
+            self.say(f'The match-making copy is paused until it is needed ({len(pids)} processes).')
         self.sync_warm()
 
     def close_prep(self):
+        self.cancel_prebuild(cancel_running=True)
         if self.prep is not None:
             self.prep.cancel.set()
             try:
@@ -1517,6 +1657,8 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
 
     # ---- shutdown -----------------------------------------------------------------------------------------------------------
     def shutdown(self, reason=''):
+        self.invalidate_preboot()
+        self.stop_prefetch_receive()
         self.stop_bot()
         if self.session is not None and self.session.result is None:
             try:
@@ -1554,4 +1696,4 @@ class Controller(kit_hub.HubMixin, kit_fight.FightMixin):
 
 # messages only the host sends (a host ignores them from a guest)
 HOST_ONLY = ('BULK', 'LOBBY', 'WELCOME', 'PREPARE', 'PROGRESS', 'PREP_FAILED', 'MATCH', 'GO', 'RESYNC', 'RESULT', 'VOTE_STATE',
-             'RETRY', 'TO_LOBBY', 'JOINFIGHT', 'END_FIGHT')
+             'RETRY', 'TO_LOBBY', 'JOINFIGHT', 'END_FIGHT', 'PREFETCH', 'PREFETCH_END', 'PREFETCH_ABORT')

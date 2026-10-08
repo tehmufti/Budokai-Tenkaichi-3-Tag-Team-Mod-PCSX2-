@@ -21,6 +21,7 @@ every later match PINE-load a copy into the running PCSX2 (save slot 241) and at
 import hashlib
 import json
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -34,6 +35,18 @@ DEFAULT_MAX_STALL = 18000                    # vblanks (5 minutes) a game waits 
 MADE_KEEP = 12                               # made matches kept in matches/ (newest)
 QUEUE_CONTROL = 0x07367000                   # selected_resource_queue.CONTROL: +0 installed, +4 status (5 = done)
 REMATCH_SLOT = 241
+_STATE_LOCKS = {}
+_STATE_LOCKS_GUARD = threading.Lock()
+
+
+def _state_lock(output):
+    """One process-local owner per immutable cache output, including its .part."""
+    key = Path(output).resolve()
+    with _STATE_LOCKS_GUARD:
+        lock = _STATE_LOCKS.get(key)
+        if lock is None:
+            lock = _STATE_LOCKS[key] = threading.Lock()
+        return lock
 
 
 def queue_problem(words):
@@ -76,10 +89,37 @@ def core_options(mask, max_stall=BUILT_MAX_STALL):
                 extra_rows=nv.hash_rows())
 
 
-def build_netplay(base, out, mask, spec=None):
+def _combined_manifest(original, prefix_manifest, prefix_ram, manifest):
+    """Combine two individually validated, sequential edits against the source.
+
+    Core/view edits may replace bytes already written by preparation. Each
+    stage retains its own guards; the final archive then guards the original
+    bytes across the union of their ranges, and writes the final bytes once.
+    """
+    import patch_state
+    final_ram, _ = patch_state.patch_memory(prefix_ram, manifest)
+    _, prefix = patch_state.load_manifest(prefix_manifest)
+    _, final = patch_state.load_manifest(manifest)
+    ranges = sorted((a, a + len(data)) for a, _, data, _ in prefix + final)
+    merged = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return dict(serial=manifest['serial'], crc=manifest['crc'],
+                ram_sha256=prefix_manifest['ram_sha256'],
+                blocks=[dict(address=start, expected_hex=bytes(original[start:end]).hex(),
+                             data_hex=bytes(final_ram[start:end]).hex()) for start, end in merged])
+
+
+def build_netplay(base, out, mask, spec=None, *, prefix_blocks=None, source_ram=None):
     """Install netplay_core (layout 4) and netplay_view into a single-view match savestate (patch_state, guarded
     blocks). Needs the mod modules' packages (numpy, Pillow; zstandard for a PCSX2-compressed source): the host runs
-    it with its installation copy's Python."""
+    it with its installation copy's Python. Optional preparation blocks are
+    validated first in memory, then combined with the netplay guards so only
+    one fully verified archive is written. source_ram is the caller's already
+    read source image; its full hash must still match the source archive."""
     import netplay_core as nc
     import netplay_view as nv
     import patch_state
@@ -87,12 +127,26 @@ def build_netplay(base, out, mask, spec=None):
     out = Path(out)
     patch_state.OUTPUT_ROOT = out.parent
     options = core_options(mask)
-    ram = read_ram(base)
+    ram = read_ram(base) if source_ram is None else source_ram
+    original = ram
+    prefix_manifest = None
+    if prefix_blocks:
+        prefix_manifest = dict(serial=patch_state.SERIAL, crc=patch_state.CRC,
+            blocks=[dict(address=a, expected_hex=bytes(ram[a:a + len(data)]).hex(),
+                         data_hex=bytes(data).hex()) for a, data in prefix_blocks])
+        ram, prefix_report = patch_state.patch_memory(ram, prefix_manifest)
+        prefix_manifest['ram_sha256'] = prefix_report['source_ram_sha256']
     manifest = nc.build_memory(ram, **options)
     view_blocks = nv.build_memory(ram)['blocks']
     from netplay_finish import blocks as finish_blocks
     extra = finish_blocks(ram, spec, view_blocks) if spec is not None else []
     manifest['blocks'] = view_blocks + extra + manifest['blocks']
+    if prefix_manifest is not None:
+        manifest = _combined_manifest(original, prefix_manifest, ram, manifest)
+    elif source_ram is not None:
+        # A cached image must not silently guard a different on-disk source.
+        import state128
+        manifest['ram_sha256'] = state128.digest(original)
     if out.exists():
         out.unlink()
     report = patch_state.patch(base, manifest, out)
@@ -117,6 +171,14 @@ def netplay_state(base, delay, max_stall=DEFAULT_MAX_STALL, states=None, say=pri
     states = Path(states or kit_paths.STATES)
     states.mkdir(parents=True, exist_ok=True)
     out, meta_path = states / f'host-{key}.p2s', states / f'host-{key}.json'
+    # Start can commit while the exact lobby download is being built. Both
+    # workers must not truncate the same archive/.part or publish half a cache.
+    # The second owner rechecks the completed hash after acquiring this lock.
+    with _state_lock(out):
+        return _netplay_state_locked(base, base_sha, delay, max_stall, out, meta_path, say)
+
+
+def _netplay_state_locked(base, base_sha, delay, max_stall, out, meta_path, say):
     if out.is_file() and meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding='utf-8'))
@@ -127,7 +189,9 @@ def netplay_state(base, delay, max_stall=DEFAULT_MAX_STALL, states=None, say=pri
     started = time.time()
     delay_word, stall_word = control_words()
     try:
-        have = kit_state.read_words(base, [delay_word, stall_word, QUEUE_CONTROL, QUEUE_CONTROL + 4])
+        archive = kit_state.StateArchive(base) if delay != BUILT_DELAY or max_stall != BUILT_MAX_STALL else None
+        have = archive.words([delay_word, stall_word, QUEUE_CONTROL, QUEUE_CONTROL + 4]) if archive is not None \
+            else kit_state.read_words(base, [delay_word, stall_word, QUEUE_CONTROL, QUEUE_CONTROL + 4])
         if (have[delay_word], have[stall_word]) != (BUILT_DELAY, BUILT_MAX_STALL):
             raise ValueError(f'{base.name} is not a delay-1 netplay state')
         problem = queue_problem(have)
@@ -140,7 +204,7 @@ def netplay_state(base, delay, max_stall=DEFAULT_MAX_STALL, states=None, say=pri
             words[stall_word] = (BUILT_MAX_STALL, max_stall)
         if words:
             say(f'Making the match file for input delay {delay}...')
-            sha = kit_state.patch_words(base, out, words)
+            sha = kit_state.patch_words(base, out, words, archive=archive)
         else:
             shutil.copyfile(base, out)
             sha = sha256_file(out)
@@ -153,7 +217,7 @@ def netplay_state(base, delay, max_stall=DEFAULT_MAX_STALL, states=None, say=pri
     return meta
 
 
-def machine_words(state, slot, watch=None, local=None, sealed=None):
+def machine_words(state, slot, watch=None, local=None, sealed=None, *, memory=None):
     """({address: (old, new)}) of a PC's own copy: netplay_core local_slot / self_feed (slot None: a spectator),
     sched_sealed (the host's copy: NO_SEAL; a guest's: below the first frame the host can schedule), netplay_view's
     watched side (None: by the slot) and this PC's display settings (kit_settings.LOCAL)."""
@@ -165,7 +229,9 @@ def machine_words(state, slot, watch=None, local=None, sealed=None):
                nv.CONTROL + nv.F['watch']: nv.NO_WATCH if watch is None else watch}
     if sealed is not None:
         targets[nc.CONTROL + nc.F['sched_sealed']] = sealed & 0xFFFFFFFF
-    memory = kit_state.read_memory(state)
+    memory = kit_state.read_memory(state) if memory is None else memory
+    if len(memory) != kit_state.EE_SIZE:
+        raise ValueError(f'{Path(state).name} has no 128 MiB eeMemory.bin')
     u = lambda a: int.from_bytes(memory[a:a + 4], 'little')
     for address, data in kit_settings.local_blocks(u, local or {}):
         targets[address] = int.from_bytes(data, 'little')
@@ -176,10 +242,11 @@ def machine_copy(state, target, slot, watch=None, local=None, sealed=None):
     """Write this PC's per-machine copy of a match (or of a resync / join state) to `target`; returns its path."""
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    words = machine_words(state, slot, watch, local, sealed)
+    archive = kit_state.StateArchive(state)
+    words = machine_words(state, slot, watch, local, sealed, memory=archive.memory)
     tmp = target.with_name(target.name + '.build')
     if words:
-        kit_state.patch_words(state, tmp, words)
+        kit_state.patch_words(state, tmp, words, archive=archive)
     else:
         shutil.copyfile(state, tmp)
     tmp.replace(target)

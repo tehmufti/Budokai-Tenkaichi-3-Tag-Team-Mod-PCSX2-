@@ -24,6 +24,7 @@ differed (the games will not heal).
 Logs (JSON lines): hello/attach/desync/stats/end events, one hash line per frame (this PC's own game).
 """
 import json
+import struct
 import time
 
 import netproto as proto
@@ -33,6 +34,31 @@ RESYNC_AFTER = 30
 WINDOW = 1900                     # a guest publishes at most this many frames ahead of its game (INCOMING: 2048)
 HISTORY = 6000                    # frames of inputs the host keeps (rejoin / late spectators load newer states)
 LIVE = (nc.RUNNING, nc.ABORTED, nc.DECIDED)
+INTERACTIVE_POLL = 0.05            # diagnostic only, stopped after combat becomes playable
+INTERACTIVE_MOTION_WINDOW = 0.25   # tolerate a short lockstep wait after observing a moving battle clock
+PREPARATION_CONTROL, PREPARATION_MAGIC = 0x0768F000, 0x42545032
+TEAM_START_CONTROL, FIGHTER_START_HOLD = 0x073E1C00, 0x07361850
+
+
+def interactive_sample(guest):
+    """Read actual combat readiness, independently of the netplay core's intro frames.
+
+    All reads use the existing owned PINE connection. No game bytes are changed.
+    The battle clock at +264 advances only once the native fight is running;
+    director 3 alone can still be held by the mod's preparation/start gates.
+    """
+    native = nc.natives()
+    battle, result, preparation, start, fighter = guest.read_ranges([
+        (native.battle, 4), (native.result, 4), (PREPARATION_CONTROL, 20),
+        (TEAM_START_CONTROL, 4), (FIGHTER_START_HOLD, 4)])
+    u = lambda data, offset=0: struct.unpack_from('<I', data, offset)[0]
+    pointer = u(battle)
+    if pointer & 3 or not 0x100000 <= pointer <= 0x8000000 - 268:
+        return None
+    director, clock = guest.read_ranges([(pointer, 4), (pointer + 264, 4)])
+    return dict(battle=pointer, director=u(director), clock=u(clock), result=u(result) & 0x1F,
+                preparation_hold=u(preparation, 16) if u(preparation) == PREPARATION_MAGIC else 0,
+                start_hold=u(start), fighter_hold=u(fighter))
 
 
 def neutral_item():
@@ -143,7 +169,7 @@ class _Base:
 
     def __init__(self, guest, transport, *, member, slot, mask, delay, state_sha, layout=None, epoch=0, name='',
                  redundancy=32, resend=0.016, hello_every=0.1, linger=5.0, clock=time.perf_counter, log=None,
-                 hash_log=None, sched=False):
+                 hash_log=None, sched=False, startup_started_at=None):
         if slot is not None and not (0 <= slot < proto.SLOTS and mask >> slot & 1):
             raise ValueError('a playing PC needs a slot inside the slot mask')
         if not mask or mask >> proto.SLOTS:
@@ -174,6 +200,12 @@ class _Base:
         self.generation = 0
         self.own_aux = {}                                     # frame -> this PC's gate word (a PC without a slot)
         self.sched_on = bool(sched)                           # netplay_core OPT_SCHED (frame-scheduled host writes)
+        self.startup_started_at = startup_started_at          # same perf_counter domain as clock
+        self.interactive = None
+        self.startup_seconds = None
+        self._interactive_poll_at = float('-inf')
+        self._interactive_sample = None
+        self._interactive_motion_at = None
 
     # ---- logging
     def event(self, kind, **fields):
@@ -188,6 +220,44 @@ class _Base:
 
     def ms(self, now):
         return int(now * 1000) & 0xFFFFFFFF
+
+    def watch_interactive(self, now, control):
+        """Record Start -> usable combat once, including the full native intro.
+
+        Unsupported diagnostic reads never interrupt input delivery. A changing
+        clock is required while every start hold is clear, and a transient UDP
+        wait cannot be mistaken for a completed, playable launch.
+        """
+        if self.startup_started_at is None or self.interactive is not None or now - self._interactive_poll_at < \
+                INTERACTIVE_POLL:
+            return
+        self._interactive_poll_at = now
+        if control.get('state') != nc.RUNNING:
+            self._interactive_sample = self._interactive_motion_at = None
+            return
+        try:
+            sample = interactive_sample(self.guest)
+        except (AttributeError, OSError, RuntimeError, ValueError, TypeError, struct.error):
+            self._interactive_sample = self._interactive_motion_at = None
+            return
+        if sample is None or sample['director'] != nc.FIGHT or sample['result'] or any(
+                sample[k] for k in ('preparation_hold', 'start_hold', 'fighter_hold')):
+            self._interactive_sample = self._interactive_motion_at = None
+            return
+        previous, self._interactive_sample = self._interactive_sample, sample
+        if previous is None or previous['battle'] != sample['battle']:
+            self._interactive_motion_at = None
+        elif 0 < ((sample['clock'] - previous['clock']) & 0xFFFFFFFF) < 0x80000000:
+            self._interactive_motion_at = now
+        if control.get('waiting') or self._interactive_motion_at is None or \
+                now - self._interactive_motion_at > INTERACTIVE_MOTION_WINDOW:
+            return
+        self.startup_seconds = round(max(0.0, now - self.startup_started_at), 3)
+        self.interactive = dict(frame=control.get('frame'), director=sample['director'], clock=sample['clock'],
+                                startup_seconds=self.startup_seconds,
+                                intro_seconds=round(max(0.0, now - self.started_at), 3) if self.started_at is not
+                                None else None)
+        self.event('interactive', **self.interactive)
 
     # ---- this PC's game
     def attach(self):
@@ -435,6 +505,7 @@ class Hub(_Base):
         for m in list(self.members.values()):
             self.send_to(m, now, new_local, c)
         self.periodic(now, c)
+        self.watch_interactive(now, c)
         return self.finish(now, c, n)
 
     def fill_dropped(self, n):
@@ -690,6 +761,7 @@ class Hub(_Base):
         c = self.control or {}
         return dict(frame=c.get('frame'), state=c.get('state'), stall_total=c.get('stall_total'),
                     hashes=self.hash_next, decided=self.decided, epoch=self.epoch,
+                    interactive=self.interactive, startup_seconds=self.startup_seconds,
                     members={str(m.id): dict(slot=m.slot, compared=m.compare.compared, desync=m.compare.desync,
                                              differing=m.compare.differing, rtt=m.stats.rtt_ms(), lost=m.stats.lost,
                                              received=m.stats.received, bye=m.bye)
@@ -700,6 +772,7 @@ class Hub(_Base):
         c = self.control or {}
         return dict(frame=c.get('frame'), state=c.get('state'), waiting=c.get('waiting'),
                     stall_now=c.get('stall_now'), stall_total=c.get('stall_total'), decided=self.decided,
+                    interactive=self.interactive, startup_seconds=self.startup_seconds,
                     hold=self.hold_at, members={str(m.id): dict(slot=m.slot, name=m.name, frame=m.frame,
                                                                  rtt_ms=m.stats.rtt_ms(), compared=m.compare.compared,
                                                                  desync=m.compare.desync,
@@ -755,6 +828,7 @@ class Client(_Base):
             del self.hashes[f]
         self.send(now, new_local, c)
         self.periodic(now, c)
+        self.watch_interactive(now, c)
         return self.finish(now, c, n)
 
     def receive(self, datagram, now):
@@ -968,6 +1042,7 @@ class Client(_Base):
         c = self.control or {}
         return dict(frame=c.get('frame'), state=c.get('state'), stall_total=c.get('stall_total'),
                     hashes=self.hash_next, decided=self.decided, epoch=self.epoch, rtt=self.stats.rtt_ms(),
+                    interactive=self.interactive, startup_seconds=self.startup_seconds,
                     lost=self.stats.lost, received=self.stats.received, sent=self.stats.sent,
                     seconds=round(self.clock() - self.started_at, 2) if self.started_at is not None else None)
 
@@ -975,6 +1050,7 @@ class Client(_Base):
         c = self.control or {}
         return dict(frame=c.get('frame'), state=c.get('state'), waiting=c.get('waiting'),
                     stall_now=c.get('stall_now'), stall_total=c.get('stall_total'), decided=self.decided,
+                    interactive=self.interactive, startup_seconds=self.startup_seconds,
                     hub_frame=self.hub_frame, rtt_ms=self.stats.rtt_ms(), lost=self.stats.lost,
                     connected=self.hub_hello is not None,
                     silent=None if self.last_rx is None else round(self.clock() - self.last_rx, 1))

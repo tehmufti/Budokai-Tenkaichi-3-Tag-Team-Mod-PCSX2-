@@ -82,6 +82,7 @@ class FightMixin:
         self.join_pending = {}               # host: member -> time it should get JOINFIGHT
         self.nocontest = None
         self.load_mode = None
+        self.startup_started_at = None       # includes preparation, transfer, load and native introduction
         self.waiting_late = None
         self.service = None                  # host: kit_services.Broker while a match runs host services
         self.guest_bulk = None               # guest: kit_services.GuestBulk
@@ -96,7 +97,8 @@ class FightMixin:
         out = dict(frame=s.get('frame'), state=s.get('state'), waiting=bool(s.get('waiting')),
                    stall_now=s.get('stall_now'), delay=self.session.delay, epoch=self.epoch,
                    resyncing=bool(self.resync) or bool(self.resyncs), decided=bool(s.get('decided')),
-                   slot=self.my_slot(), watch=self.watch_side)
+                   slot=self.my_slot(), watch=self.watch_side,
+                   startup_seconds=s.get('startup_seconds'))
         if self.role == 'host':
             out['members'] = s.get('members')
         else:
@@ -125,6 +127,13 @@ class FightMixin:
             pass
 
     # ---- host: Start ---------------------------------------------------------------------------------------------------
+    def match_delay(self):
+        seats = self.lobby.seats()
+        rtts = [self.members[m]['rtt'] for m in seats if m in self.members]
+        forced = [d for d in [self.cfg.get('delay')] + [self.members[m].get('request_delay') for m in seats
+                                                       if m in self.members] if d]
+        return kit_net.pair_delay(rtts, max(int(x) for x in forced) if forced else None)
+
     def cmd_start(self, c):
         lob = self.lobby
         if self.role != 'host' or not lob or lob.phase != 'lobby' or self.phase != 'lobby':
@@ -149,12 +158,19 @@ class FightMixin:
             self.broadcast()
             return
         seats = lob.seats()
-        rtts = [self.members[m]['rtt'] for m in seats if m in self.members]
-        forced = [d for d in [self.cfg.get('delay')] + [self.members[m].get('request_delay') for m in seats
-                                                       if m in self.members] if d]
-        delay = kit_net.pair_delay(rtts, max(int(x) for x in forced) if forced else None)
+        delay = self.match_delay()
         sha = kit_spec.spec_sha(spec)
+        options = dict(self.test_prep) if self.args.test_hooks and self.test_prep else None
+        prefetched = getattr(self, 'prefetch_meta', None)
+        # A lobby download may have used a slightly larger measured delay.
+        # Preserve it when it still covers every current latency/request;
+        # otherwise rebuild normally rather than loading an under-buffered VM.
+        if prefetched and prefetched.get('spec_sha') == sha and \
+                (prefetched.get('options') or None) == options and prefetched.get('max_stall') == self.args.max_stall and \
+                type(prefetched.get('delay')) is int and delay <= prefetched['delay'] <= 30:
+            delay = prefetched['delay']
         title = kit_spec.title(spec, view)
+        self.startup_started_at = time.perf_counter()
         self.match = dict(spec=spec, spec_sha=sha, title=title, delay=delay, seats=seats,
                           slot=seats.get(self.me), mask=kit_spec.slot_mask(spec),
                           drop_load_failures=(lob.room.get('drop_load_failures') is True))
@@ -166,7 +182,6 @@ class FightMixin:
         self.set_phase('preparing')
         self.keep_rules()
         self.say(f'Starting: {title} (input delay {delay}; players {seats})')
-        options = dict(self.test_prep) if self.args.test_hooks and self.test_prep else None
         made = kit_match.made_match(sha, options)
         if made is not None:
             self.say('This match was made earlier: no preparation needed.')
@@ -181,6 +196,8 @@ class FightMixin:
         self.prep_gen += 1
         gen = self.prep_gen
         self.match['prep_gen'] = gen
+        if self.adopt_prebuild(spec, options, gen):
+            return
         self.job('prep', self.prepare_job, self.prep, gen, spec, folder, options, self.match['title'],
                  then=lambda meta, g=gen: self.auto_prepared(meta, g), fail=lambda e, g=gen: self.auto_failed(e, g))
 
@@ -221,7 +238,7 @@ class FightMixin:
         return meta
 
     def auto_prepared(self, meta, gen=None):
-        if self.prep is not None and self.prep.state == 'warm' and not any(self.busy(n) for n in ('suspend', 'prep')):
+        if self.prep is not None and self.prep.state == 'warm' and not any(self.busy(n) for n in ('suspend', 'prep', 'prebuild')):
             self.job('suspend', self.prep.suspend, then=self.prep_suspended, fail=lambda e: None)
         if self.phase != 'preparing' or not self.match or self.match.get('spec_sha') != meta['spec_sha'] or \
                 (gen is not None and gen != self.prep_gen):
@@ -298,12 +315,13 @@ class FightMixin:
         self.progress = None
         self.match = None
         self.set_phase('lobby')
-        if self.prep is not None and self.prep.state in ('cold', 'failed') and not self.busy('prep'):
+        if self.prep is not None and self.prep.state in ('cold', 'failed') and not any(self.busy(n) for n in ('prep', 'prebuild')):
             self.start_warm()
 
     def cmd_cancel_prep(self, c):
         if self.role != 'host' or self.phase not in ('preparing', 'sending', 'loading'):
             return
+        self.cancel_prebuild(cancel_running=True)
         if self.prep is not None and self.busy('prep'):
             self.prep.cancel.set()
         self.prep_gen += 1
@@ -341,6 +359,7 @@ class FightMixin:
 
     # ---- guest: the offered match ----------------------------------------------------------------------------------------
     def msg_PREPARE(self, ident, m):
+        self.startup_started_at = time.perf_counter()
         spec = m.get('spec')
         try:
             import kit_controller
@@ -417,12 +436,16 @@ class FightMixin:
         self.say(f'Match: {self.match["title"]} (input delay {self.match["delay"]}; '
                  f'{"you play slot " + str(self.match["slot"]) if self.match["slot"] is not None else "you watch"})')
         have = kit_match.have_state(m['sha256'], self.states)
-        self.send(type='WANT', send=have is None)
+        if have is not None and have.stat().st_size != self.match['size']:
+            have = None
+        promoted = have is None and self.promote_prefetch(m['sha256'])
+        self.send(type='WANT', send=have is None and not promoted)
         self.set_phase('sending')
         if have is not None:
+            self.stop_prefetch_receive()
             self.match['state'] = str(have)
             self.job('verify', self.verify_file, have, then=self.verified, fail=self.verify_failed)
-        else:
+        elif not promoted:
             self.start_receive(m['sha256'], int(m['size']), kit_match.received_path(m['sha256'], self.states))
 
     def start_receive(self, sha, size, target):
@@ -556,6 +579,10 @@ class FightMixin:
 
     # ---- loading -----------------------------------------------------------------------------------------------------------
     def load_match(self):
+        if self.busy('preboot'):
+            self.pending_preboot_load = True
+            self.progress = dict(step='load.starting', pct=0)
+            return
         self.progress = dict(step='load.starting', pct=0)
         self.my_loaded = False
         self.go = False
@@ -761,7 +788,8 @@ class FightMixin:
         m = self.match
         common = dict(slot=self.my_slot(), mask=m['mask'] or 1, delay=m['delay'], state_sha=m['sha'],
                       epoch=self.epoch, name=self.my_name()[:16], log=self.files['events'],
-                      hash_log=self.files['hashes'], linger=4.0, sched=True)
+                      hash_log=self.files['hashes'], linger=4.0, sched=True,
+                      startup_started_at=self.startup_started_at)
         if self.role == 'host':
             self.start_cpu_pending = []
             members = [(k, m['seats'].get(k), self.lobby.members.get(k, {}).get('name', ''))
@@ -802,7 +830,7 @@ class FightMixin:
             self.lobby.bump()
             self.broadcast()
             if self.prep is not None and self.prep.state == 'warm' and \
-                    not any(self.busy(n) for n in ('prep', 'warm', 'suspend')):
+                    not any(self.busy(n) for n in ('prep', 'prebuild', 'warm', 'suspend')):
                 self.job('suspend', self.prep.suspend, then=self.prep_suspended, fail=lambda e: None)
             for ident in self.members:                       # members outside this match watch it from now on
                 if ident not in self.loaded and ident not in self.join_pending:
@@ -934,6 +962,10 @@ class FightMixin:
             self.my_game_closed()
             return
         st = s.control or {}
+        startup = getattr(s, 'startup_seconds', None)
+        if startup is not None and self.fight is not None and 'startup_seconds' not in self.fight:
+            self.fight['startup_seconds'] = startup
+            self.say(f'Combat is interactive ({startup:.1f} s from Start, including the introduction).')
         if st.get('waiting') and st.get('stall_now', 0) > STALL_BANNER * 60 and not self.resync and not self.resyncs:
             if self.overlay is None or self.overlay.get('key') != 'fight.stall':
                 self.show_overlay('fight.stall')
@@ -1541,6 +1573,7 @@ class FightMixin:
 
     def start_retry(self):
         """Every PC: its own copy of the same match again, PINE-loaded into the running PCSX2 (late attach)."""
+        self.startup_started_at = time.perf_counter()
         self.vote = None
         self.vote_state = None
         self.results = None
@@ -1575,6 +1608,7 @@ class FightMixin:
 
     def back_to_lobby(self):
         """Every PC: back to the lobby (teams and claims kept, Ready cleared); PCSX2 paused and minimised."""
+        self.cancel_prebuild(cancel_running=True)
         self.stop_bot()
         self.hide_overlay()
         if self.session is not None:
@@ -1593,6 +1627,8 @@ class FightMixin:
         self.set_phase('lobby')
 
     def leave_match_state(self, keep_match=False):
+        self.stop_prefetch_receive()
+        self.pending_preboot_load = False
         self.stop_receive()
         self.session = None
         self.resync = None
