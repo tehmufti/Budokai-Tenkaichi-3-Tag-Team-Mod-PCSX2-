@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT/'player-installer'
 RELEASE_SHA = '13ad71210152c9df45ac75b18fc437560e05ba6f18b6779599d98667ffef5cc6'
 RELEASE_URL = ('https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-'
-               '/releases/download/v0.1.0-beta.46/Tag%20Team%20Mod%200.1.0-beta.46.zip')
+               '/releases/download/v0.1.0-beta.46/Tag.Team.Mod.0.1.0-beta.46.zip')
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
