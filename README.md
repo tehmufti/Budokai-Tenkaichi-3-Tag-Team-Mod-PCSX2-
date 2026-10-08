@@ -76,7 +76,7 @@ adapters, using an installed game's runtime, and validating changes.
 This repository starts from the current development source. The scenario
 builder, presets and associated runtime edits are included for development;
 they have not been merged into the Version 7 player installer. The downloadable
-Version 7 Windows and Linux installers retain the exact previously tested gameplay payload; only version metadata changed.
+Version 7 Windows and Linux installers retain the tested game hooks; installer metadata and online release detection now use Version 7.
 Building the current source creates a development payload, not those identical
 Version 7 binaries. Change the version before distributing a modified build.
 
