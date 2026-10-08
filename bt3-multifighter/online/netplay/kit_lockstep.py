@@ -509,13 +509,27 @@ class Hub(_Base):
         return self.finish(now, c, n)
 
     def fill_dropped(self, n):
-        """Neutral inputs for every dropped slot up to the frames the others could need (n + D + window)."""
+        """Neutral controls with the host's captured IO/voice gates for that frame.
+
+        An all-CPU room keeps one host-fed slot in the agreement mask. Zeroing
+        its aux word made every spoken intro wait for the native timeout (and
+        could stop resource gates). Never invent future gate answers: wait for
+        the host's OUTGOING capture, then relay the same immutable word to all
+        clients, including spectators.
+        """
         for s, start in self.dropped.items():
             got = self.inputs[s]
             top = max(n, start) + self.delay + 2          # never runs ahead of the host's own game
             f = max(self.have[s], start)
             while f < top:
-                got.setdefault(f, neutral_item())
+                if self.layout >= 2:
+                    source = self.inputs[self.slot] if self.slot is not None else self.own_aux
+                    if f not in source:
+                        break
+                    aux = source[f][1] if self.slot is not None else source[f]
+                    got.setdefault(f, (nc.NEUTRAL, aux))
+                else:
+                    got.setdefault(f, neutral_item())
                 f += 1
             self.advance_have(s)
 

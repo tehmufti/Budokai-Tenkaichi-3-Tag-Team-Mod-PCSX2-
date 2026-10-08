@@ -161,7 +161,8 @@
             "character": 80,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         }
       ],
       "timeout_seconds": 30,
@@ -251,7 +252,8 @@
             "character": 22,
             "line": 71,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         },
         {
           "type": "defeat",
@@ -397,7 +399,8 @@
             "character": 0,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         }
       ],
       "timeout_seconds": 60,
@@ -579,7 +582,8 @@
             "character": 29,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         }
       ],
       "timeout_seconds": 60,

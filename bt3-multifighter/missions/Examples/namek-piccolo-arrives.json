@@ -145,7 +145,8 @@
             "character": 92,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         }
       ],
       "timeout_seconds": 30,
@@ -229,7 +230,8 @@
             "character": 23,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         }
       ],
       "timeout_seconds": 60,

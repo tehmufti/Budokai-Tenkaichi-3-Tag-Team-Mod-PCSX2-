@@ -124,7 +124,8 @@
             "character": 107,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         }
       ],
       "timeout_seconds": 30,
@@ -199,7 +200,8 @@
             "character": 100,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         },
         {
           "type": "wait",
@@ -315,7 +317,8 @@
             "character": 15,
             "line": 71,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         },
         {
           "type": "wait",
@@ -398,7 +401,8 @@
             "character": 16,
             "line": 0,
             "volume": 100
-          }
+          },
+          "reset_positions": true
         },
         {
           "type": "wait",

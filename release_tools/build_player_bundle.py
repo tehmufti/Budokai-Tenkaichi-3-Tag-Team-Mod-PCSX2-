@@ -116,7 +116,8 @@ def payload_files(root=ROOT):
         # player's custom mission files. Keep this list explicit for releases.
         scenarios=['Examples/namek-piccolo-arrives.json','Examples/saiyans-goku-arrives.json',
                    'Examples/cell-games-gohan-awakens.json']
-        if adapter=='bt3-usa':scenarios += [f'Mission 100/mission100-{i:03}.json' for i in range(1,101)]
+        # Public sample library: exactly the three curated story adaptations.
+        # Mission 100 and user-authored documents stay in the development tree.
         for name in scenarios:add(project/'missions'/name,prefix+'missions/'+name)
         # Only exact historical patch receipts used by guarded upgrades. Never
         # include RAM, logs, saves, generated previews or a native game ELF.

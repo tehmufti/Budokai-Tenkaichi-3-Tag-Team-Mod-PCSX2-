@@ -21,7 +21,7 @@ MAIN_OBJECT=A(0x3B0E80)
 NODE_STRIDE=0xE4
 LABEL_TABLE_INDICES={'off':8,'on':12}
 WIDTH,HEIGHT=512,256
-LABELS=('Team Battle','Free-for-all','Co-op','Modded Training',
+LABELS=('Team Battle','Free-for-all','Modded Scenarios','Modded Training',
         '1 Player','2 Players','Mod Settings','Back')
 NATIVE_ROW_LAYOUTS=((0,1,2,3,5,6,7,8,9),(0,1,2,3,5,6,7,8,9,10))
 
@@ -239,7 +239,7 @@ def clone(ram,source,destination,indices):
 DESCRIPTIONS = (
     ('Fight with every selected teammate\non the battlefield at the same time.',
      'Every fighter is an opponent.\nChoose one to four players, or CPUs.',
-     'Two to four players share Team 1.\nSelect an ally for every human player.',
+     'Play saved story battles.\nFighters are selected automatically.',
      'Practice with selected team rosters.\nSet CPU behavior and refill in Mod settings.\nOriginal Training stays in the original menu.', '', '', 'Adjust the mod with your controller.\nSave changes for your next match.', ''),
     ('', '', '', '',
      'Control Team 1 against CPU opponents.\nChoose the fighters for each team.',

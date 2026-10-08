@@ -18,6 +18,8 @@ def emit_hud_gate(a, hidden, prefix='rush_hud'):
     Query the live pair, not the previous frame's cinematic telemetry. This
     preference is independent of shared ultimates and shared transformations.
     """
+    import story_cinematics as story
+    story.emit_active(a,hidden,prefix+'_story')
     a.li(8,CONTROL);a.lw(9,8);a.li(11,MAGIC)
     a.branch(5,9,11,prefix+'_done')
     a.call(OWNER);a.branch(5,2,0,hidden)

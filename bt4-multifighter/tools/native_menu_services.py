@@ -230,7 +230,14 @@ def fade():
     a.li(10,old.SCENE_MANAGER);a.lw(10,10);a.li(11,0x100000);a.r(0x2B,11,10,11);a.branch(5,11,0,'release')
     a.li(11,0x1FFF000);a.r(0x2B,11,10,11);a.branch(4,11,0,'release');a.lw(10,10,0x18)
     a.addiu(11,0,4);a.branch(5,10,11,'duel_scene');a.lw(11,8,4);a.addiu(12,0,2);a.branch(4,11,12,'release');a.jump('hold')
-    a.label('duel_scene');a.addiu(11,0,38);a.branch(5,10,11,'release')
+    a.label('duel_scene');a.addiu(11,0,38);a.branch(4,10,11,'hold')
+    # A scenario populates a real Team Select object behind the transition.
+    # Reveal it only once the game's own Done handler opens stage selection.
+    import scenario_menu
+    a.addiu(11,0,40);a.branch(5,10,11,'release')
+    a.li(11,scenario_menu.CONTROL);a.lw(12,11);a.li(13,scenario_menu.MAGIC);a.branch(5,12,13,'release')
+    a.lw(12,11,24);a.branch(4,12,0,'release')
+    a.lw(12,11,20);a.addiu(12,12,-1);a.i(11,12,12,3);a.branch(4,12,0,'release')
     a.label('hold');a.addiu(10,0,128);a.sw(10,8,52);a.jump('draw')
     a.label('release');a.lw(10,8,52);a.addiu(10,10,-8);a.branch(1,10,0,'finished');a.sw(10,8,52);a.branch(4,10,0,'finished')
     a.label('draw');a.li(9,A(0x301048));a.i(55,11,9,0);a.i(63,11,29,0xA0);a.i(55,11,9,8);a.i(63,11,29,0xA8)

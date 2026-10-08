@@ -109,13 +109,13 @@ def configured_data(options,manager,count):
 
 
 @modes.matching_install
-def build_memory(ram,settings=None,source='<prepared>'):
+def build_memory(ram,settings=None,source='<prepared>',force=False):
     if len(ram)!=0x8000000:raise ValueError('NPC transform settings require128MiB captured RAM')
     options=prefs.validate_settings({} if settings is None else settings)
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     installed=u(CONTROL)==MAGIC
     # No changes at all for existing/default players, preserving original emissions.
-    if not installed and not (options[prefs.NPC_TRANSFORM_KEY] or options[prefs.NPC_GIANT_KEY]
+    if not force and not installed and not (options[prefs.NPC_TRANSFORM_KEY] or options[prefs.NPC_GIANT_KEY]
                               or options[prefs.NPC_OVERRIDES_KEY] or options['npc_transform_chance_percent']!=100):
         return dict(serial=SERIAL,crc=CRC,source=str(source),blocks=[])
     manager,count=u(core.ACTORS),u(core.MODE+4)

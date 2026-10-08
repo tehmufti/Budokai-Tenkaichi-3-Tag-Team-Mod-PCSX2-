@@ -172,6 +172,8 @@ def validate_memory(ram,*,previous_chain=True):
     early=ram[ENTRY:ENTRY+len(current)]==current
     for at,data in program(previous,early=early)+capture.program():
         if at==HOOK:data=hook
+        import story_runtime
+        data=story_runtime.dependency_override(ram,at,data)
         body.require(ram[at:at+len(data)]==data,f'Body Change executable changed {at:08X}')
     if previous_chain:prior_program(ram,previous)
     return previous

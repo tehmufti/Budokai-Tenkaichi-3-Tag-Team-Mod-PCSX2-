@@ -5,10 +5,11 @@ itself is only read); only its PINE port changes, so it never meets another PCSX
 hidden desktop and builds the lobby's match in it with nobody at its menus; its mod-settings.json is written
 COMPLETE for each match (kit_settings.match_settings), so the host's offline settings never reach an online match.
 
-The capture: the mod's own PLAYABLE CHECKPOINT of the match (fresh_team_trainer.export_playable: the prepared match
-held just before its start, every fighter effect and the terrain placement ready, its start request already set and
-the mod's loading cover and preparation gate cleared, so it plays WITHOUT the mod's watcher). The watcher names it
-in its log ('Rematch checkpoint: ...'). It is taken before the intro: online matches play the whole intro.
+The capture: the private builder's fully prepared native checkpoint, held before its intro with every fighter
+effect and terrain placement ready. Its exporter publishes a current-owner, whole-archive/CRC-bound release receipt
+instead of rewriting an intermediate playable archive. Conversion composes the original guarded start/cover/gate
+release with the online writes in one verified archive. Ordinary playable captures remain supported; the public
+offline exporter is unchanged. Online client matches play the complete native intro.
 
 The conversion (_convert, run by the installation copy's Python: the mod modules need numpy / Pillow / zstandard):
   (0) the installation's guest code is an accepted build (data/guest-fingerprint.json: Tag Team Mod beta.35..42, by
@@ -61,7 +62,40 @@ BG_CONTROL, BG_MAGIC = 0x0765E000, 0x424B4731  # extra_reload_quiet BG_CONTROL: 
 # Held only while building in the PRIVATE copy (boot, menus and preparation). Client games
 # still use kit_emu's enforced 1x scalars, and the player's offline INI is untouched.
 PREP_SPEED_KEY = (0xBE, 0x34, 0, 'Period')
-PRIVATE_SPEED = 8.0
+PRIVATE_SPEED = 32.0
+HELD_EXPORT_STATUS = 'Held native checkpoint awaiting guarded online conversion'
+HELD_EXPORT_KIND = 'ttm-online-held-export-v1'
+HELD_EXPORT_OWNER = 'online-held-export-owner.json'
+# Inserted only into the isolated private copy. Public offline export is never
+# modified. snapshot() already CRC-read the exact EE payload supplied as ram;
+# verify its CRC again and read every other entry before publishing this proof.
+HELD_EXPORT_REPLACEMENT = '''        owner = json.loads((ROOT/'online-held-export-owner.json').read_text(encoding='utf-8'))
+        token = owner.get('token') if type(owner) is dict else None
+        if (type(owner) is not dict or type(owner.get('schema')) is not int or owner['schema'] != 1 or type(owner.get('emulator_pid')) is not int or owner['emulator_pid'] <= 0
+                or not isinstance(token,str) or len(token)!=32 or any(c not in '0123456789abcdef' for c in token)):
+            raise ValueError('Invalid private online export owner')
+        from patch_state import file_digest
+        import zlib
+        source = Path(self.source).resolve()
+        before = file_digest(source)
+        entries = []
+        with zipfile.ZipFile(source) as archive, source.open('rb') as raw:
+            infos = archive.infolist()
+            if len({i.filename for i in infos}) != len(infos): raise ValueError('Duplicate native archive entries')
+            for info in infos:
+                payload = ram if info.filename=='eeMemory.bin' else read_entry(archive,raw,info)
+                if len(payload)!=info.file_size or zlib.crc32(payload)&0xffffffff!=info.CRC:
+                    raise ValueError('Held native archive payload/CRC changed')
+                entries.append(dict(name=info.filename,size=info.file_size,crc=info.CRC))
+        if file_digest(source)!=before: raise ValueError('Held native archive changed during export')
+        report = dict(schema=1,kind='ttm-online-held-export-v1',
+            status='Held native checkpoint awaiting guarded online conversion', serial=SERIAL,crc=CRC,
+            output=str(source),source=str(source),output_sha256=before,source_sha256=before,
+            source_ram_sha256=hashlib.sha256(ram).hexdigest(),release_manifest=manifest,
+            owner=owner,play_intro=self.play_intro,input_entries=entries)
+        write_json(self.run/'playable-export.json', report)
+        self.index += 1
+'''
 HP_ROW, HP_SLOT, HP_STRIDE = 0x9E4, 0x994, 0xA4
 FOREIGN = ('        try { $own = [bool]($path -and $wanted -and [string]::Equals([System.IO.Path]::GetFullPath($path), $wanted, '
            '[System.StringComparison]::OrdinalIgnoreCase)) } catch { }\n')
@@ -69,6 +103,18 @@ FOREIGN = ('        try { $own = [bool]($path -and $wanted -and [string]::Equals
 SKIP_DIRS = {('game', 'analysis', 'autopilot'), ('game', 'analysis', 'prepared-states'), ('game', 'analysis', 'settings'),
              ('game', 'runtime28', 'sstates'), ('game', 'runtime28', 'snaps'), ('game', 'runtime28', 'logs'),
              ('game', 'runtime28', 'cache'), ('game', 'runtime28', 'videos'), ('game', 'runtime28', 'covers')}
+SCENARIO_QUEUES = ('next-battle.json', 'quick-launch.json')
+
+
+def clear_private_scenario_queues(destination):
+    """An offline Workbench request must never alter the room's agreed roster."""
+    root=Path(destination).resolve()
+    for name in SCENARIO_QUEUES:
+        path=root/'game'/'missions'/name
+        if path.exists():
+            if path.is_symlink() or not path.resolve().is_relative_to(root):
+                raise ValueError('Private scenario queue escapes the match-making copy')
+            path.unlink()
 
 
 def immutable_dependency(path):
@@ -118,7 +164,91 @@ def patches(slot):
                                                             'private copy\n')],
         'game/tools/pine.py': [('def __init__(self, port=28011,', f'def __init__(self, port={slot},')],
         'game/tools/play_launcher.py': [('PINE_SLOT = 28011', f'PINE_SLOT = {slot}')],
+        # This receipt belongs to the PRIVATE builder only. A savestate cannot
+        # restore the Python watcher's authorization or its menu epoch.
+        'game/tools/autopilot.py': [
+            # Qt resumes the PRIVATE builder after -statefile initialization.
+            # Its transient paused state must not trigger the public watcher's
+            # foreground-only Space toggle, which can pause the finished boot.
+            ('        self.menu_resume_sent = False    # the paused boot menu is resumed at most once per session',
+             '        self.menu_resume_sent = True     # private builder startup is owned by Qt and its controller'),
+            ("value['launcher_token'] = self.launcher_token",
+             "value['launcher_token'] = self.launcher_token\n"
+             "            value['native_mode_receipt'] = dict(\n"
+             "                epoch=getattr(self.mode_menu, 'epoch', 0),\n"
+             "                choice=getattr(self.mode_menu, 'last_choice', None),\n"
+             "                custom=bool(self.preparation_enabled))")],
+        # This copy runs accelerated and has no interactive player. Poll native
+        # acknowledgements promptly without changing readiness/frame/idle gates.
+        'game/tools/fresh_team_trainer.py': [
+            ("        report = patch(self.source, manifest, output)\n"
+             "        write_json(self.run/'playable-export.json', report)\n"
+             "        self.index += 1; self.source = output\n", HELD_EXPORT_REPLACEMENT),
+            ("            if budget.expired: break\n            time.sleep(.2)\n"
+             "        raise TimeoutError(f'{label}: the game did not finish this step within {timeout} seconds')",
+             "            if budget.expired: break\n            time.sleep(.005)\n"
+             "        raise TimeoutError(f'{label}: the game did not finish this step within {timeout} seconds')"),
+            ("            if budget.expired: break\n            time.sleep(.2)\n"
+             "        raise TimeoutError(f'No expected game-frame progress at {address:08X}')",
+             "            if budget.expired: break\n            time.sleep(.005)\n"
+             "        raise TimeoutError(f'No expected game-frame progress at {address:08X}')"),
+            ("            if budget.expired: break\n            time.sleep(.2)\n"
+             "        if actors is not None:\n            from native_preparation import launcher",
+             "            if budget.expired: break\n            time.sleep(.005)\n"
+             "        if actors is not None:\n            from native_preparation import launcher")],
     }
+    changes.setdefault('game/tools/autopilot.py', []).extend([('        from controller_mailbox import Owner\n'
+  '        # Off Windows a failed 3-4 player input check reaches the status the launcher shows,\n'
+  '        # and so does its recovery after a provisional "could not be confirmed yet".\n'
+  "        unavailable = lambda message: self.report(message, None, 'warning')\n"
+  "        recovered = lambda message: self.report(message, None, 'info')\n"
+  '        # One SDL owner thread for the whole Play session (controller_hub): every input owner '
+  'below is a sink of it.\n'
+  '        import controller_hub\n'
+  '        hub = self.controller_hub = controller_hub.Hub(lifetime.process.pid, log=log) if '
+  'lifetime is not None else None\n'
+  '        self.controller_input = Owner(lifetime.process.pid, report=unavailable, '
+  'notice=recovered, hub=hub) if lifetime is not None else None\n'
+  '        from quad_menu_input import Owner as MenuInputOwner\n'
+  '        self.menu_input = MenuInputOwner(lifetime.process.pid, report=unavailable, '
+  'notice=recovered, hub=hub) if lifetime is not None else None',
+  '        # The online builder has checked keyboard pads and Null audio. It never\n'
+  '        # accepts player input, so it does not own SDL/controller mailboxes.\n'
+  '        # Refuse another profile instead of suppressing its actual controls.\n'
+  '        import configparser\n'
+  '        private_profile = configparser.ConfigParser(interpolation=None)\n'
+  "        private_profile.read(runtime_profile.CONFIG, encoding='utf-8-sig')\n"
+  "        if (ROOT.parent.name != 'Tag Team Mod' or ROOT.parent.parent.name != 'prep' or\n"
+  "                private_profile.get('SPU2/Output', 'Backend', fallback='') != 'Null' or\n"
+  "                any(private_profile.get('InputSources', key, fallback='true').lower() != "
+  "'false'\n"
+  "                    for key in ('SDL', 'XInput', 'DInput'))):\n"
+  "            raise ValueError('Private builder service suppression requires its isolated "
+  "keyboard/Null-audio profile')\n"
+  '        hub = self.controller_hub = None\n'
+  '        self.controller_input = self.menu_input = None'),
+ ('        from controller_assignment import Owner as AssignmentOwner\n'
+  '        self.assigned_input = AssignmentOwner(lifetime.process.pid, hub=hub) if lifetime is not '
+  'None else None',
+  '        self.assigned_input = None  # private keyboard input stays with PCSX2'),
+ ('        if WINDOWS: start_audio_repair(lifetime, args.status_file.parent)',
+  '        # Private keyboard/Null-audio profile was checked by the constructor; no audio repair '
+  'worker.')])
+    changes.setdefault('game/tools/native_mode_menu.py', []).extend([('        code_pieces()\n'
+  '        assets.addresses()\n'
+  '        import native_menu_texture\n'
+  '        native_menu_texture.packet()',
+  '        code_pieces()  # native ownership/code guards remain eager\n'
+  '        # A private selector does not show menu art. owned_plan/plan initialize\n'
+  '        # these immutable assets lazily if ordinary boot/fallback needs them.')])
+    changes.setdefault('game/tools/fresh_team_trainer.py', []).append((
+'        deadline = time.monotonic()+30\n        while time.monotonic() < deadline:\n            time.sleep(.1)\n            require_runtime()',
+'        deadline = time.monotonic()+30\n        while time.monotonic() < deadline:\n            time.sleep(.01)\n            require_runtime()'))
+    changes.setdefault('game/tools/native_preparation.py', []).extend([
+("        if budget.expired():break\n        time.sleep(.02)\n    raise TimeoutError(f'The game did not acknowledge its combat hold within {timeout} s of running time')",
+"        if budget.expired():break\n        time.sleep(.005)\n    raise TimeoutError(f'The game did not acknowledge its combat hold within {timeout} s of running time')"),
+("        if budget.expired():break\n        time.sleep(.02)\n    raise TimeoutError(f'Native preparation transaction was not acknowledged within {timeout} s of running time; match remains held')",
+"        if budget.expired():break\n        time.sleep(.005)\n    raise TimeoutError(f'Native preparation transaction was not acknowledged within {timeout} s of running time; match remains held')")])
     if kit_paths.ADAPTER.startswith('bt4'):
         changes['game/tools/bt4_preflight.py'] = [("PINE_SLOT='28012'", f"PINE_SLOT='{slot}'")]
     return {path: [(old.replace('28011', str(original_slot)), new) for old, new in rows]
@@ -162,6 +292,7 @@ class Prepare:
         self.say(('Making a private copy of your Tag Team Mod installation (one time, a few hundred MB)...' if fresh
                   else 'Refreshing the private copy of your Tag Team Mod installation...'))
         copied = 0
+        clear_private_scenario_queues(self.dest)
         for folder, dirs, files in os.walk(source):
             rel = Path(folder).relative_to(source)
             dirs[:] = [d for d in dirs if tuple((rel / d).parts) not in SKIP_DIRS and d != '__pycache__' and
@@ -169,6 +300,8 @@ class Prepare:
             target_dir = self.dest / rel
             target_dir.mkdir(parents=True, exist_ok=True)
             for name in files:
+                if rel == Path('game/missions') and name in SCENARIO_QUEUES:
+                    continue
                 s, t = Path(folder) / name, target_dir / name
                 try:
                     st = s.stat()
@@ -218,17 +351,27 @@ class Prepare:
         if not original.exists():
             original.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ini, original)
-        keys = [('UI', 'ConfirmShutdown', 'false'), ('EmuCore', 'EnablePINE', 'true'),
+        keys = [('UI', 'ConfirmShutdown', 'false'), ('UI', 'StartPaused', 'false'),
+                ('UI', 'PauseOnFocusLoss', 'false'), ('EmuCore', 'EnablePINE', 'true'),
                 ('EmuCore', 'PINESlot', str(self.slot))]
         if self.args.hidden:                                           # test mode: keyboard pads, no sound, F8
             import kit_emu
             pad2 = {'cross': '1', 'circle': '2', 'square': '3', 'triangle': '4', 'start': '5', 'select': '6',
                     'up': '7', 'down': '8', 'left': '9', 'right': '0', 'l1': 'M', 'r1': 'N'}
             keys += [('SPU2/Output', 'Backend', 'Null'), ('InputSources', 'SDL', 'false'),
+                     ('InputSources', 'XInput', 'false'), ('InputSources', 'DInput', 'false'),
                      ('Hotkeys', 'Screenshot', 'Keyboard/F8'),
                      ('Hotkeys', 'HoldTurbo', 'Keyboard/Period'),
                      ('Framerate', 'NominalScalar', '1'), ('Framerate', 'TurboScalar', str(int(PRIVATE_SPEED))),
                      ('Framerate', 'SlomoScalar', '1'), ('EmuCore/GS', 'upscale_multiplier', '1')]
+            if kit_win.WINDOWS:
+                # Only the hidden builder skips host drawing. The native GS
+                # state remains in the archive; normal client rendering is unchanged.
+                # FIFO with present skipping avoids a hidden mailbox swapchain
+                # pacing the private native loader at the desktop refresh rate.
+                keys += [('EmuCore/GS', 'Renderer', '11'),
+                         ('EmuCore/GS', 'VsyncEnable', 'true'),
+                         ('EmuCore/GS', 'DisableMailboxPresentation', 'true')]
             keys += [('Pad1', kit_emu.PAD_NAMES[k], 'Keyboard/' + v[3]) for k, v in kit_emu.PAD1_KEYS.items()]
             keys += [('Pad2', kit_emu.PAD_NAMES[k], 'Keyboard/' + v) for k, v in pad2.items()]
         text = original.read_bytes().decode('utf-8-sig', errors='replace')
@@ -328,13 +471,21 @@ def have_packages():
     return all(importlib.util.find_spec(n) is not None for n in NEEDED)
 
 
-def convert(capture, folder, names_file, python=None, say=print, spec=None, options=None):
+def convert(capture, folder, names_file, python=None, say=print, spec=None, options=None, *, controls=None,
+            held_export=None):
     """capture.p2s -> guarded in-memory online conversion -> netplay.p2s; returns the
     report. spec: the lobby spec the match must hold (checked, TTM-NET-31); options: {'test_ko': True} (test hooks
     only: Team 2 starts at 1 HP so bots reach a KO quickly)."""
+    import kit_match
+    controls = kit_match.transport_controls(controls)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     spec_path = options_path = None
+    controls_path = folder / 'controls.json'
+    controls_path.write_text(json.dumps(controls), encoding='utf-8')
+    held_path = folder / 'held-export.json' if held_export is not None else None
+    if held_path is not None:
+        held_path.write_text(json.dumps(held_export), encoding='utf-8')
     if spec is not None:
         spec_path = folder / 'spec.json'
         spec_path.write_text(json.dumps(spec, sort_keys=True, indent=1), encoding='utf-8')
@@ -351,14 +502,15 @@ def convert(capture, folder, names_file, python=None, say=print, spec=None, opti
         if os.environ.get('TTM_KIT_TEST_GUARD'):
             env['PYTHONPATH'] = os.environ['TTM_KIT_TEST_GUARD']
         r = subprocess.run([str(python), str(Path(__file__)), 'convert', str(capture), str(folder), str(names_file),
-                            str(spec_path or '-'), str(options_path or '-')],
+                            str(spec_path or '-'), str(options_path or '-'), str(controls_path), str(held_path or '-')],
                            capture_output=True, text=True, env=env, creationflags=kit_win.CREATE_NO_WINDOW)
         try:
             out = json.loads(r.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
             out = dict(error=(r.stderr or r.stdout).strip()[-600:] or f'exit {r.returncode}')
     else:
-        out = _convert(Path(capture), folder, Path(names_file), spec, options)
+        out = _convert(Path(capture), folder, Path(names_file), spec, options, controls=controls,
+                       held_export=held_export)
     if 'error' in out:
         code = out.get('code') or 'TTM-NET-23'
         spanish = dict(what_es=out['error_es']) if out.get('error_es') else {}
@@ -645,9 +797,94 @@ def build_family(found):
     return None
 
 
-def _convert(capture, folder, names_file, spec=None, options=None):
+def held_export_memory(capture, ram, receipt):
+    """Validate a current private held checkpoint, never arbitrary patch rows.
+
+    The isolated exporter verified all original archive payload CRCs. This
+    function binds that receipt to the exact copied capture, recomputes every
+    normal export guard and its release edits, then validates them in memory.
+    build_netplay later CRC-reads the entire original archive and verifies the
+    whole final archive after reopening it; no intermediate archive is needed.
+    """
+    import hashlib
+    import patch_state
+    import team_intro
+    import team_start_gate as gate
+    import guest_loading_screen as cover
+    import native_preparation as native
+    import extra_ground_effects, extra_generic_effects, extra_extended_auras
+    import extra_charge_aura, extra_special_pools, spawn_placement, team_participation
+    from fresh_team_combat import MODE
+    from battle_mode_policy import ACTOR_COUNTS
+    from native_map import SERIAL, CRC
+    import zipfile
+    from state128 import TOTAL_RAM
+    if (type(receipt) is not dict or type(receipt.get('schema')) is not int or receipt['schema'] != 1 or
+            receipt.get('kind') != HELD_EXPORT_KIND or receipt.get('status') != HELD_EXPORT_STATUS or
+            receipt.get('serial') != SERIAL or str(receipt.get('crc')).upper() != CRC.upper() or
+            type(receipt.get('play_intro')) is not bool or len(ram) != TOTAL_RAM):
+        raise ValueError('Invalid private held-export receipt')
+    owner = receipt.get('owner')
+    if (type(owner) is not dict or type(owner.get('schema')) is not int or owner['schema'] != 1 or
+            type(owner.get('emulator_pid')) is not int or owner['emulator_pid'] <= 0 or
+            not isinstance(owner.get('token'), str) or len(owner['token']) != 32 or
+            any(c not in '0123456789abcdef' for c in owner['token'])):
+        raise ValueError('Invalid private held-export owner')
+    digest = patch_state.file_digest(capture)
+    if (receipt.get('source_sha256') != digest or receipt.get('output_sha256') != digest or
+            receipt.get('source_ram_sha256') != hashlib.sha256(ram).hexdigest()):
+        raise ValueError('The held-export proof belongs to another capture')
+    with zipfile.ZipFile(capture) as archive:
+        infos = archive.infolist()
+        if len({i.filename for i in infos}) != len(infos) or receipt.get('input_entries') != [
+                dict(name=i.filename, size=i.file_size, crc=i.CRC) for i in infos]:
+            raise ValueError('Held archive entry identity differs')
+    u = lambda a: struct.unpack_from('<I', ram, a)[0]
+    manager = u(A(0x2FEB14))
+    count = u(gate.CONTROL + 12)
+    if (not 0x100000 <= manager < TOTAL_RAM - 0x1000 or count not in ACTOR_COUNTS or
+            u(gate.CONTROL) != 1 or u(gate.CONTROL + 8) != manager or
+            struct.unpack_from('<4I', ram, MODE) != (1, count, manager, count)):
+        raise ValueError('Held prepared-match identity changed')
+    for control in (extra_ground_effects.CONTROL, extra_generic_effects.CONTROL, extra_extended_auras.CONTROL,
+                    extra_charge_aura.CONTROL, extra_special_pools.CONTROL, spawn_placement.CONTROL,
+                    team_participation.CONTROL):
+        if u(control) != 5 or u(control + 4) != manager:
+            raise ValueError('Fighter effects and terrain placement must finish before export')
+    request = team_intro.REQUEST if receipt['play_intro'] else gate.REQUEST
+    if u(gate.REQUEST) != 0 or u(request) != 0:
+        raise ValueError('Expected an unrequested held prepared match')
+    if receipt['play_intro'] and (u(team_intro.CONTROL) != 1 or u(team_intro.CONTROL + 8) != manager):
+        raise ValueError('Held intro identity changed')
+    manifest = dict(serial=SERIAL, crc=CRC, blocks=[dict(address=request,
+                    expected_hex='00000000', data_hex='01000000')])
+    if ram[cover.HOOK:cover.HOOK + 4] == cover.code_pieces()[-1][1]:
+        manifest['blocks'].append(dict(address=cover.CONTROL,
+            expected_hex=ram[cover.CONTROL:cover.CONTROL + 4].hex(), data_hex='00000000'))
+    if u(native.CONTROL) == native.MAGIC:
+        # The unchanged converter authenticates the complete installed guest
+        # fingerprint after release; the exporter supports its accepted gate
+        # images rather than requiring only this module's newest generated one.
+        manifest['blocks'].append(dict(address=native.CONTROL,
+            expected_hex=ram[native.CONTROL:native.CONTROL + 4].hex(), data_hex='00000000'))
+    if receipt.get('release_manifest') != manifest:
+        raise ValueError('The held-export release manifest differs from native guards')
+    released, _ = patch_state.patch_memory(ram, manifest)
+    return released, [(b['address'], bytes.fromhex(b['data_hex'])) for b in manifest['blocks']]
+
+
+def check_held_export_source(capture, receipt):
+    """Bind the final export to its complete original archive, including non-EE data."""
+    if receipt is not None:
+        import patch_state
+        if patch_state.file_digest(capture) != receipt.get('source_sha256'):
+            raise ValueError('The held checkpoint changed during final conversion')
+
+
+def _convert(capture, folder, names_file, spec=None, options=None, *, controls=None, held_export=None):
     import hashlib
     import kit_match
+    controls = kit_match.transport_controls(controls)
     import kit_spec
     import kit_verify
     import netplay_fixups
@@ -667,6 +904,10 @@ def _convert(capture, folder, names_file, spec=None, options=None):
     if spec is None:
         return dict(error='a match is converted for a lobby spec only')
     ram = read_ram(capture)
+    source_ram = ram
+    release = []
+    if held_export is not None:
+        ram, release = held_export_memory(capture, ram, held_export)
     u = lambda a: struct.unpack_from('<I', ram, a)[0]
     problems = []
     battle = u(BATTLE)
@@ -735,7 +976,7 @@ def _convert(capture, folder, names_file, spec=None, options=None):
     if problems:
         return dict(error='This match cannot be played online: ' + '; '.join(problems) + '.',
                     fix='Start the match again.')
-    blocks = []
+    blocks = list(release)
     view = 'single'
     if u(SCENE_SPLIT) == 1:
         blocks += [(a, d) for a, d in nv.single_view_conversion(ram)]
@@ -769,16 +1010,20 @@ def _convert(capture, folder, names_file, spec=None, options=None):
     if options.get('test_ki'):
         test += test_ki_blocks(ram, actors)
     blocks += online + test
+    if release and any(a < p + len(data) and p < a + len(value)
+                       for a, value in release for p, data in blocks[len(release):]):
+        return dict(error='An online write overlaps the guarded held-checkpoint release.')
     folder = Path(folder)
     patch_state.OUTPUT_ROOT = folder
     mask = kit_spec.slot_mask(spec)
     try:
         built = kit_match.build_netplay(capture, folder / 'netplay.p2s', mask, spec,
-                                       prefix_blocks=blocks, source_ram=ram)
+                                       prefix_blocks=blocks, source_ram=source_ram, controls=controls, include_words=True)
+        check_held_export_source(capture, held_export)
     except Exception as error:  # noqa: BLE001 - explained
         return dict(error=f'The online part could not be installed into this match: {type(error).__name__}: {error}',
                     fix='Start the match again.')
-    words = kit_verify.file_words(folder / 'netplay.p2s')                                      # (j)
+    words = built.pop('verified_words')     # (j): bound to the full reopened archive proof above
     differ = kit_verify.problems(words, spec, netplay_fixups.fixed_sha256())
     if differ:
         return dict(code='TTM-NET-31', words=words,
@@ -797,15 +1042,20 @@ def _convert(capture, folder, names_file, spec=None, options=None):
 
 
 if __name__ == '__main__':
-    # python kit_prepare.py convert CAPTURE FOLDER NAMES_FILE [SPEC_JSON|-] [OPTIONS_JSON|-]
+    # python kit_prepare.py convert CAPTURE FOLDER NAMES_FILE [SPEC_JSON|-] [OPTIONS_JSON|-] [CONTROLS_JSON|-] [HELD_EXPORT_JSON|-]
     # (the installation copy's Python runs this)
-    if len(sys.argv) in (5, 7) and sys.argv[1] == 'convert':
-        spec = options = None
-        if len(sys.argv) == 7:
+    if len(sys.argv) in (5, 7, 8, 9) and sys.argv[1] == 'convert':
+        spec = options = controls = held_export = None
+        if len(sys.argv) >= 7:
             spec = json.loads(Path(sys.argv[5]).read_text(encoding='utf-8')) if sys.argv[5] != '-' else None
             options = json.loads(Path(sys.argv[6]).read_text(encoding='utf-8')) if sys.argv[6] != '-' else None
+        if len(sys.argv) >= 8 and sys.argv[7] != '-':
+            controls = json.loads(Path(sys.argv[7]).read_text(encoding='utf-8'))
+        if len(sys.argv) == 9 and sys.argv[8] != '-':
+            held_export = json.loads(Path(sys.argv[8]).read_text(encoding='utf-8'))
         try:
-            result = _convert(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), spec, options)
+            result = _convert(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), spec, options,
+                              controls=controls, held_export=held_export)
         except Exception as error:  # noqa: BLE001 - reported as JSON
             import traceback
             result = dict(error=f'{type(error).__name__}: {error}', traceback=traceback.format_exc()[-1500:])

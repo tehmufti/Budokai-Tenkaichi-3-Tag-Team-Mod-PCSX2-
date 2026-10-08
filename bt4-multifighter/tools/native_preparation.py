@@ -13,6 +13,8 @@ import battle_mode_policy as policy
 CODE, GATE, CONTROL = 0x07680000, 0x07682000, 0x0768F000
 PACKET, CAPACITY = 0x07800000, 0x800000
 RECORD_SIZE = 16
+# Every record needs a descriptor and at least one old/new byte. The packet's
+# actual padded size remains the final limit; there is no feature-count cap.
 MAX_BLOCKS = CAPACITY // (RECORD_SIZE + 2)
 HOOK, NATIVE = A(0x12BC84), A(0x126FB0)
 MAGIC = 0x42545032
@@ -83,6 +85,15 @@ def gate_code(heal_any_substate=True):
         a.lw(8,18,offset+0x9E4);a.branch(6,8,0,'normal')
     a.sw(17,16,24);a.addiu(8,0,1);a.sw(8,16,16);a.sw(8,16,52)
     a.label('held');a.addiu(8,0,1);a.sw(8,16,20)
+    import story_cinematics as story
+    story.emit_active(a,'story_held','not_story')
+    a.jump('other_held');a.label('story_held');a.call(story.TICK)
+    # Completion restored the original camera. Resume its draw layout in this
+    # same frame, rather than binding a split camera to the full-screen pass.
+    a.li(8,story.CONTROL+12);a.lw(8,8);a.addiu(8,8,-1);a.i(11,8,8,2)
+    a.branch(4,8,0,'held_uncovered')
+    restore(a);a.move(2,0);a.addiu(31,31,24);a.jr()
+    a.label('other_held')
     # A bounded reload may use the same acknowledged combat hold. The runner
     # validates its owner and IO/stage/commit/retire allowlist before each call.
     a.li(8,reload_job.CONTROL);a.lw(8,8);a.li(9,reload_job.MAGIC)
@@ -133,7 +144,6 @@ def gate_code(heal_any_substate=True):
 def protected_ranges():
     return ((CODE,CONTROL+0x100),(PACKET,PACKET+CAPACITY),(HOOK,HOOK+4),
             (A(0x102098),A(0x10209C)),(0x07470000,0x07471000))
-
 
 
 def service_code(*, legacy_block_limit=False):
@@ -192,7 +202,6 @@ def service_code(*, legacy_block_limit=False):
     result=a.finish();assert len(result)<GATE-CODE;return result
 
 
-
 # The installed hook (jal GATE). Pollers compare only this word; code_pieces() stays
 # uncached because the gate code depends on the build-time policy.TEAM_CAPACITY.
 HOOK_WORD=struct.pack('<I',(3<<26)|(GATE>>2))
@@ -226,7 +235,6 @@ def previous_service_images():
     return (service_code(legacy_block_limit=True),)
 
 
-
 def captured_transport(ram):
     """A captured 128 MiB image holds this build's transport, or the same one with a previous gate image
     (previous_gate_images). Live checks keep installed(): the boot pnach is always current there."""
@@ -241,7 +249,6 @@ def captured_transport(ram):
     return True
 
 
-
 def upgrade_blocks(ram):
     """Upgrade only a fully authenticated, dormant captured transport.
 
@@ -253,7 +260,6 @@ def upgrade_blocks(ram):
     if u(CONTROL+4)!=u(CONTROL+8):raise ValueError('Captured native preparation transaction is pending')
     return [dict(address=p,expected_hex=ram[p:p+len(data)].hex(),data_hex=data.hex())
             for p,data in code_pieces() if ram[p:p+len(data)]!=data]
-
 
 
 def installed(p):
@@ -283,7 +289,6 @@ def encode(manifest):
         packet[before:before+len(old)]=old;packet[after:after+len(new)]=new
         struct.pack_into('<4I',packet,i*RECORD_SIZE,address,len(new),before,after)
     return bytes(packet),len(blocks)
-
 
 
 def arm(p, *, include_single_ffa=False):

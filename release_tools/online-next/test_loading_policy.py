@@ -22,7 +22,7 @@ import team_start_gate as gate
 
 def host(drop=False):
     h = controller.Controller.__new__(controller.Controller)
-    h.init_fight(); h.init_hub(); h.init_prefetch()
+    h.init_fight(); h.init_hub(); h.init_prefetch(); h.init_transfers()
     h.role, h.me, h.phase, h.epoch = 'host', 1, 'loading', 7
     h.cfg = {}; h.lobby = kit_lobby.Lobby()
     for name in ('Loaded', 'Slow', 'Slower'):

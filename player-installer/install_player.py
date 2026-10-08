@@ -1,5 +1,5 @@
-"""Player installation backend. No emulator is started by this program (on Linux the PCSX2 AppImage's
-runtime only reports its size and unpacks its version file)."""
+"""Player installation backend. Windows can build isolated online selector caches
+after validation; Linux only probes/unpacks the PCSX2 AppImage runtime here."""
 import argparse
 import configparser
 import hashlib
@@ -779,6 +779,63 @@ def install_online(root,work,adapter,pcsx2=None):
     return target
 
 
+def online_startup_cache(root,language='en'):
+    """Build neutral selectors from this player's own disc/BIOS, never ship them.
+
+    Optional online acceleration cannot invalidate a working offline install.
+    Every failure leaves an explicit local receipt and the ordinary guarded
+    preparation path remains available. This runs only after Play is published.
+    """
+    root=Path(root)
+    if not WINDOWS or not (root/'online/netplay/kit_selector_cache.py').is_file():
+        return dict(state='not-built',reason='Windows online builder only')
+    import socket
+    import subprocess
+    folder=root/'online/prep/setup-cache'
+    result=dict(state='unavailable',log='online/prep/setup-cache/setup.log')
+    try:
+        folder.mkdir(parents=True,exist_ok=True)
+        port=None
+        for candidate in range(29970,30000):
+            with socket.socket() as probe:
+                try:probe.bind(('127.0.0.1',candidate))
+                except OSError:continue
+                port=candidate;break
+        if port is None:
+            raise OSError('No free private preparation port')
+        env=child_environment(TTM_KIT_RUNTIME='',TAGTEAM_DISC='',TAGTEAM_ADAPTER='')
+        command=[sys.executable,'-B',str(root/'online/netplay/kit_prepare_auto.py'),
+                 '--install',str(root),'--slot',str(port),'--out',str(folder),'--build-selector-cache']
+        print('Preparando el inicio rápido en línea (una vez)...' if language=='es' else
+              'Preparing fast online startup (one time)...',flush=True)
+        child=None
+        try:
+            with (folder/'setup.log').open('w',encoding='utf-8') as stream:
+                child=subprocess.Popen(command,cwd=root,env=env,stdout=stream,stderr=subprocess.STDOUT,
+                                       creationflags=subprocess.CREATE_NO_WINDOW)
+                child.wait(timeout=240)
+            result.update(state='ready' if child.returncode==0 else 'unavailable',exit_code=child.returncode)
+        finally:
+            # End the tree while its own parent is still alive: killing only
+            # Python could orphan a hidden emulator if job assignment failed.
+            if child is not None and child.poll() is None:
+                try:
+                    subprocess.run(['taskkill','/PID',str(child.pid),'/T','/F'],capture_output=True,
+                                   timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
+                finally:
+                    if child.poll() is None:child.kill()
+                    child.wait(timeout=10)
+    except Exception as error:
+        result.update(state='unavailable',reason=str(error))
+    try:(folder/'status.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+    except OSError:pass
+    if result['state']!='ready':
+        print('El inicio rápido en línea no se ha preparado. Consulta online/prep/setup-cache/status.json.'
+              if language=='es' else 'Fast online startup was not prepared. See online/prep/setup-cache/status.json.',
+              flush=True)
+    return result
+
+
 def online_files(root):
     """{relative path: sha256} of the online part's code and templates (the lobby's own data, matches, states and
     the online PCSX2's profile folders change as it is used and are left out)."""
@@ -1466,6 +1523,15 @@ def install(args):
         # Last publication step: no usable Play entry point exists on failure.
         if WINDOWS:(root/'Play.cmd').write_text(scripts['Play.cmd'],encoding='ascii')
         else:write_script(root/'Play.sh',scripts['Play.sh'])
+        if online is not None:
+            cache=online_startup_cache(root,mod_language)
+            try:
+                update('[6/6] Installed',ready=bool(checked['ready']),installation_valid=True,
+                       version=release['version'],adapter=adapter,online_startup_cache=cache,
+                       missing_runtime_dependencies=checked.get('missing_runtime_dependencies',[]),
+                       gameplay_verified=False,emulator_version=emulator_version,
+                       pcsx2_tested=pcsx2_support(emulator_version,release)[1])
+            except OSError:pass  # The installation already passed its final check.
     except Exception as error:
         failure=failure_for(error)
         try:error.setup_failure=failure

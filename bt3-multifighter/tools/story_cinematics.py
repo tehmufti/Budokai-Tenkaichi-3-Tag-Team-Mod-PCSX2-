@@ -14,6 +14,7 @@ import fresh_team_combat as core
 
 BASE, END = 0x069A0000, 0x06A00000
 START, TICK, VOICE = BASE, BASE+0x1000, BASE+0x3000
+FORMATION = BASE+0x3500
 CONTROL, CAMERA_SAVE, DESCRIPTORS, CLIPS = BASE+0x4000, BASE+0x4200, BASE+0x5000, BASE+0xA000
 MAGIC, STRIDE = 0x53434E33, 80  # SCN3: camera tables include both position and aim.
 # +12 state: 0 idle, 1 requested, 2 playing, 3 complete, 100 failed.
@@ -61,6 +62,62 @@ def anchor(a):
     a.move(4,23);a.call(A(0x24E2B0));a.move(4,23);a.call(A(0x24E3F8))
 
 
+def formation_code():
+    """a0 cast mask, a1 apply (otherwise preflight the entire cast, no writes).
+
+    Reuse the current stage's terrain/footprint-aware spawn route, including
+    scaled and destroyed stages. Never teleport a bound attack, resurrect a
+    corpse, move a reserve, or mutate fighter identity/HP/controller ownership.
+    """
+    import story_runtime as story
+    import spawn_placement as spawn
+    import team_participation as part
+    a=Assembler(FORMATION);full.save(a);save_hilo(a)
+    a.move(23,4);a.move(21,5);a.move(22,0)
+    a.branch(4,23,0,'accepted')
+    a.li(8,spawn.STAGE);a.lw(8,8);a.li(9,0x100000);a.r(0x2B,9,8,9);a.branch(5,9,0,'reject')
+    a.li(9,0x8000000-64);a.r(0x2B,9,9,8);a.branch(5,9,0,'reject')
+    a.label('scan');a.li(8,CONTROL+8);a.lw(8,8);a.r(0x2B,8,22,8);a.branch(4,8,0,'accepted')
+    a.addiu(9,0,1);a.r(4,9,22,9);a.r(0x24,8,23,9);a.branch(4,8,0,'next')
+    a.li(8,part.CONSUMED);a.lw(8,8);a.li(10,story.CONTROL+112);a.lw(10,10)
+    a.r(0x25,8,8,10);a.r(0x24,8,8,9);a.branch(5,8,0,'next')
+    a.r(0,8,0,22,2);a.li(9,core.POINTERS);a.r(0x21,9,9,8);a.lw(18,9)
+    a.li(9,story.ACTORS);a.r(0x21,9,9,8);a.lw(9,9);a.branch(5,9,18,'reject')
+    a.li(9,0x100000);a.r(0x2B,8,18,9);a.branch(5,8,0,'reject')
+    a.li(9,0x8000000-0x1600);a.r(0x2B,8,9,18);a.branch(5,8,0,'reject')
+    a.lw(8,18);a.branch(5,8,22,'reject')
+    a.lw(8,18,0x994);a.lw(9,18,0x998);a.r(0x2B,10,8,9);a.branch(4,10,0,'reject')
+    a.i(11,10,9,6);a.branch(4,10,0,'reject')
+    full.row_address(a,19,18,8,9);a.lw(8,19,64);a.branch(6,8,0,'next')
+    # Ordinary locomotion, charging, melee and hit reactions may be reset.
+    # Bound rushes, clashes, transformations and pending specials finish first.
+    for off in (0x948,0x94C):
+        a.lw(8,18,off)
+        if off==0x94C:
+            a.addiu(9,0,-1);a.branch(4,8,9,'pending_clear')
+        a.addiu(8,8,-11);a.i(11,8,8,169);a.branch(4,8,0,'reject')
+    a.label('pending_clear')
+    a.lw(8,18,12);a.i(11,9,8,12);a.branch(4,9,0,'reject')
+    a.r(0,8,0,8,2);a.li(9,core.MODELS);a.r(0x21,9,9,8);a.lw(20,9)
+    a.li(9,0x100000);a.r(0x2B,8,20,9);a.branch(5,8,0,'reject')
+    a.li(9,0x8000000-0x1670);a.r(0x2B,8,9,20);a.branch(5,8,0,'reject')
+    a.lw(8,20,4);a.li(9,1);a.branch(5,8,9,'reject')
+    a.lw(8,20,16);a.lw(9,18,12);a.branch(5,8,9,'reject')
+    for off in (4000,4004):
+        a.lw(8,20,off);a.addiu(9,20,3936);a.branch(4,8,9,f'sphere{off}')
+        a.addiu(9,20,3968);a.branch(5,8,9,'reject');a.label(f'sphere{off}')
+    a.branch(4,21,0,'next')
+    a.move(4,18);a.move(5,20);a.call(story.ARRIVAL);a.branch(4,2,0,'reject')
+    # Native dispatch performs the outgoing action's cleanup before idle; do
+    # not directly overwrite animation/action numbers or leave an attack live.
+    a.move(4,18);a.li(5,11);a.call(A(0x1E0290))
+    a.move(4,18);a.call(A(0x1E23D0))
+    a.label('next');a.addiu(22,22,1);a.jump('scan')
+    a.label('accepted');restore_hilo(a);full.restore(a);a.li(2,1);a.jr()
+    a.label('reject');restore_hilo(a);full.restore(a);a.move(2,0);a.jr()
+    data=a.finish();assert FORMATION+len(data)<=CONTROL;return data
+
+
 def start_code():
     import story_runtime as story
     a=Assembler(START);full.save(a);story.guard(a,'reject')
@@ -80,6 +137,8 @@ def start_code():
     a.lw(8,28,-22180);a.li(9,0x100000);a.r(0x2B,9,8,9);a.branch(5,9,0,'reject')
     a.li(9,0x8000000-832);a.r(0x2B,9,9,8);a.branch(5,9,0,'reject')
     a.lw(9,8,812);a.branch(5,9,0,'reject');a.lw(9,8,776);a.i(12,9,9,1);a.branch(5,9,0,'reject')
+    a.lw(4,6,76);a.move(5,0);a.call(FORMATION);a.branch(4,2,0,'reject')
+    for reg in (4,5,6,7):a.i(30,reg,29,full.OFFSETS[reg])
     a.sw(4,21,16);a.sw(5,21,20);a.sw(6,21,36);a.sw(7,21,32)
     a.lw(8,6,4);a.sw(8,21,28);a.sw(0,21,24)
     a.addiu(8,0,1);a.sw(8,21,12);a.li(9,prep.CONTROL+16);a.sw(8,9)
@@ -94,6 +153,7 @@ def tick_code():
     a.lw(8,22,12);a.r(0,8,0,8,2);a.li(9,core.MODELS);a.r(0x21,8,8,9);a.lw(8,8);a.branch(5,8,23,'stale')
     a.lw(8,23,4);a.addiu(9,0,1);a.branch(5,8,9,'stale')
     a.lw(8,21,12);a.addiu(9,0,1);a.branch(5,8,9,'advance')
+    a.lw(4,24,76);a.li(5,1);a.call(FORMATION);a.branch(4,2,0,'stale')
     a.lw(8,23,192);a.sw(8,21,40);a.lw(8,22,2420);a.sw(8,21,44)
     a.lw(8,23,3200);a.sw(8,21,144)
     a.lw(8,28,-22176);a.sw(8,21,48);a.lw(25,28,-22180);a.sw(25,21,52)
@@ -233,10 +293,11 @@ def asset_blocks(ram, mission, iso=None):
         descriptors.extend(struct.pack('<IIfiii12f',assets[key] if anim else 0,frames,shot['speed'],
             voice.get('character',-1),voice.get('line',0),voice.get('volume',100),
             *camera['eye'],*camera['target'],*camera.get('end_eye',camera['eye']),*camera.get('end_target',camera['target'])))
-        descriptors.extend(struct.pack('<2I',camera_address,0))
+        cast_mask=sum(1<<story.physical(f) for f in mission['fighters']) if shot.get('reset_positions') else 0
+        descriptors.extend(struct.pack('<2I',camera_address,cast_mask))
     if DESCRIPTORS+len(descriptors)>CLIPS or CLIPS+len(data)>END:
         raise ValueError('Scenario animation assets exceed 344 KiB; reuse clips or split this scenario')
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     control=struct.pack('<3I',MAGIC,u(core.ACTORS),u(core.MODE+4))
-    return [(START,start_code()),(TICK,tick_code()),(VOICE,voice_code()),(CONTROL,control),
+    return [(START,start_code()),(TICK,tick_code()),(VOICE,voice_code()),(FORMATION,formation_code()),(CONTROL,control),
             (DESCRIPTORS,bytes(descriptors)),(CLIPS,bytes(data))],links

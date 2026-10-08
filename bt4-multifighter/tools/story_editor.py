@@ -97,6 +97,9 @@ class ActionDialog(QDialog):
             self.voice_character=characters();self.voice_line=spin(0,99,0);self.volume=spin(0,100,100)
             if kind=='cinematic':
                 self.animated=QCheckBox('Play an animation (off = camera-only shot)');self.animated.setChecked(True);layout.addRow(self.animated)
+                self.reset_positions=QCheckBox('Reset living fighters to the stage formation before this shot')
+                self.reset_positions.setToolTip('Waits for bound attacks and reloads; resets position, facing and motion together. Fallen and retired fighters stay untouched.')
+                layout.addRow(self.reset_positions)
                 self.donor=characters();self.clip=spin(0,413,0);self.speed=QDoubleSpinBox();self.speed.setRange(.1,3);self.speed.setValue(1)
                 self.seconds.setRange(.1,30)
                 self.voice_enabled=QCheckBox('Play a voice line with this shot')
@@ -129,6 +132,7 @@ class ActionDialog(QDialog):
             voice=action if self.kind=='voice' else action.get('voice',{})
             choose(self.voice_character,voice.get('character',0));self.voice_line.setValue(voice.get('line',0));self.volume.setValue(voice.get('volume',100))
             if self.kind=='cinematic':
+                self.reset_positions.setChecked(action.get('reset_positions',False))
                 anim=action.get('animation');self.animated.setChecked(bool(anim))
                 if anim:choose(self.donor,anim['character']);self.clip.setValue(anim['clip'])
                 self.speed.setValue(action.get('speed',1))
@@ -183,6 +187,7 @@ class ActionDialog(QDialog):
                 if self.end_look.text().strip():camera['end_target']=vector(self.end_look)
                 if self.easing.currentData()!='smooth':camera['easing']=self.easing.currentData()
                 result.update(camera=camera,seconds=self.seconds.value(),speed=self.speed.value())
+                if self.reset_positions.isChecked():result['reset_positions']=True
                 if self.animated.isChecked():result['animation']=dict(character=self.donor.currentData(),clip=self.clip.value())
                 if self.voice_enabled.isChecked():result['voice']=voice
         return result
@@ -532,7 +537,7 @@ class StoryEditor(QWidget):
     def show_status(self,state):
         self.graph.show_status(state)
         if not state:
-            self.live_status.setText('No active story mission in the monitored match.');return
+            self.live_status.setText('No active custom scenario in the monitored match.');return
         if state.get('error'):self.live_status.setText(state['error']);return
         events=' · '.join(e['id']+': '+e['status']+(f" ({e['action']})" if e.get('action') else '') for e in state.get('events',[]))
         self.live_status.setText(f"{state['title']} — {state['seconds']:.1f}s — {state.get('outcome','running')}\n{events}")
@@ -548,7 +553,7 @@ class StoryEditor(QWidget):
         if path:
             try:self.document=missions.load(path);self.path=None;self.refresh()
             except Exception as e:self.error(e)
-    def error(self,e):QMessageBox.warning(self,'Story missions',str(e))
+    def error(self,e):QMessageBox.warning(self,'Custom Scenarios',str(e))
     def refresh(self):
         self.title.setText(self.document['title']);self.fighters.setRowCount(len(self.document['fighters']))
         self.description.setPlainText(self.document.get('description',''))

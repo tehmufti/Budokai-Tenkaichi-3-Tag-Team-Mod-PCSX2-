@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 8 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.8).
+Download the **Version 9 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.9).
 Windows and Linux x86-64 downloads are available. Supply your own compatible
 game disc image, PS2 BIOS and PCSX2 installation; none is included here.
 The release includes English and Spanish mod interfaces.
@@ -16,8 +16,9 @@ This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
 
-Version 8 prepares settled lobby selections in the background to shorten online
-starts. See the [startup measurements and limits](release_tools/online-startup/VALIDATION.md).
+Version 9 builds reusable neutral selection caches locally and transfers compact
+checked checkpoints to shorten fresh online starts. It also prepares settled
+lobby selections in the background. See the [startup measurements and limits](release_tools/online-startup/VALIDATION.md).
 
 ## Source layout
 
@@ -57,10 +58,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 8 Windows ZIP can be used instead of downloading it:
+An existing Version 9 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.8.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.9.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -74,9 +75,9 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Version 8 source checkpoint
+## Version 9 source checkpoint
 
-This tag provides the runtime source for the Version 8 Windows and Linux
+This tag provides the runtime source for the Version 9 Windows and Linux
 installers. It retains Version 7's reviewed game hooks and regional adapters
 and adds the online startup improvements, their portable tests and measured
 validation limits. Documentation is sanitized and line endings normalized.

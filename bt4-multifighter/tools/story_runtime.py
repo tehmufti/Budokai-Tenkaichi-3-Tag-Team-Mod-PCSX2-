@@ -302,7 +302,10 @@ def frame(mission, cpu_flags):
                 a.branch(4,9,0,f'{prefix}a{k}claim');a.branch(5,9,10,nxt)
                 a.label(f'{prefix}a{k}claim');a.sw(10,8)
                 if kind=='set_stats':
-                    a.lw(8,19);a.branch(6,8,0,nxt)
+                    # Stat/policy changes also apply to fallen allies. A KO is
+                    # not an idle window that will eventually arrive, and
+                    # invulnerability must never stall a reinforcement event.
+                    # Only an explicit health change can revive a fighter.
                     apply_stats(a,index,action['stats'],f'{prefix}a{k}stats');a.jump(success)
                 elif kind=='take_control':
                     import story_cast
@@ -333,7 +336,7 @@ def frame(mission, cpu_flags):
                     # Only a borrowed animation replaces the current action. A camera-only shot (and a
                     # frozen hold) keeps the live pose under the shared combat hold, so it must not
                     # wait for an idle window: a CPU charging ki or a moving player stalled scenes.
-                    if action.get('animation') is not None:ready(a,nxt)
+                    if action.get('animation') is not None and not action.get('reset_positions'):ready(a,nxt)
                     a.move(4,18);a.move(5,20);a.li(6,shot_links[key]);a.li(7,key);a.call(cinema.START);a.jump(nxt)
                 elif kind=='voice':
                     address=ACTORS+0x400+12*len(voices);voices.append(action)

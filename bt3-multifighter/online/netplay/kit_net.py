@@ -105,6 +105,10 @@ class Channel:
         body = bytes.fromhex(sha) + data
         self._send(struct.pack('>I', len(body) + 1) + b'P' + body)
 
+    def send_transfer_chunk(self, token, offset, data):
+        body = struct.pack('>16sQ', bytes.fromhex(token), offset) + data
+        self._send(struct.pack('>I', len(body) + 1) + b'W' + body)
+
     def _send(self, frame):
         with self.send_lock:
             try:
@@ -179,6 +183,8 @@ class Channel:
                 out.append(('B', body[1:]))
             elif body[:1] == b'P' and len(body) > 33:
                 out.append(('P', body[1:]))
+            elif body[:1] == b'W' and len(body) > 25:
+                out.append(('W', body[1:]))
         return out
 
     def silent(self, now=None):
@@ -201,6 +207,8 @@ class Channel:
             return 'J', json.loads(payload.decode('utf-8'))
         if kind == 'B':
             return 'B', payload
+        if kind == 'W' and len(payload) > 24:
+            return 'W', payload
         raise ConnectionError(f'unknown frame type {kind!r}')
 
     def expect(self, kind, timeout, step):

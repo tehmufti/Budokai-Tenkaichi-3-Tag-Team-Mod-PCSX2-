@@ -301,7 +301,7 @@ def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assig
 
 
 def final_team_manifest(ram, activation, source, play_intro=False, pause_others=True, pause_mode=None, present_mask=None,
-                        settings=None, battle_mode='teams', humans=1, assignment=None):
+                        settings=None, battle_mode='teams', humans=1, assignment=None, mission=None):
     """Compose all playability guards before exposing the first ready frame."""
     training=battle_mode in ('training','training_coop')
     if training:battle_mode='coop' if battle_mode=='training_coop' else 'teams'
@@ -446,6 +446,14 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # Hooks lock-off's INPUT/APPLY entries; all-legacy settings add nothing.
     import lockon_select
     builders.append(lambda r: lockon_select.build_memory(r,settings=preferences,source=source))
+    if mission is not None:
+        import story_runtime
+        if training or battle_mode != 'teams':
+            raise ValueError('Custom missions use Modded Team Battle, not training or free-for-all')
+        if (any(f.get('transformations') for f in mission['fighters']) or any(p['transform_chance'] < 100 for p in mission.get('cpu_profiles',{}).values()) or
+                any(a['type']=='transform' for e in mission['events'] for a in e['actions'])):
+            builders.append(lambda r: npc_transform_policy.build_memory(r,settings=preferences,source=source,force=True))
+        builders.append(lambda r: story_runtime.build_memory(r,mission,source=source))
     # Wraps those entries, the damage accumulator and the overhead-bar call again, so it is the last builder.
     import lockon_threat
     builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
@@ -783,8 +791,13 @@ class Session:
         if not isinstance(self, StreamingSession):   # the native-frame path needs the game running
             print(f'Capturing a fresh idle team match with up to {battle_mode_policy.TEAM_CAPACITY} fighters per side. You may start with the game paused.', flush=True)
         ram = self.snapshot('original-selected-match', require_running=False)
-        minimum_members=2 if battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) else 1
+        import story_missions
+        mission=story_missions.armed() if self.battle_mode == 'teams' else None
+        minimum_members=2 if mission is not None or battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) else 1
         selection = capture(ram,minimum_members=minimum_members)
+        if mission is not None:
+            import story_runtime
+            mission=story_runtime.validate_selection(mission,selection,ram,self.humans,self.assignment)
         if self.battle_mode in ('coop','training_coop') or self.humans>=3 or self.assignment is not None:
             battle_mode_policy.validate_roster('coop' if self.battle_mode=='training_coop' else 'teams' if self.battle_mode=='training' else self.battle_mode,2*selection['members_per_side'],
                                                selection['participation_mask'],self.humans,self.assignment)
@@ -842,8 +855,10 @@ class Session:
         # Install every dependent quality patch before the first exposed frame.
         final = final_team_manifest(ram, activation, self.source, play_intro=self.play_intro,
             pause_mode=self.settings[mod_settings.MODE_KEY], present_mask=selection['participation_mask'],
-            settings=self.settings, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment)
+            settings=self.settings, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,mission=mission)
         self.install(final, 'complete-team')
+        if mission is not None:
+            write_json(self.run/'mission.json',mission)
         self.wait_word(extra_ground_effects.CONTROL, 5, 'Preparing dust and terrain effects...')
         self.wait_word(extra_generic_effects.CONTROL, 5, 'Preparing each fighter\'s cosmetic effects...')
         self.wait_word(extra_extended_auras.CONTROL, 5, 'Preparing afterimages and giant auras...')
@@ -858,6 +873,12 @@ class Session:
         # the data-only start signal. No save or reload occurs after uncovering.
         self.progress('Ready', 6)
         self.release_start()
+        if mission is not None:
+            try:story_missions.consumed(mission)
+            except (OSError,ValueError,KeyError) as error:
+                # The world is already running. A concurrently edited queue
+                # must not tear down its healthy reload/camera services.
+                print(f'Warning: match started, but the queued story mission could not be cleared: {error}',flush=True)
         status = dict(mode=self.mode, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,
             settings=self.settings, slots=[s for s,_ in self.slots],
             status='active', playable_state=str(self.source))

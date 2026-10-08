@@ -21,9 +21,6 @@ WINDOWS = os.name == 'nt'
 ENTRY_NAMES = ('play', 'mod_settings', 'check_installation', 'scan_compatibility', 'build_expanded_maps',
                'pcsx2_settings')
 ENTRIES = {
-    'Session graphics: automatic hardware fixes; internal resolution = {multiplier}': 'Gráficos de la sesión: correcciones de hardware automáticas; resolución interna = {multiplier}',
-    'Session graphics: existing hardware fix preferences; internal resolution = {multiplier}': 'Gráficos de la sesión: se mantienen las correcciones de hardware elegidas; resolución interna = {multiplier}',
-
     'windows-player': ('Play.cmd', 'Mod settings.cmd', 'Check installation.cmd', 'Scan compatibility.cmd',
                        'Build expanded maps.cmd', ''),
     'linux-player': ('Play.sh', 'Mod settings.sh', 'Check installation.sh', 'Scan compatibility.sh',
@@ -87,6 +84,8 @@ def using(settings):
 
 
 ES = {
+    'Session graphics: automatic hardware fixes; internal resolution = {multiplier}': 'Gráficos de la sesión: correcciones de hardware automáticas; resolución interna = {multiplier}',
+    'Session graphics: existing hardware fix preferences; internal resolution = {multiplier}': 'Gráficos de la sesión: se mantienen las correcciones de hardware elegidas; resolución interna = {multiplier}',
     'Enable manual lock-off': 'Permitir quitar el objetivo manualmente',
     'Lock-off button': 'Botón para quitar el objetivo',
     'Target HUD while unlocked': 'Interfaz del objetivo sin fijar',
@@ -113,6 +112,16 @@ ES = {
         'Para un luchador del equipo más pequeño o, si se elige, uno al que apuntan dos o más enemigos. El daño sigue el número de luchadores vivos: por cada enemigo de más que afronta cada uno, causas más y recibes menos (como mucho 300% causado, al menos 40% recibido); con equipos iguales o en Todos contra todos el daño es normal. La velocidad acorta los lanzamientos, las levantadas y las reacciones a golpes. Protección: al levantarte, los golpes normales no te aturden ni te dañan; los ataques Blast 2, los Rush y los agarres sí. Romper el combo da 1 s de protección, como mucho cada 5 s y nunca durante un Rush o un agarre. Equilibrada: +15%/-10%, 150%, 0,5 s, 12 golpes. Fuerte: +40%/-30%, 200%, 1 s, 8 golpes. Personalizada usa las filas de abajo; las dos filas sobre a quién se ayuda valen para todas. Las marcas de "Enemigos que te fijan" están en la página Interfaz. Se aplica al próximo combate; la revancha conserva sus ajustes.',
     'Team Battle': 'Por equipos', 'Free-for-all': 'Todos contra todos', 'Co-op': 'Cooperativo',
     'Modded Training': 'Entrenamiento mod', '1 Player': '1 jugador', '2 Players': '2 jugadores',
+    'Modded Scenarios': 'Escenarios mod', 'MODDED SCENARIOS': 'ESCENARIOS MOD',
+    'Play saved story battles.\nFighters are selected automatically.': 'Juega batallas de historia.\nLos luchadores se eligen solos.',
+    'TEAM {team}': 'EQUIPO {team}', 'Reinforcement': 'Refuerzo',
+    'Arena: {arena}': 'Escenario: {arena}',
+    'Choose your arena after continuing.': 'Elige el escenario al continuar.',
+    'Cross: play scenario    Triangle: back': 'Cruz: jugar    Triángulo: volver',
+    'Unavailable scenario': 'Escenario no disponible', '{count} scenarios': '{count} escenarios',
+    'No saved scenarios found.': 'No hay escenarios guardados.',
+    'Up/Down: select   L1/R1: page   Cross: details': 'Arriba/Abajo: elegir   L1/R1: página   Cruz: detalles',
+    'Triangle: return to Modded Modes': 'Triángulo: volver a los modos del mod',
     '3 Players': '3 jugadores', '4 Players': '4 jugadores', 'CPU Only': 'Solo CPU',
     'Mod Settings': 'Ajustes del mod', 'Back': 'Volver', 'Mod modes': 'Modos del mod',
     'Original game menu': 'Menú original',

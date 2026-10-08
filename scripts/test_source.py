@@ -14,6 +14,6 @@ if __name__ == '__main__':
     run(['-m','unittest','discover','-s','bt3-multifighter/tools','-p','test_*.py'])
     run(['-m','unittest','discover','-s','player-installer','-p','test_*.py'])
     run(['-m','unittest','discover','-s','iso_compatibility','-t','.','-p','test_*.py'])
-    for name in ('test_rooms.py','test_loading_policy.py','test_version_numbering.py'):
+    for name in ('test_rooms.py','test_loading_policy.py','test_version_numbering.py','test_bot_intro_gates.py','test_scenario_queue_isolation.py'):
         run(['release_tools/online-next/'+name])
     run(['-m','unittest','discover','-s','release_tools/online-startup','-p','test_*.py'])

@@ -211,7 +211,7 @@ def validate(document):
             require(kind in ('enter', 'transform', 'recover', 'heal', 'taunt', 'cinematic', 'voice','set_stats','despawn','take_control','target','defeat'), f'Unknown action: {kind}')
             allowed = {'enter': ('health_percent', 'intro'), 'recover': ('health_percent',),
                        'heal': ('health_percent',), 'transform': ('character',), 'taunt': (), 'voice': ('character', 'line', 'volume'),
-                       'cinematic': ('animation', 'seconds', 'speed', 'camera', 'voice'),
+                       'cinematic': ('animation', 'seconds', 'speed', 'camera', 'voice', 'reset_positions'),
                        'set_stats': ('stats',), 'despawn': (), 'take_control': ('player',), 'target': ('target',), 'defeat': ()}[kind]
             fields(action, ('type', 'fighter'), allowed, 'Action')
             require(action['fighter'] in fighters, 'Unknown action fighter')
@@ -231,6 +231,7 @@ def validate(document):
             if kind == 'transform': integer(action.get('character'), 0, 65535, 'Destination form')
             if kind == 'voice': validate_voice(action, action=True)
             if kind == 'cinematic':
+                require(type(action.get('reset_positions',False)) is bool, 'Reset positions must be boolean')
                 anim=action.get('animation')
                 if anim is not None:
                     fields(anim, ('character', 'clip'), label='Cinematic animation')

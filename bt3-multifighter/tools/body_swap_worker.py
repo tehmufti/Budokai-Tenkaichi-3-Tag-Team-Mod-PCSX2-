@@ -154,12 +154,14 @@ class Worker:
         direct_hook=struct.pack('<2I',(2<<26)|(runner.ENTRY>>2),0)
         # This optional outer wrapper has an independent full-code receipt.
         # Do not accept an arbitrary jump merely because its tail names us.
-        outer_view=lazy_ram.LazyRam(p) if p.read(runner.HOOK,8)!=direct_hook else None
+        outer_view=lazy_ram.LazyRam(p)
         for capacity in (policy.TEAM_CAPACITY,policy.LEGACY_TEAM_CAPACITY):
             try:
                 with policy.building_for(capacity),lazy_ram.patched():
-                    hook=runner.frame_hook(outer_view) if outer_view is not None else direct_hook
+                    import story_runtime
+                    hook=runner.frame_hook(outer_view)
                     expected=[(at,hook if at==runner.HOOK else data) for at,data in runner.program(previous)+capture.program()]
+                    expected=[(at,story_runtime.dependency_override(outer_view,at,data)) for at,data in expected]
             except ValueError:
                 continue
             if all(p.read(at,len(data))==data for at,data in expected):

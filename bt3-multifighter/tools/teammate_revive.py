@@ -423,10 +423,13 @@ def validate_memory(ram):
     for p,b in program(previous,version):
         import four_player_mode
         b=four_player_mode.dependency_override(ram,p,b)
+        import story_runtime
+        b=story_runtime.dependency_override(ram,p,b)
         if ram[p:p+len(b)]!=b:
             if p==HOOKS[1]:
                 import body_swap_runner as bodies
-                if ram[p:p+len(b)]==JUMP(bodies.PROTECTED):
+                expected_contact=story_runtime.dependency_override(ram,p,JUMP(bodies.PROTECTED))
+                if ram[p:p+len(b)]==expected_contact:
                     if bodies.validate_memory(ram,previous_chain=False)!=CONTACT:
                         raise ValueError('Body Change revival continuation changed')
                     continue
