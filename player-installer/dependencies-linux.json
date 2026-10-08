@@ -1,0 +1,127 @@
+{
+  "python": [
+    "3.11",
+    "3.12",
+    "3.13",
+    "3.14"
+  ],
+  "platform": "manylinux_x86_64",
+  "packages": {
+    "capstone": {
+      "version": "5.0.9",
+      "files": {
+        "capstone-5.0.9-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "273fd8d747d2e35c88f91450be51a603ecfaafb00d96d9f315dcb8689c86193e"
+      },
+      "source": "https://pypi.org/project/capstone/5.0.9/",
+      "bundled_libraries": []
+    },
+    "numpy": {
+      "version": "2.4.6",
+      "files": {
+        "numpy-2.4.6-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "89cd468399cfd2504718f0ba50e410dca55a170b61a02ad92bb18c8a65186e93",
+        "numpy-2.4.6-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "90f9849678c75fe7afa2d348ac842c168b0a4d3d61919687216dfc547976d853",
+        "numpy-2.4.6-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "a7830bab239b79cda9c08c2da014761cafb48da6150e1da17ac06283f43b6089",
+        "numpy-2.4.6-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "a2c306dea656c12c68f51f4cea133cbe78ca7435eb28c735eac1d3ebe73be6e8"
+      },
+      "source": "https://pypi.org/project/numpy/2.4.6/",
+      "bundled_libraries": [
+        "libgfortran-040039e1-0352e75f.so.5.0.0",
+        "libquadmath-96973f99-934c22de.so.0.0.0",
+        "libscipy_openblas64_-32a4b2a6.so"
+      ]
+    },
+    "pillow": {
+      "version": "12.3.0",
+      "files": {
+        "pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd",
+        "pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91",
+        "pillow-12.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3",
+        "pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": "251bf95b67017e27b13d82f5b326234ca62d70f9cf4c2b9032de2358a3b12c7b"
+      },
+      "source": "https://pypi.org/project/pillow/12.3.0/",
+      "bundled_libraries": [
+        "libXau-154567c4.so.6.0.0",
+        "libavif-8a7f9d56.so.16.4.2",
+        "libbrotlicommon-53534446.so.1.2.0",
+        "libbrotlidec-7e5462ba.so.1.2.0",
+        "libfreetype-9fc94c80.so.6.20.6",
+        "libharfbuzz-172d1f63.so.0.61421.0",
+        "libjpeg-31e2ca52.so.62.4.0",
+        "liblcms2-dade1fbf.so.2.0.19",
+        "liblzma-2be87c3e.so.5.8.3",
+        "libopenjp2-b07f72ad.so.2.5.4",
+        "libpng16-abb096d5.so.16.58.0",
+        "libsharpyuv-0066295b.so.0.1.2",
+        "libtiff-fc87e79d.so.6.2.0",
+        "libwebp-51b0b3f7.so.7.2.0",
+        "libwebpdemux-9fe2abcc.so.2.0.17",
+        "libwebpmux-8fb1c9f6.so.3.1.2",
+        "libxcb-ad31f5a3.so.1.1.0",
+        "libzstd-44be1190.so.1.5.7"
+      ]
+    },
+    "psutil": {
+      "version": "7.2.2",
+      "files": {
+        "psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl": "076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9"
+      },
+      "source": "https://pypi.org/project/psutil/7.2.2/",
+      "bundled_libraries": []
+    },
+    "pycdlib": {
+      "version": "1.20.0",
+      "files": {
+        "pycdlib-1.20.0-py2.py3-none-any.whl": "cb675959dd6d61e94f02560ed7e9a5d368a3188b5f7f31813bc25a750cff0863"
+      },
+      "source": "https://pypi.org/project/pycdlib/1.20.0/",
+      "bundled_libraries": []
+    },
+    "pyelftools": {
+      "version": "0.33",
+      "files": {
+        "pyelftools-0.33-py3-none-any.whl": "f215ad5f47d3f1373a21496a6c9e0707c622840d0622f23ff7ce08678b020036"
+      },
+      "source": "https://pypi.org/project/pyelftools/0.33/",
+      "bundled_libraries": []
+    },
+    "zstandard": {
+      "version": "0.25.0",
+      "files": {
+        "zstandard-0.25.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "9300d02ea7c6506f00e627e287e0492a5eb0371ec1670ae852fefffa6164b072",
+        "zstandard-0.25.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "5a56ba0db2d244117ed744dfa8f6f5b366e14148e00de44723413b2f3938a902",
+        "zstandard-0.25.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "8e735494da3db08694d26480f1493ad2cf86e99bdd53e8e9771b2752a5c0246a",
+        "zstandard-0.25.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": "e09bb6252b6476d8d56100e8147b803befa9a12cea144bbe629dd508800d1ad0"
+      },
+      "source": "https://pypi.org/project/zstandard/0.25.0/",
+      "bundled_libraries": []
+    }
+  },
+  "licenses": {
+    "notices-linux/capstone/capstone-5.0.9.dist-info/LICENSE.TXT": "65e9ed46a59976eda8f5bd1ea79a680dea38dd299c760bc9a8d87a764ef5029b",
+    "notices-linux/numpy/numpy/_core/include/numpy/random/LICENSE.txt": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+    "notices-linux/numpy/numpy/ma/LICENSE": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+    "notices-linux/numpy/numpy/random/LICENSE.md": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/LICENSE.txt": "4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING": "3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/highway/LICENSE": "e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt": "f7b14309e5f54e5022b26448eefd419988ada2aec01d3c1162d84a0ea8f21f2c",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md": "211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE": "c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md": "a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt": "a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/ma/LICENSE": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/LICENSE.md": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/distributions/LICENSE.md": "469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md": "0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md": "e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/philox/LICENSE.md": "6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md": "9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f",
+    "notices-linux/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md": "268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9",
+    "notices-linux/pillow/pillow-12.3.0.dist-info/licenses/LICENSE": "dda12a98c1979cf3d94df1cff45d27a4cb3f04a60c76f76902ac54cac03ec0ce",
+    "notices-linux/psutil/psutil-7.2.2.dist-info/LICENSE": "b89c063b3786e28e0c0a38f1931db61fed35e69dd2a2966fbecffee0f46c8d10",
+    "notices-linux/pycdlib/pycdlib-1.20.0.dist-info/licenses/COPYING": "2d52ff97fb4d2e2d1e166a3c2d80208e89d7a0e92ebdc7c4ca07f7f5b0757e72",
+    "notices-linux/pyelftools/pyelftools-0.33.dist-info/licenses/LICENSE": "ae18bf4cb82f92af7547259177bc28bc48e4fc732518bcedfe690226288d3445",
+    "notices-linux/zstandard/zstandard-0.25.0.dist-info/licenses/LICENSE": "788fe85e53724a40b299051c4abc9cf74d42b27e7968325b80891c25f79adb4b"
+  }
+}

@@ -1,0 +1,90 @@
+{
+ "schema": "ttm-online-guest-fingerprint",
+ "v": 2,
+ "adapter": "bt3-usa",
+ "regions": {
+  "spectator_code": "7a4c45ed2d1a5138612d78e5f364048f88a3f0a9f0f8aa568173220b67da98e2",
+  "feedback_draw": "573a72f64c7e909d9c2a1f8b7a5af8955c31b500e998cce84f70d57e1535f0c5",
+  "feedback_probe": "23717366b4f57125f29a873ceb28d27a3fe95ee7ec1b3778da41b0d480a3e529",
+  "npc_policy": [
+   "f293e86908b257163794f04c831a85a0810befda9978e93a7c4e9c0d6bce8990",
+   "0693f6bfa2117a9b14f9ceca13d3a5611de5dca226bf999f20a7f615fbd08dff"
+  ],
+  "start_gate": "10293f3d36d5f4ef6b38c96b6fb7daed0cf445e0a0a404be54417315211e593b",
+  "native_prep": [
+   "930dfe0957c3691b7a210f116c331b8b517860f6825582ff644a8645ed443788",
+   "c0975720106fe530ef68c3b825f24ab5228a3bc482fee18e11299373067c6720",
+   "cf31db12f2dd8590a0d7a112b25d32d37b99a235249161ca0da5bb7532df193a"
+  ],
+  "reload_requests": "5a424dc5dfb2dc5d1d84a43cb1eb912c68c170255df98af321830e5446db0ac7",
+  "reload_forms_cell": "38a7040556d18b9ecc324a7dd3b591e94be78a8ebd892bb39deaa6eab189c19b"
+ },
+ "ranges": {
+  "spectator_code": [
+   "0x07280000",
+   "0x07287000"
+  ],
+  "feedback_draw": [
+   "0x07287000",
+   "0x07289000"
+  ],
+  "feedback_probe": [
+   "0x07289000",
+   "0x0728d000"
+  ],
+  "npc_policy": [
+   "0x07290000",
+   "0x0729f000"
+  ],
+  "start_gate": [
+   "0x073e1000",
+   "0x073e1c00"
+  ],
+  "native_prep": [
+   "0x07680000",
+   "0x0768f000"
+  ],
+  "reload_requests": [
+   "0x07640000",
+   "0x0764f000"
+  ],
+  "reload_forms_cell": [
+   "0x07660000",
+   "0x0766e000"
+  ]
+ },
+ "recorded_from": [
+  "Tag Team Mod 0.1.0-beta.35 (a private copy of the Desktop \"mod test/v 35\" installation): p33 captures a-3v3, b-5v5, c-2v4, d-3v2",
+  "Tag Team Mod 0.1.0-beta.35 (p27 two-PC kit preparation, the user's mod settings): match-20260930-200650"
+ ],
+ "confirmed": [
+  {
+   "build": "Tag Team Mod 0.1.0-beta.36 (scratch USA install, two live captures Oct 2)",
+   "captures": [
+    "spec-0b7e76f759447a11",
+    "spec-c2eafa15d3968a44-test"
+   ]
+  }
+ ],
+ "families": [
+  {
+   "family": "beta.35-36",
+   "native_prep": "930dfe0957c3691b7a210f116c331b8b517860f6825582ff644a8645ed443788",
+   "pnach": "5e1d4bb63d17462eb9173273eecd1361e8c1a6cbe398ce4e10528755dafe890a"
+  },
+  {
+   "family": "beta.37-41",
+   "native_prep": "c0975720106fe530ef68c3b825f24ab5228a3bc482fee18e11299373067c6720",
+   "pnach": "ed5cf82dac85f3986e552c9f5b7a56caf3d447242aed1690d08bd094d6a23a1b"
+  },
+  {
+   "family": "beta.42",
+   "native_prep": "cf31db12f2dd8590a0d7a112b25d32d37b99a235249161ca0da5bb7532df193a",
+   "pnach": "1d3321bc1cfbdfbe848e0197b0e5cc6db0886c8e6184f284e0c49d8379709d94"
+  }
+ ],
+ "note": "kit 2.0: a region holds every accepted build family's SHA-256; families name the runtime pnach each build family installs (match/runtime/pnach/<sha256>.pnach)",
+ "notes": {
+  "npc_policy": "first: CPU transformations off (every family); then: on (host services, beta.37..41)"
+ }
+}

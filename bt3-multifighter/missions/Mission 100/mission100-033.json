@@ -1,0 +1,158 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "id": "mission100-033",
+  "game_family": "bt3",
+  "title": "033 - Underworld's Hooligan",
+  "description": "Original Mission 100 enemy roster. Choose your own allies. Native restrictions are preserved in source metadata; story events are optional.",
+  "player_selection": true,
+  "fighters": [
+    {
+      "id": "hero",
+      "team": 1,
+      "slot": 1,
+      "character": 0,
+      "costume": 0,
+      "reserve": false
+    },
+    {
+      "id": "enemy-1",
+      "team": 2,
+      "slot": 1,
+      "character": 87,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          87,
+          0,
+          15,
+          151,
+          202,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-2",
+      "team": 2,
+      "slot": 2,
+      "character": 90,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          90,
+          0,
+          15,
+          144,
+          202,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-3",
+      "team": 2,
+      "slot": 3,
+      "character": 94,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          94,
+          0,
+          15,
+          146,
+          202,
+          271,
+          6,
+          102,
+          104,
+          96,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-4",
+      "team": 2,
+      "slot": 4,
+      "character": 97,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          97,
+          0,
+          15,
+          146,
+          202,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-5",
+      "team": 2,
+      "slot": 5,
+      "character": 107,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          107,
+          0,
+          15,
+          147,
+          202,
+          271,
+          6,
+          102,
+          104,
+          96,
+          999
+        ]
+      },
+      "reserve": false
+    }
+  ],
+  "events": [],
+  "source": {
+    "kind": "mission100",
+    "number": 33,
+    "native_metadata": [
+      2,
+      0,
+      0,
+      18,
+      9,
+      0,
+      10,
+      3,
+      160,
+      161,
+      162,
+      163,
+      164
+    ],
+    "table_sha256": "2ed7acd4d6dbab15ea9cb80d3c5af9d28719b4fdb4df61a369e69406d3d8bec7",
+    "restrictions_enforced": false,
+    "stage_verified": false
+  },
+  "cpu_profiles": {}
+}

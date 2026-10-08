@@ -1,0 +1,83 @@
+{
+  "python": "3.11",
+  "platform": "win_amd64",
+  "packages": {
+    "capstone": {
+      "version": "5.0.9",
+      "file": "capstone-5.0.9-py3-none-win_amd64.whl",
+      "sha256": "732cedbbb56d42e723f14d7af6387f1454194a820b4b96b56d1e53f865ef85d0",
+      "source": "https://pypi.org/project/capstone/5.0.9/"
+    },
+    "comtypes": {
+      "version": "1.4.17",
+      "file": "comtypes-1.4.17-py3-none-any.whl",
+      "sha256": "4e0a221dde2c589b82977bed802efd71cd5eb67a380347b732e02735e597f586",
+      "source": "https://pypi.org/project/comtypes/1.4.17/"
+    },
+    "numpy": {
+      "version": "2.4.6",
+      "file": "numpy-2.4.6-cp311-cp311-win_amd64.whl",
+      "sha256": "1e254a00cdf42b1e4d5b3d68d33af63268d41340d8885df2ab6470f2e1500147",
+      "source": "https://pypi.org/project/numpy/2.4.6/"
+    },
+    "pillow": {
+      "version": "12.3.0",
+      "file": "pillow-12.3.0-cp311-cp311-win_amd64.whl",
+      "sha256": "8e95e1385e4998ae9694eeaa4730ba5457ff61185b3a55e2e7bea0880aef452a",
+      "source": "https://pypi.org/project/pillow/12.3.0/"
+    },
+    "psutil": {
+      "version": "7.2.2",
+      "file": "psutil-7.2.2-cp37-abi3-win_amd64.whl",
+      "sha256": "eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988",
+      "source": "https://pypi.org/project/psutil/7.2.2/"
+    },
+    "pycdlib": {
+      "version": "1.20.0",
+      "file": "pycdlib-1.20.0-py2.py3-none-any.whl",
+      "sha256": "cb675959dd6d61e94f02560ed7e9a5d368a3188b5f7f31813bc25a750cff0863",
+      "source": "https://pypi.org/project/pycdlib/1.20.0/"
+    },
+    "pyelftools": {
+      "version": "0.33",
+      "file": "pyelftools-0.33-py3-none-any.whl",
+      "sha256": "f215ad5f47d3f1373a21496a6c9e0707c622840d0622f23ff7ce08678b020036",
+      "source": "https://pypi.org/project/pyelftools/0.33/"
+    },
+    "zstandard": {
+      "version": "0.25.0",
+      "file": "zstandard-0.25.0-cp311-cp311-win_amd64.whl",
+      "sha256": "daab68faadb847063d0c56f361a289c4f268706b598afbf9ad113cbe5c38b6b2",
+      "source": "https://pypi.org/project/zstandard/0.25.0/"
+    }
+  },
+  "licenses": {
+    "notices/capstone/capstone-5.0.9.dist-info/LICENSE.TXT": "404bd0cb0137ffb797258f844f53e5273f9b6d5781a1a359a2880411f49a4f30",
+    "notices/comtypes/comtypes-1.4.17.dist-info/licenses/LICENSE.txt": "3b1767f010980b46926b23bf0afce5d72f3359ee5e2b27baca71b9b4209ab383",
+    "notices/numpy/numpy/ma/LICENSE": "d78dbb208b80d92b4d333e41a4baae50d12444f46e53199fa7726a91de6e2da7",
+    "notices/numpy/numpy/random/LICENSE.md": "b4bc2f4fa1c95778f1ed3dd8f14706bece399475b978f9f34b5d3cd72521b48a",
+    "notices/numpy/numpy/_core/include/numpy/random/LICENSE.txt": "d544761558b510866c21f7e8a2d5716fca76e0b98117e3b6b86314db7244d150",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/LICENSE.txt": "a804dff0ead9fadc5293456410bcbfc32bf024be9c4513459663fb7b442d2341",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md": "8db000e158c162e7249787852d8c69764706502ccee725c06641b31c1e95c8af",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt": "19060ef465e1797d682ee0fc3081bd25ab1395e995e43d25c9d13c95d9a3cd6b",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/ma/LICENSE": "d78dbb208b80d92b4d333e41a4baae50d12444f46e53199fa7726a91de6e2da7",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/LICENSE.md": "b4bc2f4fa1c95778f1ed3dd8f14706bece399475b978f9f34b5d3cd72521b48a",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/distributions/LICENSE.md": "cf5619f25b112d5ce7c896efffc8e610bcb345dfadcc19f2c1460aa48fff2c9e",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md": "92c10699884321f1c2947fe2a70ab23b0fbf1507f756d89dd08f38c61fc3d4fa",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md": "41190663b77bee5302386495a07b7eabfbfa571aa0ae2f11da6764162062fc4f",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/philox/LICENSE.md": "322ac46d870c8aeead6c53adcccc839296fb3c8e456eae155081297daf7f8013",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md": "28cad82ce1379dc529df30da78ec012d7d0d1d576b03ddcb93388aee53659f59",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md": "454ec7350e478e037061850b67395753b425b1cb0a34bbc26290b020bf89d763",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt": "d544761558b510866c21f7e8a2d5716fca76e0b98117e3b6b86314db7244d150",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING": "aea41976c720f91bd19725c16916a1ace40eb1ea42620d340e587a5de4bbcea0",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/highway/LICENSE": "d208152e2777ffd0126eacc1bd21c0320d69e4e6b622d21a2a12a47e8ef73763",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt": "b0fd592d4ead563148e3977e7b589169d46a5ef2ff133c755a81af880a3fc919",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md": "a732977853530066790c42817087f4829b518dd98d340c916acbfd227e39d3cb",
+    "notices/numpy/numpy-2.4.6.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE": "585483905b13d4b42f800c55ba99e89d6e2e33ccd5f503e201c07531d148ff41",
+    "notices/pillow/pillow-12.3.0.dist-info/licenses/LICENSE": "4f7866a74802c6326f81faff59a56546b6aec2b10b91973e0e9308de95e79857",
+    "notices/psutil/psutil-7.2.2.dist-info/LICENSE": "c7adc4d5d1337a548b967421f1fbe258b93033a0417708fd6f4e38f8ecbceb80",
+    "notices/pycdlib/pycdlib-1.20.0.dist-info/licenses/COPYING": "2d52ff97fb4d2e2d1e166a3c2d80208e89d7a0e92ebdc7c4ca07f7f5b0757e72",
+    "notices/pyelftools/pyelftools-0.33.dist-info/licenses/LICENSE": "ae18bf4cb82f92af7547259177bc28bc48e4fc732518bcedfe690226288d3445",
+    "notices/zstandard/zstandard-0.25.0.dist-info/licenses/LICENSE": "c15b28f8866500bd3d607c739e87710aa5c47627aa30a0573948414564ff1da2"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "id": "mission100-032",
+  "game_family": "bt3",
+  "title": "032 - Bardock's Blood",
+  "description": "Original Mission 100 enemy roster. Choose your own allies. Native restrictions are preserved in source metadata; story events are optional.",
+  "player_selection": true,
+  "fighters": [
+    {
+      "id": "hero",
+      "team": 1,
+      "slot": 1,
+      "character": 0,
+      "costume": 0,
+      "reserve": false
+    },
+    {
+      "id": "enemy-1",
+      "team": 2,
+      "slot": 1,
+      "character": 1,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          1,
+          0,
+          15,
+          137,
+          202,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-2",
+      "team": 2,
+      "slot": 2,
+      "character": 73,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          73,
+          0,
+          15,
+          137,
+          202,
+          271,
+          6,
+          102,
+          104,
+          96,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-3",
+      "team": 2,
+      "slot": 3,
+      "character": 77,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          77,
+          0,
+          15,
+          137,
+          202,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    }
+  ],
+  "events": [],
+  "source": {
+    "kind": "mission100",
+    "number": 32,
+    "native_metadata": [
+      2,
+      0,
+      0,
+      11,
+      16,
+      0,
+      1,
+      0,
+      155,
+      156,
+      157,
+      158,
+      159
+    ],
+    "table_sha256": "2ed7acd4d6dbab15ea9cb80d3c5af9d28719b4fdb4df61a369e69406d3d8bec7",
+    "restrictions_enforced": false,
+    "stage_verified": false
+  },
+  "cpu_profiles": {}
+}

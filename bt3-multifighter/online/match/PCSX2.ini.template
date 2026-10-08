@@ -1,0 +1,186 @@
+[UI]
+SettingsVersion = 1
+StartPaused = false
+PauseOnFocusLoss = false
+StartFullscreen = false
+
+[Folders]
+Bios = bios
+Snapshots = snaps
+Savestates = sstates
+MemoryCards = memcards
+Logs = logs
+Cheats = cheats
+CheatsWS = cheats_ws
+CheatsNI = cheats_ni
+Cache = cache
+Textures = textures
+InputProfiles = inputprofiles
+
+[Filenames]
+BIOS = SCPH-70012_BIOS_V12_USA_200.bin
+
+[EmuCore]
+EnablePINE = true
+PINESlot = 28011
+EnableCheats = true
+EnablePatches = true
+CdvdDumpBlocks = false
+EnableRecordingTools = false
+SavestateCompressionType = 2
+
+[EmuCore/CPU]
+ExtraMemory = true
+
+[EmuCore/Speedhacks]
+vuThread = true
+
+[EmuCore/GS]
+Renderer = -1
+upscale_multiplier = 2
+DumpGSData = false
+SaveRT = false
+SaveFrame = false
+SaveTexture = false
+SaveDepth = false
+DumpReplaceableTextures = false
+DumpReplaceableMipmaps = false
+DumpTexturesWithFMVActive = false
+LoadTextureReplacements = false
+
+[AutoUpdater]
+CheckAtStartup = false
+
+[Logging]
+EnableFileLogging = false
+EnableInputRecordingLogs = false
+EnableControllerLogs = false
+EnableLogWindow = false
+
+[InputSources]
+SDL = true
+XInput = false
+DInput = false
+SDLControllerEnhancedMode = true
+
+[Pad]
+MultitapPort1 = true
+MultitapPort2 = false
+
+[Pad1]
+Type = DualShock2
+Up = SDL-0/DPadUp
+Right = SDL-0/DPadRight
+Down = SDL-0/DPadDown
+Left = SDL-0/DPadLeft
+Triangle = SDL-0/FaceNorth
+Circle = SDL-0/FaceEast
+Cross = SDL-0/FaceSouth
+Square = SDL-0/FaceWest
+Select = SDL-0/Back
+Start = SDL-0/Start
+L1 = SDL-0/LeftShoulder
+L2 = SDL-0/+LeftTrigger
+R1 = SDL-0/RightShoulder
+R2 = SDL-0/+RightTrigger
+L3 = SDL-0/LeftStick
+R3 = SDL-0/RightStick
+LUp = SDL-0/-LeftY
+LRight = SDL-0/+LeftX
+LDown = SDL-0/+LeftY
+LLeft = SDL-0/-LeftX
+RUp = SDL-0/-RightY
+RRight = SDL-0/+RightX
+RDown = SDL-0/+RightY
+RLeft = SDL-0/-RightX
+
+[Pad2]
+Type = DualShock2
+Up = SDL-1/DPadUp
+Right = SDL-1/DPadRight
+Down = SDL-1/DPadDown
+Left = SDL-1/DPadLeft
+Triangle = SDL-1/FaceNorth
+Circle = SDL-1/FaceEast
+Cross = SDL-1/FaceSouth
+Square = SDL-1/FaceWest
+Select = SDL-1/Back
+Start = SDL-1/Start
+L1 = SDL-1/LeftShoulder
+L2 = SDL-1/+LeftTrigger
+R1 = SDL-1/RightShoulder
+R2 = SDL-1/+RightTrigger
+L3 = SDL-1/LeftStick
+R3 = SDL-1/RightStick
+LUp = SDL-1/-LeftY
+LRight = SDL-1/+LeftX
+LDown = SDL-1/+LeftY
+LLeft = SDL-1/-LeftX
+RUp = SDL-1/-RightY
+RRight = SDL-1/+RightX
+RDown = SDL-1/+RightY
+RLeft = SDL-1/-RightX
+
+[Pad3]
+Type = DualShock2
+Up = SDL-2/DPadUp
+Right = SDL-2/DPadRight
+Down = SDL-2/DPadDown
+Left = SDL-2/DPadLeft
+Triangle = SDL-2/FaceNorth
+Circle = SDL-2/FaceEast
+Cross = SDL-2/FaceSouth
+Square = SDL-2/FaceWest
+Select = SDL-2/Back
+Start = SDL-2/Start
+L1 = SDL-2/LeftShoulder
+L2 = SDL-2/+LeftTrigger
+R1 = SDL-2/RightShoulder
+R2 = SDL-2/+RightTrigger
+L3 = SDL-2/LeftStick
+R3 = SDL-2/RightStick
+LUp = SDL-2/-LeftY
+LRight = SDL-2/+LeftX
+LDown = SDL-2/+LeftY
+LLeft = SDL-2/-LeftX
+RUp = SDL-2/-RightY
+RRight = SDL-2/+RightX
+RDown = SDL-2/+RightY
+RLeft = SDL-2/-RightX
+
+[Pad4]
+Type = DualShock2
+Up = SDL-3/DPadUp
+Right = SDL-3/DPadRight
+Down = SDL-3/DPadDown
+Left = SDL-3/DPadLeft
+Triangle = SDL-3/FaceNorth
+Circle = SDL-3/FaceEast
+Cross = SDL-3/FaceSouth
+Square = SDL-3/FaceWest
+Select = SDL-3/Back
+Start = SDL-3/Start
+L1 = SDL-3/LeftShoulder
+L2 = SDL-3/+LeftTrigger
+R1 = SDL-3/RightShoulder
+R2 = SDL-3/+RightTrigger
+L3 = SDL-3/LeftStick
+R3 = SDL-3/RightStick
+LUp = SDL-3/-LeftY
+LRight = SDL-3/+LeftX
+LDown = SDL-3/+LeftY
+LLeft = SDL-3/-LeftX
+RUp = SDL-3/-RightY
+RRight = SDL-3/+RightX
+RDown = SDL-3/+RightY
+RLeft = SDL-3/-RightX
+
+[MemoryCards]
+Slot1_Enable = true
+Slot1_Filename = Mcd001.ps2
+Slot2_Enable = true
+Slot2_Filename = Mcd002.ps2
+
+[Hotkeys]
+TogglePause = Keyboard/Space
+

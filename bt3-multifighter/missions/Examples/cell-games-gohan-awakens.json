@@ -1,0 +1,478 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "game_family": "bt3",
+  "player_team": 1,
+  "player_selection": false,
+  "menus": {
+    "retry": true,
+    "character_select": false
+  },
+  "cpu_profiles": {},
+  "id": "cell-games-gohan-awakens",
+  "title": "Cell Games - Gohan Awakens",
+  "description": "Super Saiyan Teen Gohan (purple gi) cannot hurt Perfect Cell yet. After 35 seconds Android 16 steps in to plead with Gohan, Cell destroys him, and Gohan awakens to Super Saiyan 2 for a harder final round. Only an ultimate from Super Saiyan 2 Gohan can finish Cell; other hits leave him at 1 HP. Manual transformations are disabled. This condensed adaptation uses Android 16's full body and omits Cell's self-destruction and return.",
+  "stage": {
+    "id": 28,
+    "name": "Cell Games Arena - Noon"
+  },
+  "defeat_grace_seconds": 60,
+  "source": {
+    "kind": "authored-show-adaptation",
+    "gameplay_tested": false
+  },
+  "finish_rules": [
+    {
+      "victim": "cell",
+      "attacker": "gohan",
+      "attack": "ultimate",
+      "form": 16,
+      "otherwise": "hold_at_1_hp"
+    }
+  ],
+  "fighters": [
+    {
+      "id": "gohan",
+      "team": 1,
+      "slot": 1,
+      "character": 15,
+      "costume": 0,
+      "hp": 40000,
+      "difficulty": 2,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 0.75,
+        "defense": 0.9
+      }
+    },
+    {
+      "id": "cell",
+      "team": 2,
+      "slot": 1,
+      "character": 107,
+      "costume": 0,
+      "hp": 100000,
+      "difficulty": 3,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 1.2,
+        "defense": 2.5,
+        "cannot_be_defeated": true
+      }
+    },
+    {
+      "id": "android16",
+      "team": 1,
+      "slot": 2,
+      "character": 100,
+      "costume": 0,
+      "hp": 30000,
+      "difficulty": 2,
+      "reserve": true,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 0,
+        "invulnerable": true
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "cell-line",
+      "when": {
+        "type": "time",
+        "seconds": 0
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "cell",
+          "seconds": 2.6,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -6.0,
+              -12,
+              -24.0
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -3.0,
+              -11,
+              -17.0
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 107,
+            "line": 0,
+            "volume": 100
+          }
+        }
+      ],
+      "timeout_seconds": 30,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "android16-pleads",
+      "when": {
+        "type": "time",
+        "seconds": 35
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "cell",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "enter",
+          "fighter": "android16",
+          "intro": false,
+          "health_percent": 100
+        },
+        {
+          "type": "target",
+          "fighter": "cell",
+          "target": "android16"
+        },
+        {
+          "type": "take_control",
+          "fighter": "android16",
+          "player": 1
+        },
+        {
+          "type": "cinematic",
+          "fighter": "android16",
+          "seconds": 3.2,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -7.0,
+              -15,
+              24.0
+            ],
+            "target": [
+              0,
+              -13,
+              0
+            ],
+            "end_eye": [
+              -3.0,
+              -13,
+              17.0
+            ],
+            "end_target": [
+              0,
+              -13,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 100,
+            "line": 0,
+            "volume": 100
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.4,
+          "freeze": true
+        },
+        {
+          "type": "take_control",
+          "fighter": "gohan",
+          "player": 1
+        }
+      ],
+      "timeout_seconds": 60,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "cell-strikes",
+      "when": {
+        "type": "event",
+        "event": "android16-pleads"
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "cell",
+          "seconds": 2.2,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -5.0,
+              -36,
+              -15.0
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -3.0,
+              -31,
+              -12.0
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "android16",
+          "stats": {
+            "invulnerable": false
+          }
+        },
+        {
+          "type": "defeat",
+          "fighter": "android16"
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "gohan-breaks",
+      "when": {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "event",
+            "event": "cell-strikes",
+            "delay_seconds": 1.5
+          },
+          {
+            "type": "defeated",
+            "fighter": "android16"
+          }
+        ]
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "gohan",
+          "seconds": 2.6,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -5.0,
+              -28,
+              16.0
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -3.0,
+              -22,
+              12.0
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 15,
+            "line": 71,
+            "volume": 100
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.6,
+          "freeze": true
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "android16-leaves",
+      "when": {
+        "type": "event",
+        "event": "gohan-breaks"
+      },
+      "actions": [
+        {
+          "type": "despawn",
+          "fighter": "android16"
+        }
+      ],
+      "timeout_seconds": 30,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "awakening",
+      "when": {
+        "type": "event",
+        "event": "gohan-breaks"
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "health_percent": 100,
+            "ki_percent": 100,
+            "blast_stocks": 5
+          }
+        },
+        {
+          "type": "transform",
+          "fighter": "gohan",
+          "character": 16
+        },
+        {
+          "type": "cinematic",
+          "fighter": "gohan",
+          "seconds": 4.35,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              5.0,
+              -13,
+              14.0
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              3.0,
+              -11,
+              10.0
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "animation": {
+            "character": 16,
+            "clip": 384
+          },
+          "voice": {
+            "character": 16,
+            "line": 0,
+            "volume": 100
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.5,
+          "freeze": true
+        },
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "max_hp": 50000,
+            "health_percent": 100,
+            "damage": 1.5,
+            "defense": 1.25,
+            "invulnerable": false,
+            "ki_percent": 100,
+            "blast_stocks": 5
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "cell",
+          "stats": {
+            "max_hp": 65000,
+            "health_percent": 100,
+            "damage": 1.1,
+            "defense": 1.1,
+            "invulnerable": false,
+            "cannot_be_defeated": false,
+            "difficulty": 3
+          }
+        },
+        {
+          "type": "target",
+          "fighter": "gohan",
+          "target": "cell"
+        },
+        {
+          "type": "target",
+          "fighter": "cell",
+          "target": "gohan"
+        }
+      ],
+      "timeout_seconds": 100,
+      "on_failure": "fail_scenario"
+    }
+  ],
+  "win_when": {
+    "type": "all",
+    "conditions": [
+      {
+        "type": "event",
+        "event": "awakening"
+      },
+      {
+        "type": "defeated",
+        "fighter": "cell"
+      }
+    ]
+  },
+  "fail_when": {
+    "type": "all",
+    "conditions": [
+      {
+        "type": "defeated",
+        "fighter": "gohan"
+      },
+      {
+        "type": "not",
+        "condition": {
+          "type": "retired",
+          "fighter": "gohan"
+        }
+      }
+    ]
+  }
+}

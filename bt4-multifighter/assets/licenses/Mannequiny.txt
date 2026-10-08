@@ -1,0 +1,31 @@
+Mannequiny walking and running animation attribution
+===================================================
+
+The motion samples in tools/ground_motion.py are adapted from the walk and
+run animations in Mannequiny v0.4.0, by GDQuest, Luciano Munoz and contributors.
+The animation assets are licensed under Creative Commons Attribution 4.0
+International (CC BY 4.0).
+
+Creators: GDQuest and contributors, https://www.gdquest.com/
+Artist: Luciano Munoz
+Project: https://github.com/gdquest-demos/godot-3d-mannequin
+Release: https://github.com/gdquest-demos/godot-3d-mannequin/releases/tag/v0.4.0
+License: https://creativecommons.org/licenses/by/4.0/
+Legal text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+The source animation was read from the GLB conversion published by
+hardboileduser (Blender 4.2 LTS) at:
+https://opengameart.org/content/mannequiny-the-open-3d-mannequin
+https://opengameart.org/sites/default/files/glb-mannequiny-0.4.0.zip
+The exporter reports material alpha adjustments, with no motion changes.
+Source GLB SHA-256:
+84caf77b520980448ca4fb3267b7272ba76fde20c0ce925f7a546c83fa5c01f8
+
+Changes made for this mod: retargeted skeletal rotations and pelvis movement
+to the game's skeleton, scaled movement to character proportions, adjusted
+foot contact, head posture, walking stance and arm motion, and running torso
+lean. The motion was resampled and encoded for the game's animation format.
+Only walking and running motion is adapted. The source mannequin model,
+textures, preview meshes, and other source animations are not distributed.
+
+Attribution does not imply endorsement by the original creators.

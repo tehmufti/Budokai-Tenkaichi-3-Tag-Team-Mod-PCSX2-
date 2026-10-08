@@ -1,0 +1,258 @@
+[
+  {
+    "character": 101,
+    "costume": 0,
+    "damaged": false,
+    "file": 2434,
+    "bytes": 657408,
+    "draw_nodes": 63
+  },
+  {
+    "character": 101,
+    "costume": 0,
+    "damaged": true,
+    "file": 2438,
+    "bytes": 657408,
+    "draw_nodes": 63
+  },
+  {
+    "character": 101,
+    "costume": 1,
+    "damaged": false,
+    "file": 2435,
+    "bytes": 759808,
+    "draw_nodes": 63
+  },
+  {
+    "character": 101,
+    "costume": 1,
+    "damaged": true,
+    "file": 2439,
+    "bytes": 759808,
+    "draw_nodes": 63
+  },
+  {
+    "character": 101,
+    "costume": 2,
+    "damaged": false,
+    "file": 2436,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 101,
+    "costume": 2,
+    "damaged": true,
+    "file": 2440,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 101,
+    "costume": 3,
+    "damaged": false,
+    "file": 2437,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 101,
+    "costume": 3,
+    "damaged": true,
+    "file": 2441,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 102,
+    "costume": 0,
+    "damaged": false,
+    "file": 2444,
+    "bytes": 753664,
+    "draw_nodes": 67
+  },
+  {
+    "character": 102,
+    "costume": 0,
+    "damaged": true,
+    "file": 2448,
+    "bytes": 698368,
+    "draw_nodes": 67
+  },
+  {
+    "character": 102,
+    "costume": 1,
+    "damaged": false,
+    "file": 2445,
+    "bytes": 706560,
+    "draw_nodes": 67
+  },
+  {
+    "character": 102,
+    "costume": 1,
+    "damaged": true,
+    "file": 2449,
+    "bytes": 706560,
+    "draw_nodes": 67
+  },
+  {
+    "character": 102,
+    "costume": 2,
+    "damaged": false,
+    "file": 2446,
+    "bytes": 772096,
+    "draw_nodes": 69
+  },
+  {
+    "character": 102,
+    "costume": 2,
+    "damaged": true,
+    "file": 2450,
+    "bytes": 772096,
+    "draw_nodes": 69
+  },
+  {
+    "character": 102,
+    "costume": 3,
+    "damaged": false,
+    "file": 2447,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 102,
+    "costume": 3,
+    "damaged": true,
+    "file": 2451,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 106,
+    "costume": 0,
+    "damaged": false,
+    "file": 2484,
+    "bytes": 724992,
+    "draw_nodes": 58
+  },
+  {
+    "character": 106,
+    "costume": 0,
+    "damaged": true,
+    "file": 2488,
+    "bytes": 724992,
+    "draw_nodes": 58
+  },
+  {
+    "character": 106,
+    "costume": 1,
+    "damaged": false,
+    "file": 2485,
+    "bytes": 724992,
+    "draw_nodes": 58
+  },
+  {
+    "character": 106,
+    "costume": 1,
+    "damaged": true,
+    "file": 2489,
+    "bytes": 724992,
+    "draw_nodes": 58
+  },
+  {
+    "character": 106,
+    "costume": 2,
+    "damaged": false,
+    "file": 2486,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 106,
+    "costume": 2,
+    "damaged": true,
+    "file": 2490,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 106,
+    "costume": 3,
+    "damaged": false,
+    "file": 2487,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 106,
+    "costume": 3,
+    "damaged": true,
+    "file": 2491,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 107,
+    "costume": 0,
+    "damaged": false,
+    "file": 2494,
+    "bytes": 647168,
+    "draw_nodes": 55
+  },
+  {
+    "character": 107,
+    "costume": 0,
+    "damaged": true,
+    "file": 2498,
+    "bytes": 647168,
+    "draw_nodes": 55
+  },
+  {
+    "character": 107,
+    "costume": 1,
+    "damaged": false,
+    "file": 2495,
+    "bytes": 647168,
+    "draw_nodes": 55
+  },
+  {
+    "character": 107,
+    "costume": 1,
+    "damaged": true,
+    "file": 2499,
+    "bytes": 647168,
+    "draw_nodes": 55
+  },
+  {
+    "character": 107,
+    "costume": 2,
+    "damaged": false,
+    "file": 2496,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 107,
+    "costume": 2,
+    "damaged": true,
+    "file": 2500,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 107,
+    "costume": 3,
+    "damaged": false,
+    "file": 2497,
+    "invalid": true,
+    "size": 64
+  },
+  {
+    "character": 107,
+    "costume": 3,
+    "damaged": true,
+    "file": 2501,
+    "invalid": true,
+    "size": 64
+  }
+]

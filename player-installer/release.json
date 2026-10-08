@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "version": "0.1.0-beta.46",
+  "channel": "public-beta",
+  "python": "3.11",
+  "pcsx2": "2.8.2",
+  "languages": [
+    "en",
+    "es"
+  ],
+  "adapters": {
+    "bt3-usa": "BT3 USA (SLUS-21678)",
+    "bt3-pal": "BT3 Europe (SLES-54945)",
+    "bt3-jpn": "BT3 Japan (SLPS-25815, Sparking! Meteor)",
+    "bt4-b14-rev2-eng": "BT4 B14 REV2 English / Spanish (experimental; full roster gameplay audit pending)"
+  },
+  "gameplay_certified": false,
+  "pcsx2_minimum": "2.6.0",
+  "pcsx2_supported": [
+    "2.6.0",
+    "2.6.1",
+    "2.6.2",
+    "2.6.3",
+    "2.8.0",
+    "2.8.1",
+    "2.8.2"
+  ]
+}

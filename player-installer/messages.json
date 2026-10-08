@@ -1,0 +1,1418 @@
+{
+ "schema": 1,
+ "width": 78,
+ "families": {
+  "ZIP": 10,
+  "OS": 20,
+  "DEST": 30,
+  "PY": 40,
+  "PCSX2": 50,
+  "BIOS": 60,
+  "ISO": 70,
+  "PAYLOAD": 80,
+  "CHECK": 90,
+  "PLAY": 2
+ },
+ "labels": {
+  "en": {
+   "what": "WHAT HAPPENED",
+   "why": "WHY",
+   "fix": "HOW TO FIX",
+   "file": "FILE",
+   "details": "DETAILS",
+   "log": "LOG",
+   "unchanged": "Nothing was changed.",
+   "copy": "Copy this block when asking for help.",
+   "setup": "SETUP STOPPED",
+   "check": "INSTALLATION CHECK FAILED",
+   "launcher": "CANNOT START",
+   "warning": "WARNING",
+   "notice": "NOTE",
+   "ok": "OK",
+   "warn": "WARN",
+   "fail": "FAIL"
+  },
+  "es": {
+   "what": "QUE HA PASADO",
+   "why": "POR QUE",
+   "fix": "COMO SOLUCIONARLO",
+   "file": "ARCHIVO",
+   "details": "DETALLES",
+   "log": "REGISTRO",
+   "unchanged": "No se ha cambiado nada.",
+   "copy": "Copia este bloque si pides ayuda.",
+   "setup": "INSTALACION DETENIDA",
+   "check": "LA COMPROBACION DE LA INSTALACION HA FALLADO",
+   "launcher": "NO SE PUEDE INICIAR",
+   "warning": "AVISO",
+   "notice": "NOTA",
+   "ok": "OK",
+   "warn": "AVISO",
+   "fail": "ERROR"
+  }
+ },
+ "codes": {
+  "TTM-ZIP-01": {
+   "unchanged": true,
+   "en": {
+    "what": "{install} was started without its setup folder.",
+    "why": "Opening a file inside a ZIP extracts only that file, so the rest of the installer is missing.",
+    "fix": "Extract the whole release archive first (Windows: right-click the ZIP, Extract All). Then open the extracted \"Tag Team Mod Installer\" folder and run {install} there."
+   },
+   "es": {
+    "what": "{install} se ha abierto sin su carpeta setup.",
+    "why": "Al abrir un archivo dentro de un ZIP solo se extrae ese archivo, así que falta el resto del instalador.",
+    "fix": "Extrae primero el archivo completo (Windows: clic derecho en el ZIP, Extraer todo). Después abre la carpeta \"Tag Team Mod Installer\" extraída y ejecuta {install} allí."
+   }
+  },
+  "TTM-ZIP-02": {
+   "unchanged": true,
+   "en": {
+    "what": "The installer is incomplete: its file list (setup/installer-files.json) is missing.",
+    "why": "The release archive was only partly extracted.",
+    "fix": "Extract the entire release archive to a new, empty folder and run {install} from there."
+   },
+   "es": {
+    "what": "El instalador está incompleto: falta su lista de archivos (setup/installer-files.json).",
+    "why": "El archivo de la versión solo se extrajo en parte.",
+    "fix": "Extrae el archivo completo de la versión en una carpeta nueva y vacía y ejecuta {install} desde allí."
+   }
+  },
+  "TTM-ZIP-03": {
+   "unchanged": true,
+   "en": {
+    "what": "An installer file is missing or outside the installer folder: {name}.",
+    "why": "The archive was only partly extracted, or antivirus removed the file.",
+    "fix": "Extract a fresh, complete copy of the release archive. If your antivirus reported this file, restore it or allow the folder, then extract again."
+   },
+   "es": {
+    "what": "Falta un archivo del instalador o está fuera de su carpeta: {name}.",
+    "why": "El archivo solo se extrajo en parte, o el antivirus ha eliminado ese archivo.",
+    "fix": "Extrae una copia nueva y completa del archivo de la versión. Si el antivirus avisó de este archivo, restáuralo o permite la carpeta y vuelve a extraerlo."
+   }
+  },
+  "TTM-ZIP-04": {
+   "unchanged": true,
+   "en": {
+    "what": "An installer file does not match the release: {name}.",
+    "why": "The download is damaged, files from two releases were mixed, or antivirus changed the file.",
+    "fix": "Download the release again, compare it with its .sha256 file, and extract it to a new, empty folder."
+   },
+   "es": {
+    "what": "Un archivo del instalador no coincide con la versión: {name}.",
+    "why": "La descarga está dañada, se han mezclado archivos de dos versiones o el antivirus ha modificado el archivo.",
+    "fix": "Descarga de nuevo la versión, comprueba su archivo .sha256 y extráela en una carpeta nueva y vacía."
+   }
+  },
+  "TTM-OS-01": {
+   "unchanged": true,
+   "en": {
+    "what": "This installer needs {needed}; this computer is {found}.",
+    "why": "PCSX2 and the bundled Python packages exist only for 64-bit Intel/AMD processors.",
+    "fix": "Install on a 64-bit Intel/AMD PC."
+   },
+   "es": {
+    "what": "Este instalador necesita {needed}; este equipo es {found}.",
+    "why": "PCSX2 y los paquetes de Python incluidos solo existen para procesadores Intel/AMD de 64 bits.",
+    "fix": "Instálalo en un PC Intel/AMD de 64 bits."
+   }
+  },
+  "TTM-OS-02": {
+   "unchanged": true,
+   "en": {
+    "what": "This PC blocks PowerShell scripts through an administrator policy ({policy}).",
+    "why": "Group Policy sets the script execution policy, and setup cannot override it.",
+    "fix": "Ask the administrator of this PC to allow scripts, or install on a PC you manage."
+   },
+   "es": {
+    "what": "Este PC bloquea los scripts de PowerShell mediante una directiva del administrador ({policy}).",
+    "why": "La directiva de grupo fija la ejecución de scripts y el instalador no puede cambiarla.",
+    "fix": "Pide al administrador de este PC que permita los scripts, o instálalo en un PC que administres tú."
+   }
+  },
+  "TTM-OS-03": {
+   "unchanged": false,
+   "en": {
+    "what": "The disk became full while setup was writing files.",
+    "why": "Windows or Linux reported that no space is left on the drive.",
+    "fix": "Free at least 3.5 GiB on that drive, or choose a folder on another drive, then run {install} again. Setup keeps the unfinished folder under a new name; you can delete it yourself."
+   },
+   "es": {
+    "what": "El disco se ha llenado mientras el instalador escribía archivos.",
+    "why": "El sistema ha indicado que no queda espacio en la unidad.",
+    "fix": "Libera al menos 3,5 GiB en esa unidad o elige una carpeta en otra unidad y vuelve a ejecutar {install}. El instalador conserva la carpeta sin terminar con otro nombre; puedes borrarla tú."
+   }
+  },
+  "TTM-OS-04": {
+   "unchanged": false,
+   "en": {
+    "what": "Access to a file was refused while setup was working.",
+    "why": "Usually antivirus (Controlled Folder Access or ransomware protection), OneDrive syncing, or another program that has the file open.",
+    "fix": "Allow the installation folder in your antivirus, choose a folder outside OneDrive, close programs using the folder, then run {install} again."
+   },
+   "es": {
+    "what": "Se ha denegado el acceso a un archivo mientras trabajaba el instalador.",
+    "why": "Suele deberse al antivirus (acceso controlado a carpetas o protección contra ransomware), a la sincronización de OneDrive o a otro programa que tiene el archivo abierto.",
+    "fix": "Permite la carpeta de instalación en tu antivirus, elige una carpeta fuera de OneDrive, cierra los programas que la usan y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-OS-05": {
+   "unchanged": true,
+   "en": {
+    "what": "No desktop is available for the setup dialogs.",
+    "why": "Setup asks for the files in windows, and this session has no display (or Tk could not open one).",
+    "fix": "Run setup from a desktop session, or pass --destination, --iso and --pcsx2 (plus --bios when setup does not find the BIOS your PCSX2 uses; sh Install.sh --help)."
+   },
+   "es": {
+    "what": "No hay un escritorio disponible para las ventanas del instalador.",
+    "why": "El instalador pide los archivos en ventanas y esta sesión no tiene pantalla (o Tk no pudo abrirla).",
+    "fix": "Ejecuta el instalador desde una sesión de escritorio, o indica --destination, --iso y --pcsx2 (y --bios si el instalador no encuentra la BIOS que usa tu PCSX2; sh Install.sh --help)."
+   }
+  },
+  "TTM-OS-06": {
+   "unchanged": true,
+   "en": {
+    "what": "PCSX2 cannot start on this system yet: system packages are missing.",
+    "why": "The PCSX2 AppImage needs the libraries and FUSE parts listed above.",
+    "fix": "Install the packages listed above, then run {install} again (or pass --allow-missing-libraries to install now and add them later)."
+   },
+   "es": {
+    "what": "PCSX2 todavía no puede iniciarse en este sistema: faltan paquetes del sistema.",
+    "why": "El AppImage de PCSX2 necesita las bibliotecas y las partes de FUSE indicadas arriba.",
+    "fix": "Instala los paquetes indicados arriba y vuelve a ejecutar {install} (o usa --allow-missing-libraries para instalar ahora y añadirlos después)."
+   }
+  },
+  "TTM-DEST-01": {
+   "unchanged": true,
+   "en": {
+    "what": "Setup cannot write to the chosen folder.",
+    "why": "The folder is read-only, protected by Windows (such as Program Files), or blocked by antivirus.",
+    "fix": "Choose a folder you own, for example {recommended}."
+   },
+   "es": {
+    "what": "El instalador no puede escribir en la carpeta elegida.",
+    "why": "La carpeta es de solo lectura, está protegida por Windows (como Archivos de programa) o la bloquea el antivirus.",
+    "fix": "Elige una carpeta tuya, por ejemplo {recommended}."
+   }
+  },
+  "TTM-DEST-02": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation path is {length} characters long; the limit is 140.",
+    "why": "Some game resource paths inside the installation would exceed the Windows path limit.",
+    "fix": "Choose a shorter folder, for example {recommended}."
+   },
+   "es": {
+    "what": "La ruta de instalación tiene {length} caracteres; el límite es 140.",
+    "why": "Algunas rutas de recursos del juego dentro de la instalación superarían el límite de Windows.",
+    "fix": "Elige una carpeta más corta, por ejemplo {recommended}."
+   }
+  },
+  "TTM-DEST-03": {
+   "unchanged": true,
+   "en": {
+    "what": "The folder that should contain the installation does not exist.",
+    "why": "The folder was moved, renamed or is on a drive that is not connected.",
+    "fix": "Choose an existing folder."
+   },
+   "es": {
+    "what": "No existe la carpeta que debe contener la instalación.",
+    "why": "La carpeta se ha movido, se ha cambiado de nombre o está en una unidad desconectada.",
+    "fix": "Elige una carpeta que exista."
+   }
+  },
+  "TTM-DEST-04": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation path contains a square bracket ([ or ]).",
+    "why": "PowerShell reads square brackets as wildcards, so Play and Mod settings could not start from that folder.",
+    "fix": "Choose a folder without square brackets, for example {recommended}."
+   },
+   "es": {
+    "what": "La ruta de instalación contiene un corchete ([ o ]).",
+    "why": "PowerShell interpreta los corchetes como comodines, así que Play y Mod settings no podrían iniciarse desde esa carpeta.",
+    "fix": "Elige una carpeta sin corchetes, por ejemplo {recommended}."
+   }
+  },
+  "TTM-DEST-05": {
+   "unchanged": true,
+   "en": {
+    "what": "There is not enough free space on the drive: {free} free, {needed} needed.",
+    "why": "The private Python, the PCSX2 copy and the match preparation files need this space; the ISO stays where it is.",
+    "fix": "Free space on that drive or choose a folder on another drive."
+   },
+   "es": {
+    "what": "No hay espacio libre suficiente en la unidad: {free} libres, se necesitan {needed}.",
+    "why": "El Python privado, la copia de PCSX2 y los archivos de preparación de combates necesitan ese espacio; la ISO se queda donde está.",
+    "fix": "Libera espacio en esa unidad o elige una carpeta en otra unidad."
+   }
+  },
+  "TTM-DEST-06": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation folder already exists.",
+    "why": "Setup never writes into an existing folder, so your installation and saves are not overwritten.",
+    "fix": "Give a new folder name. When you choose the parent folder in the setup window instead, setup picks a free name next to the existing installation by itself."
+   },
+   "es": {
+    "what": "La carpeta de instalación ya existe.",
+    "why": "El instalador nunca escribe en una carpeta existente, así que no se sobrescriben tu instalación ni tus partidas.",
+    "fix": "Indica un nombre de carpeta nuevo. Si eliges la carpeta contenedora en la ventana del instalador, este busca por sí solo un nombre libre junto a la instalación existente."
+   }
+  },
+  "TTM-DEST-07": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation path goes through a junction or symbolic link.",
+    "why": "Setup refuses links inside the installation so that no file can end up outside it.",
+    "fix": "Choose an ordinary folder."
+   },
+   "es": {
+    "what": "La ruta de instalación pasa por una unión (junction) o un enlace simbólico.",
+    "why": "El instalador rechaza enlaces dentro de la instalación para que ningún archivo acabe fuera de ella.",
+    "fix": "Elige una carpeta normal."
+   }
+  },
+  "TTM-DEST-08": {
+   "unchanged": true,
+   "en": {
+    "what": "The chosen folder is on a file system mounted noexec, so PCSX2 could not run from it.",
+    "why": "PCSX2 and the private Python are started from the installation folder.",
+    "fix": "Choose a folder in your home directory."
+   },
+   "es": {
+    "what": "La carpeta elegida está en un sistema de archivos montado con noexec, así que PCSX2 no podría ejecutarse desde ella.",
+    "why": "PCSX2 y el Python privado se inician desde la carpeta de instalación.",
+    "fix": "Elige una carpeta dentro de tu carpeta personal."
+   }
+  },
+  "TTM-DEST-09": {
+   "unchanged": true,
+   "en": {
+    "what": "The chosen file system cannot hold symbolic links (FAT, exFAT or a Windows drive).",
+    "why": "The private Python environment is made of symbolic links.",
+    "fix": "Choose a folder on a Linux file system, such as your home folder."
+   },
+   "es": {
+    "what": "El sistema de archivos elegido no admite enlaces simbólicos (FAT, exFAT o una unidad de Windows).",
+    "why": "El entorno privado de Python está formado por enlaces simbólicos.",
+    "fix": "Elige una carpeta en un sistema de archivos de Linux, como tu carpeta personal."
+   }
+  },
+  "TTM-DEST-10": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation path contains control characters.",
+    "why": "Menu entries and launch scripts cannot name such a folder safely.",
+    "fix": "Choose a folder whose name uses ordinary characters."
+   },
+   "es": {
+    "what": "La ruta de instalación contiene caracteres de control.",
+    "why": "Las entradas de menú y los scripts de inicio no pueden nombrar esa carpeta de forma segura.",
+    "fix": "Elige una carpeta cuyo nombre use caracteres normales."
+   }
+  },
+  "TTM-DEST-11": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation folder is inside the PCSX2 folder.",
+    "why": "Setup copies PCSX2 into the installation and cannot copy a folder into itself.",
+    "fix": "Choose a folder outside the PCSX2 folder."
+   },
+   "es": {
+    "what": "La carpeta de instalación está dentro de la carpeta de PCSX2.",
+    "why": "El instalador copia PCSX2 dentro de la instalación y no puede copiar una carpeta dentro de sí misma.",
+    "fix": "Elige una carpeta fuera de la carpeta de PCSX2."
+   }
+  },
+  "TTM-DEST-21": {
+   "unchanged": false,
+   "kind": "warning",
+   "en": {
+    "what": "The chosen folder is inside OneDrive.",
+    "why": "OneDrive can lock, upload or free up files (save states, the private Python) while you play.",
+    "fix": "Recommended: {recommended}. Setup continues with the chosen folder."
+   },
+   "es": {
+    "what": "La carpeta elegida está dentro de OneDrive.",
+    "why": "OneDrive puede bloquear, subir o liberar archivos (estados guardados, el Python privado) mientras juegas.",
+    "fix": "Recomendado: {recommended}. El instalador continúa con la carpeta elegida."
+   }
+  },
+  "TTM-DEST-22": {
+   "unchanged": false,
+   "kind": "warning",
+   "en": {
+    "what": "The chosen folder is on a network drive.",
+    "why": "Loading and saving over the network is slow and stops when the connection drops.",
+    "fix": "Recommended: {recommended}. Setup continues with the chosen folder."
+   },
+   "es": {
+    "what": "La carpeta elegida está en una unidad de red.",
+    "why": "Cargar y guardar a través de la red es lento y se interrumpe si se corta la conexión.",
+    "fix": "Recomendado: {recommended}. El instalador continúa con la carpeta elegida."
+   }
+  },
+  "TTM-DEST-23": {
+   "unchanged": false,
+   "kind": "warning",
+   "en": {
+    "what": "The chosen folder is inside a Windows system folder (Program Files or Windows).",
+    "why": "Windows protects these folders, so saving settings or states can fail later.",
+    "fix": "Recommended: {recommended}. Setup continues with the chosen folder."
+   },
+   "es": {
+    "what": "La carpeta elegida está dentro de una carpeta del sistema (Archivos de programa o Windows).",
+    "why": "Windows protege estas carpetas, así que guardar ajustes o estados puede fallar más adelante.",
+    "fix": "Recomendado: {recommended}. El instalador continúa con la carpeta elegida."
+   }
+  },
+  "TTM-DEST-24": {
+   "unchanged": false,
+   "kind": "warning",
+   "en": {
+    "what": "Setup is running as administrator.",
+    "why": "Files created as administrator can later refuse changes from your normal account.",
+    "fix": "Next time, open {install} normally (not with Run as administrator). Setup continues."
+   },
+   "es": {
+    "what": "El instalador se está ejecutando como administrador.",
+    "why": "Los archivos creados como administrador pueden rechazar después los cambios de tu cuenta normal.",
+    "fix": "La próxima vez, abre {install} de forma normal (sin Ejecutar como administrador). El instalador continúa."
+   }
+  },
+  "TTM-DEST-25": {
+   "unchanged": false,
+   "kind": "notice",
+   "en": {
+    "what": "An earlier setup attempt that did not finish is kept as {name}.",
+    "why": "Setup never deletes a folder; the unfinished one is only renamed so this installation can use its name.",
+    "fix": "It is not used any more. Delete it yourself once this installation works."
+   },
+   "es": {
+    "what": "Un intento de instalación anterior que no terminó se conserva como {name}.",
+    "why": "El instalador nunca borra carpetas; la carpeta sin terminar solo se renombra para que esta instalación use su nombre.",
+    "fix": "Ya no se usa. Bórrala tú cuando esta instalación funcione."
+   }
+  },
+  "TTM-DEST-26": {
+   "unchanged": false,
+   "kind": "notice",
+   "en": {
+    "what": "An installation already exists there, so the new one goes to {name}.",
+    "why": "Setup never writes into an existing installation.",
+    "fix": "Your old installation is not changed. When setup finishes it offers to copy your memory cards, and the mod settings when both installations are for the same game. Your PCSX2 settings (controller bindings, graphics) and PCSX2 savestates are not copied: they stay in the old folder."
+   },
+   "es": {
+    "what": "Ya hay una instalación allí, así que la nueva se crea en {name}.",
+    "why": "El instalador nunca escribe en una instalación existente.",
+    "fix": "Tu instalación anterior no cambia. Al terminar, el instalador ofrece copiar tus tarjetas de memoria, y los ajustes del mod si las dos instalaciones son del mismo juego. Tus ajustes de PCSX2 (asignación de mandos, gráficos) y tus estados guardados de PCSX2 no se copian: se quedan en la carpeta anterior."
+   }
+  },
+  "TTM-DEST-27": {
+   "unchanged": false,
+   "kind": "warning",
+   "en": {
+    "what": "Your memory cards and mod settings could not be copied from the existing installation.",
+    "why": "The copy stopped with an error (the setup log names it); the new installation itself is complete and works.",
+    "fix": "Copy the .ps2 files from {cards} of the old installation into the same folder of the new one by hand."
+   },
+   "es": {
+    "what": "No se han podido copiar tus tarjetas de memoria y tus ajustes del mod desde la instalación existente.",
+    "why": "La copia se ha detenido con un error (lo indica el registro del instalador); la nueva instalación está completa y funciona.",
+    "fix": "Copia a mano los archivos .ps2 de {cards} de la instalación anterior a la misma carpeta de la nueva."
+   }
+  },
+  "TTM-DEST-28": {
+   "unchanged": false,
+   "kind": "warning",
+   "en": {
+    "what": "The desktop shortcuts could not be created.",
+    "why": "Windows refused to write to the Desktop folder (Controlled Folder Access, a redirected Desktop or a missing permission).",
+    "fix": "The installation is complete. Start {play} from the installation folder, or make a shortcut yourself: right-click {play}, Show more options, Send to, Desktop (create shortcut)."
+   },
+   "es": {
+    "what": "No se han podido crear los accesos directos del escritorio.",
+    "why": "Windows no ha permitido escribir en la carpeta Escritorio (acceso controlado a carpetas, un Escritorio redirigido o falta de permisos).",
+    "fix": "La instalación está completa. Inicia {play} desde la carpeta de instalación, o crea tú el acceso directo: clic derecho en {play}, Mostrar más opciones, Enviar a, Escritorio (crear acceso directo)."
+   }
+  },
+  "TTM-PY-01": {
+   "unchanged": true,
+   "en": {
+    "what": "Python 3.11 (64-bit) with Tk is missing, and WinGet is not available to install it.",
+    "why": "Setup installs Python through WinGet (App Installer), which this PC does not have.",
+    "fix": "Install Python 3.11 (64-bit) from https://www.python.org/downloads/release/python-3119/ with \"tcl/tk and IDLE\" ticked, then run {install} again."
+   },
+   "es": {
+    "what": "Falta Python 3.11 (64 bits) con Tk y WinGet no está disponible para instalarlo.",
+    "why": "El instalador obtiene Python con WinGet (Instalador de aplicación), que este PC no tiene.",
+    "fix": "Instala Python 3.11 (64 bits) desde https://www.python.org/downloads/release/python-3119/ con \"tcl/tk and IDLE\" marcado y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-02": {
+   "unchanged": true,
+   "en": {
+    "what": "WinGet could not install Python 3.11: {meaning} (WinGet code {winget}).",
+    "why": "Setup asked WinGet for the official Python 3.11 package and WinGet stopped.",
+    "fix": "Install Python 3.11 (64-bit) from https://www.python.org/downloads/release/python-3119/ with \"tcl/tk and IDLE\" ticked, then run {install} again."
+   },
+   "es": {
+    "what": "WinGet no ha podido instalar Python 3.11: {meaning} (código de WinGet {winget}).",
+    "why": "El instalador pidió a WinGet el paquete oficial de Python 3.11 y WinGet se detuvo.",
+    "fix": "Instala Python 3.11 (64 bits) desde https://www.python.org/downloads/release/python-3119/ con \"tcl/tk and IDLE\" marcado y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-03": {
+   "unchanged": true,
+   "en": {
+    "what": "Python 3.11 is installed, but its Tk part (tkinter) is missing.",
+    "why": "Mod settings and the setup windows need Tk, an optional part of the Python installer.",
+    "fix": "Open Settings > Apps > Installed apps > Python 3.11 > Modify, tick \"tcl/tk and IDLE\", finish, then run {install} again."
+   },
+   "es": {
+    "what": "Python 3.11 está instalado, pero falta su parte Tk (tkinter).",
+    "why": "Los ajustes del mod y las ventanas del instalador necesitan Tk, una parte opcional del instalador de Python.",
+    "fix": "Abre Configuración > Aplicaciones > Aplicaciones instaladas > Python 3.11 > Modificar, marca \"tcl/tk and IDLE\", termina y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-04": {
+   "unchanged": true,
+   "en": {
+    "what": "The Python 3.11 found on this PC cannot be used: {part}.",
+    "why": "The bundled packages need a complete 64-bit Python 3.11 with venv and pip (ensurepip).",
+    "fix": "Repair or reinstall Python 3.11 (64-bit) from https://www.python.org/downloads/release/python-3119/ with all optional parts ticked, then run {install} again."
+   },
+   "es": {
+    "what": "No se puede usar el Python 3.11 de este PC: {part}.",
+    "why": "Los paquetes incluidos necesitan un Python 3.11 de 64 bits completo, con venv y pip (ensurepip).",
+    "fix": "Repara o reinstala Python 3.11 (64 bits) desde https://www.python.org/downloads/release/python-3119/ con todas las partes opcionales marcadas y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-05": {
+   "unchanged": true,
+   "en": {
+    "what": "Python 3.11 was installed, but setup could not use it: {part}.",
+    "why": "WinGet finished, yet the new Python does not start or lacks a part setup needs.",
+    "fix": "Restart Windows and run {install} again. If it repeats, install Python 3.11 (64-bit) from https://www.python.org/downloads/release/python-3119/ with \"tcl/tk and IDLE\" ticked."
+   },
+   "es": {
+    "what": "Se ha instalado Python 3.11, pero el instalador no puede usarlo: {part}.",
+    "why": "WinGet terminó, pero el nuevo Python no se inicia o le falta una parte necesaria.",
+    "fix": "Reinicia Windows y vuelve a ejecutar {install}. Si se repite, instala Python 3.11 (64 bits) desde https://www.python.org/downloads/release/python-3119/ con \"tcl/tk and IDLE\" marcado."
+   }
+  },
+  "TTM-PY-06": {
+   "unchanged": true,
+   "en": {
+    "what": "The Microsoft Visual C++ runtime (x64) is missing, and WinGet is not available to install it.",
+    "why": "PCSX2 needs this Microsoft runtime to start.",
+    "fix": "Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe, then run {install} again."
+   },
+   "es": {
+    "what": "Faltan los componentes Visual C++ de Microsoft (x64) y WinGet no está disponible para instalarlos.",
+    "why": "PCSX2 necesita estos componentes de Microsoft para iniciarse.",
+    "fix": "Instálalos desde https://aka.ms/vs/17/release/vc_redist.x64.exe y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-07": {
+   "unchanged": true,
+   "en": {
+    "what": "WinGet could not install the Microsoft Visual C++ runtime: {meaning} (WinGet code {winget}).",
+    "why": "Setup asked WinGet for the official Visual C++ x64 package and WinGet stopped.",
+    "fix": "Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe, then run {install} again."
+   },
+   "es": {
+    "what": "WinGet no ha podido instalar los componentes Visual C++ de Microsoft: {meaning} (código de WinGet {winget}).",
+    "why": "El instalador pidió a WinGet el paquete oficial de Visual C++ x64 y WinGet se detuvo.",
+    "fix": "Instálalos desde https://aka.ms/vs/17/release/vc_redist.x64.exe y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-08": {
+   "unchanged": true,
+   "en": {
+    "what": "The Microsoft Visual C++ runtime installation needs a restart or did not complete.",
+    "why": "Its files are still missing from Windows\\System32 after the installation.",
+    "fix": "Restart Windows, then run {install} again."
+   },
+   "es": {
+    "what": "La instalación de los componentes Visual C++ de Microsoft necesita un reinicio o no se ha completado.",
+    "why": "Sus archivos siguen sin estar en Windows\\System32 después de instalarlos.",
+    "fix": "Reinicia Windows y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-09": {
+   "unchanged": true,
+   "en": {
+    "what": "The Microsoft Visual C++ runtime on this PC is too old for PCSX2 ({version}; 14.40 or newer is needed).",
+    "why": "PCSX2 2.x is built with a newer Visual C++ and can close at start with an older runtime.",
+    "fix": "Install the current runtime from https://aka.ms/vs/17/release/vc_redist.x64.exe, restart Windows if asked, then run {install} again."
+   },
+   "es": {
+    "what": "Los componentes Visual C++ de Microsoft de este PC son demasiado antiguos para PCSX2 ({version}; se necesita la 14.40 o posterior).",
+    "why": "PCSX2 2.x se compila con un Visual C++ más reciente y puede cerrarse al iniciarse con unos componentes antiguos.",
+    "fix": "Instala la versión actual desde https://aka.ms/vs/17/release/vc_redist.x64.exe, reinicia Windows si te lo pide y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-10": {
+   "unchanged": false,
+   "en": {
+    "what": "Setup could not create the private Python environment (.venv).",
+    "why": "Usually a full disk, antivirus blocking new files, or a damaged Python 3.11 installation.",
+    "fix": "Free disk space, allow the installation folder in your antivirus, and repair Python 3.11 (Settings > Apps > Python 3.11 > Modify > Repair). Then run {install} again."
+   },
+   "es": {
+    "what": "El instalador no ha podido crear el entorno privado de Python (.venv).",
+    "why": "Suele deberse a un disco lleno, al antivirus que bloquea archivos nuevos o a una instalación de Python 3.11 dañada.",
+    "fix": "Libera espacio, permite la carpeta de instalación en tu antivirus y repara Python 3.11 (Configuración > Aplicaciones > Python 3.11 > Modificar > Reparar). Después vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-11": {
+   "unchanged": false,
+   "en": {
+    "what": "Setup could not install the bundled Python packages.",
+    "why": "The packages come with the installer and were already verified, so the usual causes are a full disk, antivirus blocking a .pyd or .dll file, or missing write permission.",
+    "fix": "Free disk space and allow the installation folder in your antivirus. The pip output above names the file. Then run {install} again."
+   },
+   "es": {
+    "what": "El instalador no ha podido instalar los paquetes de Python incluidos.",
+    "why": "Los paquetes vienen con el instalador y ya se verificaron, así que las causas habituales son un disco lleno, el antivirus bloqueando un archivo .pyd o .dll, o la falta de permiso de escritura.",
+    "fix": "Libera espacio y permite la carpeta de instalación en tu antivirus. La salida de pip de arriba indica el archivo. Después vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-12": {
+   "unchanged": false,
+   "en": {
+    "what": "The bundled Python packages do not work together after installation.",
+    "why": "pip check found a missing or mismatched package, usually because antivirus removed part of one.",
+    "fix": "Allow the installation folder in your antivirus, then run {install} again."
+   },
+   "es": {
+    "what": "Los paquetes de Python incluidos no funcionan juntos después de instalarlos.",
+    "why": "pip check ha encontrado un paquete que falta o no coincide, normalmente porque el antivirus eliminó parte de él.",
+    "fix": "Permite la carpeta de instalación en tu antivirus y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PY-13": {
+   "unchanged": false,
+   "en": {
+    "what": "The private Python of the installation could not be repaired.",
+    "why": "Setup rebuilt only its .venv folder, and the installation check still failed.",
+    "fix": "Choose \"new installation\" instead: your old installation stays as it is, and setup offers to copy your memory cards and mod settings."
+   },
+   "es": {
+    "what": "No se ha podido reparar el Python privado de la instalación.",
+    "why": "El instalador solo reconstruyó su carpeta .venv y la comprobación de la instalación sigue fallando.",
+    "fix": "Elige \"instalación nueva\": tu instalación anterior no cambia y el instalador ofrece copiar tus tarjetas de memoria y tus ajustes del mod."
+   }
+  },
+  "TTM-PY-20": {
+   "unchanged": true,
+   "en": {
+    "what": "No usable Python was found for setup.",
+    "why": "Setup needs Python 3.11, 3.12, 3.13 or 3.14 (64-bit) with venv, and Tk for its windows.",
+    "fix": "Install the packages named above with your package manager (for example: sudo apt install python3 python3-venv python3-tk), then run sh Install.sh again."
+   },
+   "es": {
+    "what": "No se ha encontrado un Python utilizable para el instalador.",
+    "why": "El instalador necesita Python 3.11, 3.12, 3.13 o 3.14 (64 bits) con venv, y Tk para sus ventanas.",
+    "fix": "Instala los paquetes indicados arriba con el gestor de paquetes (por ejemplo: sudo apt install python3 python3-venv python3-tk) y vuelve a ejecutar sh Install.sh."
+   }
+  },
+  "TTM-PY-21": {
+   "unchanged": true,
+   "en": {
+    "what": "Tk for Python is missing, so the setup windows cannot open.",
+    "why": "The Python running setup has no tkinter module.",
+    "fix": "Install it (Debian/Ubuntu: sudo apt install python3-tk; Fedora: sudo dnf install python3-tkinter; Arch: sudo pacman -S tk), or pass --destination, --iso and --pcsx2 (plus --bios when setup does not find the BIOS your PCSX2 uses)."
+   },
+   "es": {
+    "what": "Falta Tk para Python, así que no se pueden abrir las ventanas del instalador.",
+    "why": "El Python que ejecuta el instalador no tiene el módulo tkinter.",
+    "fix": "Instálalo (Debian/Ubuntu: sudo apt install python3-tk; Fedora: sudo dnf install python3-tkinter; Arch: sudo pacman -S tk), o indica --destination, --iso y --pcsx2 (y --bios si el instalador no encuentra la BIOS que usa tu PCSX2)."
+   }
+  },
+  "TTM-PY-22": {
+   "unchanged": true,
+   "en": {
+    "what": "Setup was started with an unsupported Python ({version}).",
+    "why": "The bundled packages serve 64-bit Python 3.11, 3.12, 3.13 and 3.14 only.",
+    "fix": "Run sh Install.sh, which picks a suitable Python, or set TAGTEAM_PYTHON to one."
+   },
+   "es": {
+    "what": "El instalador se ha iniciado con un Python no compatible ({version}).",
+    "why": "Los paquetes incluidos solo sirven para Python 3.11, 3.12, 3.13 y 3.14 de 64 bits.",
+    "fix": "Ejecuta sh Install.sh, que elige un Python adecuado, o indica uno con TAGTEAM_PYTHON."
+   }
+  },
+  "TTM-PCSX2-01": {
+   "unchanged": true,
+   "en": {
+    "what": "The file selected as PCSX2 is not a Windows program.",
+    "why": "It is probably the downloaded archive (.7z or .zip) or another file.",
+    "fix": "Extract the PCSX2 download to a folder, then select pcsx2-qt.exe inside it. Download: https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2"
+   },
+   "es": {
+    "what": "El archivo elegido como PCSX2 no es un programa de Windows.",
+    "why": "Probablemente sea el archivo descargado (.7z o .zip) u otro archivo.",
+    "fix": "Extrae la descarga de PCSX2 en una carpeta y elige pcsx2-qt.exe dentro de ella. Descarga: https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2"
+   }
+  },
+  "TTM-PCSX2-02": {
+   "unchanged": true,
+   "en": {
+    "what": "This PCSX2 version is too old: {version}. Select PCSX2 {minimum} or newer for {platform}.",
+    "why": "The mod reads PCSX2 2.x save states and settings; PCSX2 1.x and early 2.x builds work differently.",
+    "fix": "Download PCSX2 2.8.2 (recommended) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2, extract it, then select its program."
+   },
+   "es": {
+    "what": "Esta versión de PCSX2 es demasiado antigua: {version}. Elige PCSX2 {minimum} o posterior para {platform}.",
+    "why": "El mod lee los estados guardados y los ajustes de PCSX2 2.x; PCSX2 1.x y las primeras 2.x funcionan de otra forma.",
+    "fix": "Descarga PCSX2 2.8.2 (recomendado) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2, extráelo y elige su programa."
+   }
+  },
+  "TTM-PCSX2-03": {
+   "unchanged": true,
+   "en": {
+    "what": "This PCSX2 version is newer than this release supports: {version}. PCSX2 3.x is not supported yet.",
+    "why": "The mod depends on PCSX2 2.x save states and settings, which a new major version can change.",
+    "fix": "Use PCSX2 2.8.2 (https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2), or wait for a Tag Team Mod release that supports PCSX2 3."
+   },
+   "es": {
+    "what": "Esta versión de PCSX2 es más nueva de lo que admite esta versión del mod: {version}. PCSX2 3.x todavía no es compatible.",
+    "why": "El mod depende de los estados guardados y los ajustes de PCSX2 2.x, que una versión principal nueva puede cambiar.",
+    "fix": "Usa PCSX2 2.8.2 (https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2) o espera una versión de Tag Team Mod compatible con PCSX2 3."
+   }
+  },
+  "TTM-PCSX2-04": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected PCSX2 is not the 64-bit Intel/AMD (x64) build ({machine}).",
+    "why": "The mod works with the Windows x64 build of PCSX2 only.",
+    "fix": "Download the Windows x64 build of PCSX2 2.8.2 from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select its pcsx2-qt.exe."
+   },
+   "es": {
+    "what": "El PCSX2 elegido no es la versión de 64 bits para Intel/AMD (x64) ({machine}).",
+    "why": "El mod solo funciona con la versión de PCSX2 para Windows x64.",
+    "fix": "Descarga la versión para Windows x64 de PCSX2 2.8.2 desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elige su pcsx2-qt.exe."
+   }
+  },
+  "TTM-PCSX2-05": {
+   "unchanged": true,
+   "en": {
+    "what": "The PCSX2 folder is incomplete: {missing} is missing next to pcsx2-qt.exe.",
+    "why": "Only the program was extracted, or it was copied without its Qt files.",
+    "fix": "Extract the whole PCSX2 download (all folders) to a new folder, then select pcsx2-qt.exe there."
+   },
+   "es": {
+    "what": "La carpeta de PCSX2 está incompleta: falta {missing} junto a pcsx2-qt.exe.",
+    "why": "Solo se extrajo el programa, o se copió sin sus archivos de Qt.",
+    "fix": "Extrae la descarga completa de PCSX2 (todas las carpetas) en una carpeta nueva y elige allí pcsx2-qt.exe."
+   }
+  },
+  "TTM-PCSX2-06": {
+   "unchanged": true,
+   "en": {
+    "what": "The version of the selected PCSX2 cannot be read.",
+    "why": "The program has no Windows version information, so it is not an official PCSX2 build.",
+    "fix": "Download the official PCSX2 2.8.2 from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2, extract it and select its pcsx2-qt.exe."
+   },
+   "es": {
+    "what": "No se puede leer la versión del PCSX2 elegido.",
+    "why": "El programa no tiene información de versión de Windows, así que no es una versión oficial de PCSX2.",
+    "fix": "Descarga el PCSX2 2.8.2 oficial desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2, extráelo y elige su pcsx2-qt.exe."
+   }
+  },
+  "TTM-PCSX2-07": {
+   "unchanged": false,
+   "en": {
+    "what": "The PCSX2 folder contains a junction or symbolic link: {name}.",
+    "why": "Setup copies the PCSX2 program files into the installation and refuses links among them, because a link can point to any folder.",
+    "fix": "Extract the official PCSX2 download to an ordinary folder (without links) and select pcsx2-qt.exe there."
+   },
+   "es": {
+    "what": "La carpeta de PCSX2 contiene una unión (junction) o un enlace simbólico: {name}.",
+    "why": "El instalador copia los archivos del programa PCSX2 en la instalación y rechaza enlaces entre ellos, porque un enlace puede apuntar a cualquier carpeta.",
+    "fix": "Extrae la descarga oficial de PCSX2 en una carpeta normal (sin enlaces) y elige allí pcsx2-qt.exe."
+   }
+  },
+  "TTM-PCSX2-10": {
+   "unchanged": true,
+   "en": {
+    "what": "{reason}",
+    "why": "Flatpak hides PCSX2's PINE connection and profile from the mod.",
+    "fix": "Download the official PCSX2 AppImage (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select it."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "Flatpak oculta al mod la conexión PINE y el perfil de PCSX2.",
+    "fix": "Descarga el AppImage oficial de PCSX2 (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elígelo."
+   }
+  },
+  "TTM-PCSX2-11": {
+   "unchanged": true,
+   "en": {
+    "what": "{reason}",
+    "why": "The selected file is not a Linux program.",
+    "fix": "Download the official PCSX2 AppImage (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select it."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "El archivo elegido no es un programa de Linux.",
+    "fix": "Descarga el AppImage oficial de PCSX2 (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elígelo."
+   }
+  },
+  "TTM-PCSX2-12": {
+   "unchanged": true,
+   "en": {
+    "what": "{reason}",
+    "why": "The mod needs the x86-64 build of PCSX2.",
+    "fix": "Download the official PCSX2 AppImage (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select it."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "El mod necesita la versión x86-64 de PCSX2.",
+    "fix": "Descarga el AppImage oficial de PCSX2 (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elígelo."
+   }
+  },
+  "TTM-PCSX2-13": {
+   "unchanged": true,
+   "en": {
+    "what": "{reason}",
+    "why": "Only the official AppImage is supported on Linux.",
+    "fix": "Download the official PCSX2 AppImage (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select it."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "En Linux solo se admite el AppImage oficial.",
+    "fix": "Descarga el AppImage oficial de PCSX2 (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elígelo."
+   }
+  },
+  "TTM-PCSX2-14": {
+   "unchanged": true,
+   "en": {
+    "what": "{reason}",
+    "why": "The AppImage has no readable version and its file name was changed.",
+    "fix": "Download the official PCSX2 AppImage (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select it."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "El AppImage no tiene una versión legible y se cambió el nombre del archivo.",
+    "fix": "Descarga el AppImage oficial de PCSX2 (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elígelo."
+   }
+  },
+  "TTM-PCSX2-15": {
+   "unchanged": false,
+   "en": {
+    "what": "{reason}",
+    "why": "The AppImage could not run from the installation folder.",
+    "fix": "Download the official PCSX2 AppImage (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) from https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 and select it."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "El AppImage no ha podido ejecutarse desde la carpeta de instalación.",
+    "fix": "Descarga el AppImage oficial de PCSX2 (pcsx2-v2.8.2-linux-appimage-x64-Qt.AppImage) desde https://github.com/PCSX2/pcsx2/releases/tag/v2.8.2 y elígelo."
+   }
+  },
+  "TTM-BIOS-01": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected file does not look like a PlayStation 2 BIOS ({size}).",
+    "why": "A PS2 BIOS dump is 2, 4 or 8 MiB and contains a ROMDIR table.",
+    "fix": "Select the BIOS file dumped from your own PS2, usually named like SCPH-70012.bin (4 MiB)."
+   },
+   "es": {
+    "what": "El archivo elegido no parece una BIOS de PlayStation 2 ({size}).",
+    "why": "Un volcado de BIOS de PS2 ocupa 2, 4 u 8 MiB y contiene una tabla ROMDIR.",
+    "fix": "Elige el archivo de BIOS volcado de tu propia PS2, normalmente con un nombre como SCPH-70012.bin (4 MiB)."
+   }
+  },
+  "TTM-BIOS-02": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected file is a PlayStation 1 BIOS (512 KiB), not a PlayStation 2 BIOS.",
+    "why": "PS1 BIOS files such as SCPH1001.BIN often sit next to PS2 ones.",
+    "fix": "Select the 4 MiB PS2 BIOS instead, usually named like SCPH-70012.bin."
+   },
+   "es": {
+    "what": "El archivo elegido es una BIOS de PlayStation 1 (512 KiB), no de PlayStation 2.",
+    "why": "Las BIOS de PS1, como SCPH1001.BIN, suelen estar junto a las de PS2.",
+    "fix": "Elige en su lugar la BIOS de PS2 de 4 MiB, normalmente con un nombre como SCPH-70012.bin."
+   }
+  },
+  "TTM-BIOS-03": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected file is not a PS2 BIOS: it is too large ({size}) or a PlayStation 3 firmware file.",
+    "why": "PS3 firmware (PS3UPDAT.PUP) and other large files are sometimes named like a BIOS.",
+    "fix": "Select the 4 MiB PS2 BIOS dumped from your own PS2, usually named like SCPH-70012.bin."
+   },
+   "es": {
+    "what": "El archivo elegido no es una BIOS de PS2: es demasiado grande ({size}) o es un firmware de PlayStation 3.",
+    "why": "El firmware de PS3 (PS3UPDAT.PUP) y otros archivos grandes a veces se llaman como una BIOS.",
+    "fix": "Elige la BIOS de PS2 de 4 MiB volcada de tu propia PS2, normalmente con un nombre como SCPH-70012.bin."
+   }
+  },
+  "TTM-BIOS-04": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected BIOS is still packed in an archive ({format}).",
+    "why": "PCSX2 cannot read a BIOS inside a ZIP, 7z or RAR file.",
+    "fix": "Extract the archive, then select the .bin file inside it."
+   },
+   "es": {
+    "what": "La BIOS elegida sigue dentro de un archivo comprimido ({format}).",
+    "why": "PCSX2 no puede leer una BIOS dentro de un archivo ZIP, 7z o RAR.",
+    "fix": "Descomprime el archivo y elige el archivo .bin que contiene."
+   }
+  },
+  "TTM-BIOS-05": {
+   "unchanged": true,
+   "en": {
+    "what": "The same file was selected as the ISO and as the BIOS.",
+    "why": "The game disc image and the PS2 BIOS are two different files.",
+    "fix": "Select the game ISO for the disc and your PS2 BIOS file (usually SCPH-xxxxx.bin, 4 MiB) for the BIOS."
+   },
+   "es": {
+    "what": "Se ha elegido el mismo archivo como ISO y como BIOS.",
+    "why": "La imagen del disco del juego y la BIOS de PS2 son dos archivos distintos.",
+    "fix": "Elige la ISO del juego para el disco y tu archivo de BIOS de PS2 (normalmente SCPH-xxxxx.bin, 4 MiB) para la BIOS."
+   }
+  },
+  "TTM-BIOS-06": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected file is only one part of a PS2 BIOS dump ({size}), not the BIOS itself.",
+    "why": "BIOS dumping tools save the BIOS (usually 4 MiB, ending in .bin or .rom0) together with companion files such as .ROM1, .ROM2, .EROM, .NVM and .MEC.",
+    "fix": "Select the 4 MiB file of the same dump, usually the one ending in .bin or .rom0."
+   },
+   "es": {
+    "what": "El archivo elegido es solo una parte de un volcado de BIOS de PS2 ({size}), no la BIOS.",
+    "why": "Las herramientas de volcado guardan la BIOS (normalmente de 4 MiB, terminada en .bin o .rom0) junto con archivos complementarios como .ROM1, .ROM2, .EROM, .NVM y .MEC.",
+    "fix": "Elige el archivo de 4 MiB del mismo volcado, normalmente el que termina en .bin o .rom0."
+   }
+  },
+  "TTM-BIOS-07": {
+   "unchanged": true,
+   "en": {
+    "what": "No BIOS was given, and setup found no PS2 BIOS set up in your PCSX2.",
+    "why": "Without a selected BIOS, setup copies the one your PCSX2 already uses, read from its settings file (inis/PCSX2.ini). The settings name no BIOS, or one that is missing, and their BIOS folder holds no PS2 BIOS.",
+    "fix": "Start your PCSX2 once and choose your PS2 BIOS there (Settings > BIOS), then run setup again. Or give setup your BIOS file with {bios_option}; it is usually named like SCPH-70012.bin (4 MiB)."
+   },
+   "es": {
+    "what": "No se ha indicado ninguna BIOS y el instalador no ha encontrado ninguna BIOS de PS2 configurada en tu PCSX2.",
+    "why": "Si no eliges una BIOS, el instalador copia la que ya usa tu PCSX2, según su archivo de ajustes (inis/PCSX2.ini). Los ajustes no indican ninguna BIOS, o indican una que falta, y su carpeta de BIOS no contiene ninguna BIOS de PS2.",
+    "fix": "Abre tu PCSX2 una vez, elige allí tu BIOS de PS2 (Configuración > BIOS) y vuelve a ejecutar el instalador. O indica tu archivo de BIOS con {bios_option}; normalmente se llama como SCPH-70012.bin (4 MiB)."
+   }
+  },
+  "TTM-BIOS-08": {
+   "unchanged": true,
+   "en": {
+    "what": "Your PCSX2 has {count} PS2 BIOS files and none of them is selected in its settings.",
+    "why": "Without a selected BIOS, setup copies the one your PCSX2 uses. With several in its BIOS folder (below) and none selected, setup cannot tell which one that is.",
+    "fix": "Choose your BIOS in PCSX2 (Settings > BIOS) and run setup again, or give setup the BIOS file to use with {bios_option}."
+   },
+   "es": {
+    "what": "Tu PCSX2 tiene {count} BIOS de PS2 y ninguna está elegida en sus ajustes.",
+    "why": "Si no eliges una BIOS, el instalador copia la que usa tu PCSX2. Con varias en su carpeta de BIOS (abajo) y ninguna elegida, no puede saber cuál es.",
+    "fix": "Elige tu BIOS en PCSX2 (Configuración > BIOS) y vuelve a ejecutar el instalador, o indica con {bios_option} el archivo de BIOS que quieres usar."
+   }
+  },
+  "TTM-ISO-01": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected game image is still packed in an archive ({format}).",
+    "why": "The mod and PCSX2 need the plain disc image, not a compressed download.",
+    "fix": "Extract the archive (Windows: right-click > Extract All, or 7-Zip for .7z and .rar), then select the .iso file inside it."
+   },
+   "es": {
+    "what": "La imagen del juego elegida sigue dentro de un archivo comprimido ({format}).",
+    "why": "El mod y PCSX2 necesitan la imagen de disco sin comprimir, no la descarga comprimida.",
+    "fix": "Descomprime el archivo (Windows: clic derecho > Extraer todo, o 7-Zip para .7z y .rar) y elige el archivo .iso que contiene."
+   }
+  },
+  "TTM-ISO-02": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected game image is a CHD file (a compressed disc image).",
+    "why": "The mod reads and patches files inside an uncompressed ISO, which a CHD is not.",
+    "fix": "Convert it back to an ISO with chdman (from MAME): chdman extractdvd -i game.chd -o game.iso. Then select the .iso."
+   },
+   "es": {
+    "what": "La imagen del juego elegida es un archivo CHD (una imagen de disco comprimida).",
+    "why": "El mod lee y parchea archivos dentro de una ISO sin comprimir, y un CHD no lo es.",
+    "fix": "Conviértela de nuevo en ISO con chdman (de MAME): chdman extractdvd -i juego.chd -o juego.iso. Después elige la .iso."
+   }
+  },
+  "TTM-ISO-03": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected game image is a {format} file (a compressed disc image).",
+    "why": "The mod reads and patches files inside an uncompressed ISO.",
+    "fix": "Decompress it with maxcso: maxcso --decompress game.{extension} -o game.iso. Then select the .iso."
+   },
+   "es": {
+    "what": "La imagen del juego elegida es un archivo {format} (una imagen de disco comprimida).",
+    "why": "El mod lee y parchea archivos dentro de una ISO sin comprimir.",
+    "fix": "Descomprímela con maxcso: maxcso --decompress juego.{extension} -o juego.iso. Después elige la .iso."
+   }
+  },
+  "TTM-ISO-04": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected game image is a raw BIN/CUE image, not an ISO.",
+    "why": "BIN/CUE images store 2352-byte CD sectors; the mod needs a 2048-byte-sector ISO.",
+    "fix": "Convert the BIN/CUE to an ISO (for example with AnyBurn or IsoBuster, or dump the disc again as ISO). Then select the .iso."
+   },
+   "es": {
+    "what": "La imagen del juego elegida es una imagen BIN/CUE en bruto, no una ISO.",
+    "why": "Las imágenes BIN/CUE guardan sectores de CD de 2352 bytes; el mod necesita una ISO con sectores de 2048 bytes.",
+    "fix": "Convierte el BIN/CUE en ISO (por ejemplo con AnyBurn o IsoBuster, o vuelve a volcar el disco como ISO). Después elige la .iso."
+   }
+  },
+  "TTM-ISO-05": {
+   "unchanged": true,
+   "en": {
+    "what": "The selected file is not a PlayStation 2 disc image.",
+    "why": "It has no ISO 9660 volume descriptor, so it is another kind of file or a renamed compressed image.",
+    "fix": "Select the .iso of your own BT3 USA / Europe or BT4 B14 REV2 English / Spanish disc."
+   },
+   "es": {
+    "what": "El archivo elegido no es una imagen de disco de PlayStation 2.",
+    "why": "No tiene descriptor de volumen ISO 9660, así que es otro tipo de archivo o una imagen comprimida con otro nombre.",
+    "fix": "Elige la .iso de tu propio disco de BT3 USA / Europa o de BT4 B14 REV2 en inglés o español."
+   }
+  },
+  "TTM-ISO-06": {
+   "unchanged": true,
+   "en": {
+    "what": "The game ISO is incomplete: the file has {size} bytes, but the disc says {expected} bytes.",
+    "why": "The download or copy stopped before the end.",
+    "fix": "Download or copy the ISO again and wait until it finishes, then select it again."
+   },
+   "es": {
+    "what": "La ISO del juego está incompleta: el archivo tiene {size} bytes, pero el disco indica {expected} bytes.",
+    "why": "La descarga o la copia se detuvo antes del final.",
+    "fix": "Descarga o copia de nuevo la ISO, espera a que termine y vuelve a elegirla."
+   }
+  },
+  "TTM-ISO-07": {
+   "unchanged": false,
+   "en": {
+    "what": "The game ISO is damaged: its ISO 9660 file system cannot be read.",
+    "why": "The image starts like a disc image, but its directory records are broken: an interrupted copy, a failing drive or an edited image.",
+    "fix": "Copy or dump the ISO again, check it against redump.org, and select it again."
+   },
+   "es": {
+    "what": "La ISO del juego está dañada: no se puede leer su sistema de archivos ISO 9660.",
+    "why": "La imagen empieza como una imagen de disco, pero sus registros de directorio están rotos: una copia interrumpida, una unidad que falla o una imagen modificada.",
+    "fix": "Copia o vuelca de nuevo la ISO, compruébala con redump.org y vuelve a elegirla."
+   }
+  },
+  "TTM-ISO-08": {
+   "unchanged": false,
+   "en": {
+    "what": "{reason}",
+    "why": "The mod patches one exact game program; other releases and changed discs are refused.",
+    "fix": "Select the ISO of a supported disc. If you did not change this disc, the image may be a damaged dump: verify it against redump.org or dump the disc again."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "El mod parchea un programa del juego exacto; se rechazan otras versiones y los discos modificados.",
+    "fix": "Elige la ISO de un disco compatible. Si no has modificado este disco, la imagen puede ser un volcado dañado: comprúbala con redump.org o vuelve a volcar el disco."
+   }
+  },
+  "TTM-ISO-09": {
+   "unchanged": false,
+   "en": {
+    "what": "The game ISO could not be read as expected: {reason}.",
+    "why": "The disc image is damaged, incomplete or changed.",
+    "fix": "Copy or dump the ISO again, check it against redump.org, and select it again."
+   },
+   "es": {
+    "what": "No se ha podido leer la ISO del juego como se esperaba: {reason}.",
+    "why": "La imagen del disco está dañada, incompleta o modificada.",
+    "fix": "Copia o vuelca de nuevo la ISO, compruébala con redump.org y vuelve a elegirla."
+   }
+  },
+  "TTM-PAYLOAD-01": {
+   "unchanged": false,
+   "en": {
+    "what": "The mod files inside the installer are damaged.",
+    "why": "The payload does not match its checksums: a damaged download or a file changed by antivirus.",
+    "fix": "Download the release again, extract it to a new, empty folder and run {install} from there."
+   },
+   "es": {
+    "what": "Los archivos del mod dentro del instalador están dañados.",
+    "why": "El contenido no coincide con sus sumas de comprobación: una descarga dañada o un archivo modificado por el antivirus.",
+    "fix": "Descarga de nuevo la versión, extráela en una carpeta nueva y vacía y ejecuta {install} desde allí."
+   }
+  },
+  "TTM-PAYLOAD-02": {
+   "unchanged": false,
+   "en": {
+    "what": "{reason}",
+    "why": "A setup check did not pass.",
+    "fix": "Extract a fresh copy of the release and run {install} again. If it happens again, send this block."
+   },
+   "es": {
+    "what": "{reason}",
+    "why": "Una comprobación del instalador no se ha superado.",
+    "fix": "Extrae una copia nueva de la versión y vuelve a ejecutar {install}. Si vuelve a pasar, envía este bloque."
+   }
+  },
+  "TTM-PAYLOAD-03": {
+   "unchanged": false,
+   "en": {
+    "what": "An offline check of the installed mod failed: {script}.",
+    "why": "The mod could not start its own checks with the private Python; the output above names the part.",
+    "fix": "Allow the installation folder in your antivirus and run {install} again. If it happens again, send this block with installer.log."
+   },
+   "es": {
+    "what": "Ha fallado una comprobación sin conexión del mod instalado: {script}.",
+    "why": "El mod no ha podido completar sus propias comprobaciones con el Python privado; la salida de arriba indica la parte.",
+    "fix": "Permite la carpeta de instalación en tu antivirus y vuelve a ejecutar {install}. Si vuelve a pasar, envía este bloque con installer.log."
+   }
+  },
+  "TTM-PAYLOAD-04": {
+   "unchanged": false,
+   "en": {
+    "what": "The address table in the player payload was not made from this disc's executable.",
+    "why": "The European or Japanese adapter's table must match the selected disc exactly.",
+    "fix": "Obtain a complete, current installer and run it again. If it happens again, send this block."
+   },
+   "es": {
+    "what": "La tabla de direcciones del mod no se creó a partir del ejecutable de este disco.",
+    "why": "La tabla del adaptador europeo o japonés debe coincidir exactamente con el disco elegido.",
+    "fix": "Consigue un instalador completo y actual y vuelve a ejecutarlo. Si vuelve a pasar, envía este bloque."
+   }
+  },
+  "TTM-PAYLOAD-05": {
+   "unchanged": false,
+   "en": {
+    "what": "A setup step took too long and was stopped: {step}.",
+    "why": "The PC was very busy, or antivirus was scanning every new file.",
+    "fix": "Close other programs, allow the installation folder in your antivirus, then run {install} again."
+   },
+   "es": {
+    "what": "Un paso del instalador ha tardado demasiado y se ha detenido: {step}.",
+    "why": "El PC estaba muy ocupado, o el antivirus analizaba cada archivo nuevo.",
+    "fix": "Cierra otros programas, permite la carpeta de instalación en tu antivirus y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-PAYLOAD-90": {
+   "unchanged": false,
+   "en": {
+    "what": "Setup stopped because of an unexpected error.",
+    "why": "This is probably a bug in setup.",
+    "fix": "Run {install} again. If it happens again, send this block and the log file named below."
+   },
+   "es": {
+    "what": "El instalador se ha detenido por un error inesperado.",
+    "why": "Probablemente sea un fallo del instalador.",
+    "fix": "Vuelve a ejecutar {install}. Si vuelve a pasar, envía este bloque y el registro indicado abajo."
+   }
+  },
+  "TTM-PAYLOAD-91": {
+   "unchanged": false,
+   "en": {
+    "what": "The setup step that installs the mod ended without reporting a result (exit code {exit}).",
+    "why": "It was closed, crashed, or could not write its status file.",
+    "fix": "Run {install} again. If it happens again, send this block and the log file named below."
+   },
+   "es": {
+    "what": "El paso del instalador que instala el mod ha terminado sin indicar un resultado (código de salida {exit}).",
+    "why": "Se cerró, falló o no pudo escribir su archivo de estado.",
+    "fix": "Vuelve a ejecutar {install}. Si vuelve a pasar, envía este bloque y el registro indicado abajo."
+   }
+  },
+  "TTM-CHECK-01": {
+   "unchanged": false,
+   "en": {
+    "what": "The final installation check did not pass.",
+    "why": "Setup checks the new installation the same way {check} does; the reason is shown above.",
+    "fix": "Fix the reason shown above, then run {install} again."
+   },
+   "es": {
+    "what": "La comprobación final de la instalación no se ha superado.",
+    "why": "El instalador comprueba la nueva instalación igual que {check}; el motivo aparece arriba.",
+    "fix": "Corrige el motivo indicado arriba y vuelve a ejecutar {install}."
+   }
+  },
+  "TTM-CHECK-02": {
+   "unchanged": false,
+   "en": {
+    "what": "{count} installation files are missing, for example: {files}.",
+    "why": "Antivirus often quarantines .dll, .pyd and .exe files; a cleanup tool or a manual deletion can also remove them.",
+    "fix": "Check your antivirus quarantine and restore the files, then allow the installation folder. Otherwise run {install} and choose the folder of this installation itself (the one that contains {play}): setup installs a fresh copy beside it and offers to copy your memory cards and mod settings into it. Your memory cards are in {cards}."
+   },
+   "es": {
+    "what": "Faltan {count} archivos de la instalación, por ejemplo: {files}.",
+    "why": "El antivirus suele poner en cuarentena archivos .dll, .pyd y .exe; también puede borrarlos una herramienta de limpieza o una eliminación manual.",
+    "fix": "Revisa la cuarentena del antivirus, restaura los archivos y permite la carpeta de instalación. Si no, ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}): el instalador crea una copia nueva junto a ella y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod. Tus tarjetas de memoria están en {cards}."
+   }
+  },
+  "TTM-CHECK-03": {
+   "unchanged": false,
+   "en": {
+    "what": "{count} installation files were changed, for example: {files}.",
+    "why": "Installed code and resources must stay exactly as setup wrote them; a changed file can break matches.",
+    "fix": "Run {install} and choose the folder of this installation itself (the one that contains {play}): setup installs a fresh copy beside it and offers to copy your memory cards and mod settings into it. Your memory cards are in {cards}."
+   },
+   "es": {
+    "what": "Se han modificado {count} archivos de la instalación, por ejemplo: {files}.",
+    "why": "El código y los recursos instalados deben quedar tal como los escribió el instalador; un archivo modificado puede romper los combates.",
+    "fix": "Ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}): el instalador crea una copia nueva junto a ella y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod. Tus tarjetas de memoria están en {cards}."
+   }
+  },
+  "TTM-CHECK-04": {
+   "unchanged": false,
+   "en": {
+    "what": "A Python package of the installation has the wrong version: {name} (expected {expected}, found {found}).",
+    "why": "Packages installed into the private Python by hand replace the reviewed ones.",
+    "fix": "Run {install} and choose the folder of this installation itself (the one that contains {play}): setup installs a fresh copy beside it, with the reviewed packages, and offers to copy your memory cards and mod settings into it."
+   },
+   "es": {
+    "what": "Un paquete de Python de la instalación tiene una versión incorrecta: {name} (se esperaba {expected}, hay {found}).",
+    "why": "Los paquetes instalados a mano en el Python privado sustituyen a los revisados.",
+    "fix": "Ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}): el instalador crea junto a ella una copia nueva con los paquetes revisados y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod."
+   }
+  },
+  "TTM-CHECK-05": {
+   "unchanged": false,
+   "en": {
+    "what": "The private PCSX2 settings file is missing.",
+    "why": "It was deleted, or PCSX2 settings were reset from outside this installation.",
+    "fix": "Run {install} and choose the folder of this installation itself (the one that contains {play}): setup installs a fresh copy beside it and offers to copy your memory cards and mod settings into it. Your memory cards are in {cards}."
+   },
+   "es": {
+    "what": "Falta el archivo de ajustes del PCSX2 privado.",
+    "why": "Se ha borrado, o los ajustes de PCSX2 se restablecieron desde fuera de esta instalación.",
+    "fix": "Ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}): el instalador crea una copia nueva junto a ella y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod. Tus tarjetas de memoria están en {cards}."
+   }
+  },
+  "TTM-CHECK-06": {
+   "unchanged": false,
+   "en": {
+    "what": "A required PCSX2 setting was changed: {section} / {key} must be {value}.",
+    "why": "PCSX2 settings were reset, or this option was changed in PCSX2; the mod needs it to connect and patch the game.",
+    "fix": "Open this installation's PCSX2 (game/runtime28), set it back, or install a fresh copy beside this one."
+   },
+   "es": {
+    "what": "Se ha cambiado un ajuste necesario de PCSX2: {section} / {key} debe ser {value}.",
+    "why": "Se restablecieron los ajustes de PCSX2 o se cambió esta opción en PCSX2; el mod la necesita para conectarse y parchear el juego.",
+    "fix": "Abre el PCSX2 de esta instalación (game/runtime28) y vuelve a ponerlo, o instala una copia nueva junto a esta."
+   }
+  },
+  "TTM-CHECK-07": {
+   "unchanged": false,
+   "en": {
+    "what": "The private PCSX2 settings file has no [{section}] section.",
+    "why": "The file was replaced or edited outside PCSX2.",
+    "fix": "Run {install} and choose the folder of this installation itself (the one that contains {play}): setup installs a fresh copy beside it and offers to copy your memory cards and mod settings into it. Your memory cards are in {cards}."
+   },
+   "es": {
+    "what": "El archivo de ajustes del PCSX2 privado no tiene la sección [{section}].",
+    "why": "El archivo se sustituyó o se editó fuera de PCSX2.",
+    "fix": "Ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}): el instalador crea una copia nueva junto a ella y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod. Tus tarjetas de memoria están en {cards}."
+   }
+  },
+  "TTM-CHECK-08": {
+   "unchanged": false,
+   "en": {
+    "what": "A PCSX2 folder setting points outside the private profile: {key}.",
+    "why": "The mod keeps BIOS, memory cards and states inside this installation so it never touches your other PCSX2.",
+    "fix": "In this installation's PCSX2, set the folder back to its default, or install a fresh copy beside this one."
+   },
+   "es": {
+    "what": "Un ajuste de carpeta de PCSX2 apunta fuera del perfil privado: {key}.",
+    "why": "El mod guarda la BIOS, las tarjetas de memoria y los estados dentro de esta instalación para no tocar tu otro PCSX2.",
+    "fix": "En el PCSX2 de esta instalación, vuelve a poner la carpeta predeterminada, o instala una copia nueva junto a esta."
+   }
+  },
+  "TTM-CHECK-09": {
+   "unchanged": false,
+   "en": {
+    "what": "The PS2 BIOS configured for this installation is missing.",
+    "why": "The BIOS copy in the private profile was deleted or renamed.",
+    "fix": "Copy your PS2 BIOS file back into game/runtime28/bios (Linux: game/runtime28/PCSX2/bios) under the name shown below, or install a fresh copy."
+   },
+   "es": {
+    "what": "Falta la BIOS de PS2 configurada para esta instalación.",
+    "why": "Se borró o se cambió el nombre de la copia de la BIOS del perfil privado.",
+    "fix": "Vuelve a copiar tu archivo de BIOS de PS2 en game/runtime28/bios (Linux: game/runtime28/PCSX2/bios) con el nombre indicado abajo, o instala una copia nueva."
+   }
+  },
+  "TTM-CHECK-10": {
+   "unchanged": false,
+   "en": {
+    "what": "The game ISO could not be checked: {reason}",
+    "why": "The ISO was moved, renamed or changed after installation, or its drive is not connected.",
+    "fix": "Put the ISO back where it was, or start {play}, which offers to find its new location. If you replaced it with another file, add that file in {settings} > Game disc and use it. Then run {check} with --full-iso."
+   },
+   "es": {
+    "what": "No se ha podido comprobar la ISO del juego: {reason}",
+    "why": "La ISO se ha movido, se ha cambiado de nombre o se ha modificado después de instalar, o su unidad no está conectada.",
+    "fix": "Vuelve a poner la ISO donde estaba, o inicia {play}, que ofrece buscar su nueva ubicación. Si la sustituiste por otro archivo, añádelo en {settings} > Disco del juego y úsalo. Después ejecuta {check} con --full-iso."
+   }
+  },
+  "TTM-CHECK-11": {
+   "unchanged": false,
+   "en": {
+    "what": "An offline check of the installed mod failed: {script}.",
+    "why": "The mod could not complete its own checks; the output above names the part.",
+    "fix": "Allow the installation folder in your antivirus and run {check} again. If it happens again, install a fresh copy beside this one."
+   },
+   "es": {
+    "what": "Ha fallado una comprobación sin conexión del mod instalado: {script}.",
+    "why": "El mod no ha podido completar sus propias comprobaciones; la salida de arriba indica la parte.",
+    "fix": "Permite la carpeta de instalación en tu antivirus y vuelve a ejecutar {check}. Si vuelve a pasar, instala una copia nueva junto a esta."
+   }
+  },
+  "TTM-CHECK-12": {
+   "unchanged": true,
+   "en": {
+    "what": "The installation check was started with the wrong Python ({version}).",
+    "why": "It must run with the installation's private Python (.venv).",
+    "fix": "Start {check} from the installation folder."
+   },
+   "es": {
+    "what": "La comprobación de la instalación se ha iniciado con un Python incorrecto ({version}).",
+    "why": "Debe ejecutarse con el Python privado de la instalación (.venv).",
+    "fix": "Inicia {check} desde la carpeta de instalación."
+   }
+  },
+  "TTM-CHECK-13": {
+   "unchanged": true,
+   "en": {
+    "what": "An installation record is missing or damaged: {name}.",
+    "why": "Setup writes these records at the end of installation; this folder may be an unfinished or copied installation.",
+    "fix": "Install a fresh copy beside this one and copy your memory cards from {cards}."
+   },
+   "es": {
+    "what": "Falta o está dañado un registro de la instalación: {name}.",
+    "why": "El instalador escribe estos registros al final; esta carpeta puede ser una instalación sin terminar o copiada.",
+    "fix": "Instala una copia nueva junto a esta y copia tus tarjetas de memoria desde {cards}."
+   }
+  },
+  "TTM-CHECK-14": {
+   "unchanged": false,
+   "en": {
+    "what": "The PCSX2 version of this installation is not accepted: {reason}.",
+    "why": "The installed mod and its PCSX2 copy must match this release's PCSX2 policy.",
+    "fix": "Run {install}, choose the folder of this installation itself (the one that contains {play}) and a supported PCSX2 (2.8.2 recommended): setup installs a fresh copy beside it and offers to copy your memory cards and mod settings into it. Your memory cards are in {cards}."
+   },
+   "es": {
+    "what": "No se acepta la versión de PCSX2 de esta instalación: {reason}.",
+    "why": "El mod instalado y su copia de PCSX2 deben cumplir la política de PCSX2 de esta versión.",
+    "fix": "Ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}) y un PCSX2 compatible (se recomienda 2.8.2): el instalador crea una copia nueva junto a ella y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod. Tus tarjetas de memoria están en {cards}."
+   }
+  },
+  "TTM-CHECK-15": {
+   "unchanged": false,
+   "en": {
+    "what": "The address table does not match the installed disc.",
+    "why": "The European or Japanese adapter's table must be the one made from the chosen disc.",
+    "fix": "If the European or Japanese disc was not the one you meant, choose another disc in {settings} > Game disc. Otherwise run {install} and choose the folder of this installation itself (the one that contains {play}): setup installs a fresh copy beside it and offers to copy your memory cards and mod settings into it. Your memory cards are in {cards}."
+   },
+   "es": {
+    "what": "La tabla de direcciones no coincide con el disco instalado.",
+    "why": "La tabla del adaptador europeo o japonés debe ser la creada a partir del disco elegido.",
+    "fix": "Si no querías usar el disco europeo o japonés, elige otro disco en {settings} > Disco del juego. Si no, ejecuta {install} y elige la propia carpeta de esta instalación (la que contiene {play}): el instalador crea una copia nueva junto a ella y ofrece copiar en ella tus tarjetas de memoria y los ajustes del mod. Tus tarjetas de memoria están en {cards}."
+   }
+  },
+  "TTM-CHECK-16": {
+   "unchanged": false,
+   "en": {
+    "what": "The private PCSX2 marker file (portable.ini) is missing.",
+    "why": "Without it, PCSX2 would use your normal PCSX2 settings and saves instead of this installation's.",
+    "fix": "Create an empty file named portable.ini in game/runtime28, or install a fresh copy beside this one."
+   },
+   "es": {
+    "what": "Falta el archivo de marca del PCSX2 privado (portable.ini).",
+    "why": "Sin él, PCSX2 usaría tus ajustes y partidas normales de PCSX2 en lugar de los de esta instalación.",
+    "fix": "Crea un archivo vacío llamado portable.ini en game/runtime28, o instala una copia nueva junto a esta."
+   }
+  },
+  "TTM-CHECK-17": {
+   "unchanged": false,
+   "en": {
+    "what": "The PCSX2 AppImage of this installation cannot run: {reason}.",
+    "why": "The AppImage lost its permission to run, or the installation was made for another system.",
+    "fix": "Install a fresh copy with sh Install.sh into a folder in your home directory."
+   },
+   "es": {
+    "what": "El AppImage de PCSX2 de esta instalación no puede ejecutarse: {reason}.",
+    "why": "El AppImage ha perdido el permiso de ejecución, o la instalación se hizo para otro sistema.",
+    "fix": "Instala una copia nueva con sh Install.sh en una carpeta dentro de tu carpeta personal."
+   }
+  },
+  "TTM-CHECK-18": {
+   "unchanged": false,
+   "en": {
+    "what": "This installation names an adapter this release does not know: {adapter}.",
+    "why": "The installation was made by a different release of the mod.",
+    "fix": "Run {check} from the installation it came with, or install a fresh copy."
+   },
+   "es": {
+    "what": "Esta instalación indica un adaptador que esta versión no conoce: {adapter}.",
+    "why": "La instalación se hizo con otra versión del mod.",
+    "fix": "Ejecuta el {check} de la instalación correspondiente, o instala una copia nueva."
+   }
+  },
+  "TTM-CHECK-19": {
+   "unchanged": false,
+   "en": {
+    "what": "The game disc selected for {play} cannot be used: {reason}",
+    "why": "The disc's extracted files in game/discs are missing or changed, or its selection file is damaged.",
+    "fix": "Open {settings} > Game disc and choose the disc again (the disc you installed with always works), then run {check} again."
+   },
+   "es": {
+    "what": "No se puede usar el disco del juego elegido para {play}: {reason}",
+    "why": "Faltan los archivos extraídos del disco en game/discs o han cambiado, o su archivo de selección está dañado.",
+    "fix": "Abre {settings} > Disco del juego y vuelve a elegir el disco (el disco con el que instalaste siempre funciona); después ejecuta {check} de nuevo."
+   }
+  },
+  "TTM-CHECK-90": {
+   "unchanged": false,
+   "en": {
+    "what": "The installation check stopped because of an unexpected error.",
+    "why": "This is probably a bug in the check.",
+    "fix": "Run {check} again. If it happens again, send this block and check-installation.log."
+   },
+   "es": {
+    "what": "La comprobación de la instalación se ha detenido por un error inesperado.",
+    "why": "Probablemente sea un fallo de la comprobación.",
+    "fix": "Vuelve a ejecutar {check}. Si vuelve a pasar, envía este bloque y check-installation.log."
+   }
+  },
+  "TTM-PLAY-50": {
+   "unchanged": true,
+   "kind": "launcher",
+   "en": {
+    "what": "{launcher} was started outside its installation folder.",
+    "why": "The launcher was copied or moved away from the folder that holds the game files.",
+    "fix": "Open {launcher} inside the Tag Team Mod installation folder. For a desktop icon, create a shortcut to it (right-click > Show more options > Create shortcut) instead of copying it."
+   },
+   "es": {
+    "what": "{launcher} se ha iniciado fuera de su carpeta de instalación.",
+    "why": "El lanzador se ha copiado o movido fuera de la carpeta que contiene los archivos del juego.",
+    "fix": "Abre {launcher} dentro de la carpeta de instalación de Tag Team Mod. Para tener un icono en el escritorio, crea un acceso directo (clic derecho > Mostrar más opciones > Crear acceso directo) en lugar de copiarlo."
+   }
+  },
+  "TTM-PLAY-51": {
+   "unchanged": true,
+   "kind": "launcher",
+   "en": {
+    "what": "The private Python of this installation no longer starts.",
+    "why": "Its base Python 3.11 was uninstalled, moved or replaced (the .venv only points to it).",
+    "fix": "Run {install} of the same release, choose the folder of this installation itself (the one that contains {play}), and answer Yes when setup offers to repair its private Python. Or install Python 3.11 (64-bit) again at its old location."
+   },
+   "es": {
+    "what": "El Python privado de esta instalación ya no se inicia.",
+    "why": "Su Python 3.11 base se ha desinstalado, movido o sustituido (el .venv solo apunta a él).",
+    "fix": "Ejecuta {install} de la misma versión, elige la propia carpeta de esta instalación (la que contiene {play}) y responde Sí cuando el instalador ofrezca reparar su Python privado. O vuelve a instalar Python 3.11 (64 bits) en su ubicación anterior."
+   }
+  }
+ }
+}

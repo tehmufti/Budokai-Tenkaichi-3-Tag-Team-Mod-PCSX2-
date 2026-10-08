@@ -1,0 +1,95 @@
+TAG TEAM MOD - EN LÍNEA 2.2 (protocolo 7)
+==========================================
+
+Instala la misma versión de Tag Team Mod en cada PC y abre Play online.cmd
+(Linux: Play online.sh). El disco elegido, la BIOS y PCSX2 proceden de la
+instalación. El juego en línea tiene su propio perfil del emulador y ajustes
+en online/data; no cambia tus ajustes, partidas ni tarjetas de memoria sin
+conexión. Al actualizar se importa tu perfil en línea. La contraseña no se guarda.
+
+DISCOS COMPATIBLES
+BT3 USA, BT3 Europa, BT3 Japón (Sparking! Meteor) y los discos revisados de BT4
+B14 REV2 en inglés y español. Todos los PC de una sala necesitan el MISMO
+contenido del disco, adaptador y versión del mod. No permite mezclar regiones
+ni BT3 con BT4 en una sala. Se comparan recursos, parches, código y ajustes de
+emulación antes de jugar. Las variantes desconocidas aún necesitan un adaptador
+revisado. Cambia el disco en Mod settings > Disco del juego y vuelve a abrir
+Play online para usar el disco seleccionado.
+
+CREAR UNA SALA Y UNIRSE
+Un PC abre la sala. Los demás pulsan Unirse a una sala e introducen su
+dirección (IP o nombre de servidor, con :puerto si hace falta). Todos entran mirando. Toma un luchador y pulsa Listo. Los luchadores sin
+jugador son de la CPU. El anfitrión elige personajes, trajes, escenario, música
+y reglas, y comienza cuando los jugadores están listos. Cada PC muestra la
+cámara de su propio luchador. Cada equipo puede tener de uno a cinco luchadores,
+independientemente (2 contra 1, 5 contra 3, etc.), hasta diez luchadores y diez
+jugadores. Todos contra todos admite 2-10 luchadores. Una sala admite dieciséis
+personas, incluidos los espectadores. Si un jugador sale, la CPU toma su luchador.
+
+En las reglas de la sala, "Si un jugador no carga" tiene "Cancelar el inicio"
+por defecto. "Expulsar y continuar" elimina al jugador si su carga falla o
+si no termina en 120 segundos; la CPU toma su luchador. Los demás jugadores
+deben terminar de cargar antes de que empiecen las introducciones juntos.
+Los espectadores no retrasan el inicio. El jugador expulsado puede volver a
+entrar como espectador. La opción se guarda para la próxima sala del anfitrión.
+Perder al anfitrión o no poder cargar su juego siempre detiene el inicio o la
+sesión; no se transfiere el papel de anfitrión a otro jugador.
+
+Las reglas del anfitrión, también las de cámara y cinemáticas, valen para todos.
+Mi pantalla cambia solo aspectos visuales de tu PC. Los mapas ampliados y el
+parche panorámico están desactivados en línea. Cambio de cuerpo y las fusiones
+con límite de tiempo aún no son compatibles en línea. Las transformaciones de
+la CPU son opcionales; los cambios de recursos paran brevemente el combate
+en un fotograma acordado para que todos los PC cambien el modelo a la vez.
+
+SALA DE COMBATE Y HUB
+La sala de combate es la ventana para elegir personajes, equipos y reglas.
+Repetir necesita el acuerdo de los jugadores en diez segundos. Volver a la sala
+vuelve a la SELECCIÓN DE PERSONAJES; no inicia el hub donde se puede caminar.
+
+Empezar en: Hub abre el escenario para moverse. Combatir libremente da permiso
+para pelear; si no, devolver un golpe establece consentimiento mutuo. Los
+luchadores derrotados reaparecen. Un reto puede ser un duelo en el mapa o un
+combate completo. Aceptar un combate completo abre la selección de personajes
+con los dos jugadores asignados y los demás mirando. Después puedes repetir
+o cambiar personajes. Volver al hub, disponible para el anfitrión, recupera
+el hub y sus puntuaciones. Cada sala tiene UN combate activo: un reto mueve
+a toda la sala, no crea otro combate mientras los demás siguen en el hub.
+
+Con equipos desiguales se muestra el resultado en línea al producirse el K.O.
+Se omite la presentación nativa de victoria porque los puestos vacíos podían
+bloquear el renderizado. Se conservan el ganador y la comprobación final de
+sincronización.
+
+ENTRAR Y CONTRASEÑAS
+Pulsa Unirse a una sala para escribir la dirección del anfitrión. El diálogo
+ofrece las direcciones recientes. Cancelar vuelve a Inicio sin conectarse.
+Se comprueba que la dirección no esté vacía y que el puerto sea válido.
+
+Para una sala privada, el anfitrión puede poner una Contraseña de la sala en
+Avanzado; el invitado la escribe en el diálogo para entrar. Las contraseñas
+no se guardan en el perfil ni en los registros. Por ahora están ocultos los
+controles de búsqueda, publicación y directorio; las salas creadas desde la
+ventana no se publican. Entra por dirección.
+
+CONEXIÓN Y PROBLEMAS
+Permite Python en el cortafuegos. Por internet, redirige el puerto del juego
+(47400 por defecto), tanto TCP como UDP, o usa una VPN como Tailscale, ZeroTier
+o Radmin VPN. TCP lleva la sala y los estados; UDP lleva las entradas por
+fotograma. Publicar una sala no la hace accesible automáticamente a través de NAT.
+
+TTM-NET-01/02: instala la misma versión en todos los PC. TTM-NET-06: usa discos
+idénticos. TTM-NET-17: corrige la contraseña o la regla indicada. TTM-NET-10/11:
+comprueba dirección, cortafuegos y ambos protocolos. TTM-NET-23/31: reintenta
+la preparación y conserva el informe si se repite. Una desincronización se
+detecta y se repara desde el estado del anfitrión; si se repite se para el combate.
+No cargues estados del emulador ni uses los menús nativos de pausa o resultados
+en línea. Los informes están en online/runs y pueden incluir rutas elegidas,
+nombres y direcciones de red: revísalos antes de compartirlos. El disco y la
+BIOS no se incluyen en el lanzamiento ni se suben a un directorio.
+
+LÍMITES DE LAS PRUEBAS
+Sigue siendo una beta. Las pruebas con varias instancias locales y pérdidas de
+red simuladas no certifican PC separados, internet real, todos los movimientos,
+mapas y mandos, ni el juego en Linux. PCSX2 tiene su propia licencia; consulta
+las licencias en la instalación.

@@ -1,0 +1,158 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "id": "mission100-007",
+  "game_family": "bt3",
+  "title": "007 - Follower of Frieza",
+  "description": "Original Mission 100 enemy roster. Choose your own allies. Native restrictions are preserved in source metadata; story events are optional.",
+  "player_selection": true,
+  "fighters": [
+    {
+      "id": "hero",
+      "team": 1,
+      "slot": 1,
+      "character": 0,
+      "costume": 0,
+      "reserve": false
+    },
+    {
+      "id": "enemy-1",
+      "team": 2,
+      "slot": 1,
+      "character": 99,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          99,
+          0,
+          11,
+          150,
+          197,
+          271,
+          6,
+          102,
+          108,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-2",
+      "team": 2,
+      "slot": 2,
+      "character": 98,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          98,
+          0,
+          11,
+          150,
+          197,
+          271,
+          6,
+          102,
+          108,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-3",
+      "team": 2,
+      "slot": 3,
+      "character": 85,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          85,
+          0,
+          11,
+          137,
+          197,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-4",
+      "team": 2,
+      "slot": 4,
+      "character": 84,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          84,
+          0,
+          11,
+          141,
+          197,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-5",
+      "team": 2,
+      "slot": 5,
+      "character": 82,
+      "costume": 0,
+      "source": {
+        "native_record": [
+          82,
+          0,
+          11,
+          137,
+          197,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    }
+  ],
+  "events": [],
+  "source": {
+    "kind": "mission100",
+    "number": 7,
+    "native_metadata": [
+      2,
+      0,
+      0,
+      2,
+      10,
+      0,
+      10,
+      3,
+      30,
+      31,
+      32,
+      33,
+      34
+    ],
+    "table_sha256": "2ed7acd4d6dbab15ea9cb80d3c5af9d28719b4fdb4df61a369e69406d3d8bec7",
+    "restrictions_enforced": false,
+    "stage_verified": false
+  },
+  "cpu_profiles": {}
+}

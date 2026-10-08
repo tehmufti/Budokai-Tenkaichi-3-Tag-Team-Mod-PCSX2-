@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "about": "Single source of the PCSX2 versions the mod runs on. Read by pcsx2_versions.py and launch-autopilot.ps1; the player installer's release.json must agree (pcsx2_minimum, pcsx2_supported). The player runtime (runtime28 folder) accepts every PCSX2 2.x from player_minimum on, nightlies and later releases included; tested lists the stable releases verified so far and anything else gets an untested notice. The developer runtime (runtime128) stays on one audited build. Savestates are checked by save version, which PCSX2 changes whenever the saved data changes, so an incompatible build is refused by its savestate format rather than by name.",
+  "player_minimum": "2.6.0",
+  "developer": "2.5.211",
+  "tested": [
+    "2.6.0",
+    "2.6.1",
+    "2.6.2",
+    "2.6.3",
+    "2.8.0",
+    "2.8.1",
+    "2.8.2"
+  ],
+  "save_versions": [
+    {
+      "save_version": "0x9A540000",
+      "layout": "state128",
+      "tags_from": "2.5.211",
+      "tags_below": "2.5.212",
+      "releases": "PCSX2 v2.5.211 (developer runtime)",
+      "developer_only": true
+    },
+    {
+      "save_version": "0x9A550000",
+      "layout": "state128",
+      "tags_from": "2.6.0",
+      "tags_below": "2.8.0",
+      "releases": "PCSX2 2.6.x",
+      "developer_only": false
+    },
+    {
+      "save_version": "0x9A590000",
+      "layout": "state28",
+      "tags_from": "2.7.0",
+      "tags_below": "3.0.0",
+      "releases": "PCSX2 2.8.x",
+      "developer_only": false
+    }
+  ]
+}

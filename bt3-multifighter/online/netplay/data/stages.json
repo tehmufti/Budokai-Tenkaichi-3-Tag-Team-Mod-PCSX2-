@@ -1,0 +1,226 @@
+{
+ "schema": "ttm-online-stages",
+ "version": 1,
+ "family": "bt3",
+ "disc": "bt3-usa",
+ "source": "BT3 USA map select labels, p33/setup/shots/stage-sheet-*.png and stagenames-*.png; ids 36+ have no label; grid order: bt3-usa-select-grid.json stage_grid (p33 live read)",
+ "note": "Names exactly as the BT3 USA map select shows them (disc names stay in English in both lobby languages). \"online_tested\" lists the stages that passed a lockstep bot run with 0 differing frames (R-STAGES); the lobby marks the others \"not tested online yet\" and Random draws only from tested stages.",
+ "stages": [
+  {
+   "id": 0,
+   "name": "Wasteland - Noon"
+  },
+  {
+   "id": 1,
+   "name": "Rocky Area - Noon"
+  },
+  {
+   "id": 2,
+   "name": "Planet Namek"
+  },
+  {
+   "id": 3,
+   "name": "Dying Namek"
+  },
+  {
+   "id": 4,
+   "name": "World Tournament Stage - Noon"
+  },
+  {
+   "id": 5,
+   "name": "Kami's Lookout"
+  },
+  {
+   "id": 6,
+   "name": "Cell Games Arena - Evening"
+  },
+  {
+   "id": 7,
+   "name": "Supreme Kai's World"
+  },
+  {
+   "id": 8,
+   "name": "Hyperbolic Time Chamber"
+  },
+  {
+   "id": 9,
+   "name": "City Ruins - Noon"
+  },
+  {
+   "id": 10,
+   "name": "Mountain Road - Noon"
+  },
+  {
+   "id": 11,
+   "name": "Islands"
+  },
+  {
+   "id": 12,
+   "name": "Kame House"
+  },
+  {
+   "id": 13,
+   "name": "Planet - Night"
+  },
+  {
+   "id": 14,
+   "name": "Glacier"
+  },
+  {
+   "id": 15,
+   "name": "Ruined Earth"
+  },
+  {
+   "id": 16,
+   "name": "Outer Space"
+  },
+  {
+   "id": 17,
+   "name": "Penguin Village"
+  },
+  {
+   "id": 18,
+   "name": "Hell"
+  },
+  {
+   "id": 19,
+   "name": "Desert - Noon"
+  },
+  {
+   "id": 20,
+   "name": "King's Castle"
+  },
+  {
+   "id": 21,
+   "name": "Muscle Tower"
+  },
+  {
+   "id": 22,
+   "name": "Mount Paozu"
+  },
+  {
+   "id": 23,
+   "name": "Wasteland - Evening"
+  },
+  {
+   "id": 24,
+   "name": "Wasteland - Night"
+  },
+  {
+   "id": 25,
+   "name": "Rocky Area - Evening"
+  },
+  {
+   "id": 26,
+   "name": "Rocky Area - Night"
+  },
+  {
+   "id": 27,
+   "name": "World Tournament Stage - Evening"
+  },
+  {
+   "id": 28,
+   "name": "Cell Game - Noon"
+  },
+  {
+   "id": 29,
+   "name": "City Ruins - Evening"
+  },
+  {
+   "id": 30,
+   "name": "City Ruins - Night"
+  },
+  {
+   "id": 31,
+   "name": "Desert - Evening"
+  },
+  {
+   "id": 32,
+   "name": "Desert - Night"
+  },
+  {
+   "id": 33,
+   "name": "Mountain Road - Evening"
+  },
+  {
+   "id": 34,
+   "name": "Planet - Evening"
+  }
+ ],
+ "grid": [
+  0,
+  23,
+  24,
+  1,
+  25,
+  26,
+  9,
+  29,
+  30,
+  10,
+  33,
+  11,
+  19,
+  31,
+  36,
+  6,
+  28,
+  14,
+  20,
+  21,
+  12,
+  17,
+  22,
+  15,
+  5,
+  8,
+  7,
+  18,
+  2,
+  3,
+  13,
+  34,
+  16,
+  37,
+  37,
+  35
+ ],
+ "random_id": 35,
+ "online_tested": {
+  "0": "Wasteland - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1801 frames compared (1801 time-up), 0 differing",
+  "1": "Rocky Area - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1991 frames compared (1991 time-up), 0 differing",
+  "2": "Planet Namek: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2238 frames compared (2238 time-up), 0 differing",
+  "3": "Dying Namek: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2039 frames compared (2039 time-up), 0 differing",
+  "4": "World Tournament Stage - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 4 fight(s), 7836 frames compared (227 ko/3344 ko/2001 time-up/2264 time-up), 0 differing",
+  "5": "Kami's Lookout: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1958 frames compared (1958 time-up), 0 differing",
+  "6": "Cell Games Arena - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2149 frames compared (2149 time-up), 0 differing",
+  "7": "Supreme Kai's World: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1912 frames compared (1912 time-up), 0 differing",
+  "8": "Hyperbolic Time Chamber: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1986 frames compared (1986 time-up), 0 differing",
+  "9": "City Ruins - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1801 frames compared (1801 time-up), 0 differing",
+  "10": "Mountain Road - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2028 frames compared (2028 time-up), 0 differing",
+  "11": "Islands: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1867 frames compared (1867 time-up), 0 differing",
+  "12": "Kame House: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2617 frames compared (2617 time-up), 0 differing",
+  "13": "Planet - Night: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1923 frames compared (1923 time-up), 0 differing",
+  "14": "Glacier: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2055 frames compared (2055 time-up), 0 differing",
+  "15": "Ruined Earth: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2030 frames compared (2030 time-up), 0 differing",
+  "16": "Outer Space: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1892 frames compared (1892 time-up), 0 differing",
+  "17": "Penguin Village: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1860 frames compared (1860 time-up), 0 differing",
+  "18": "Hell: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1947 frames compared (1947 time-up), 0 differing",
+  "19": "Desert - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1887 frames compared (1887 time-up), 0 differing",
+  "20": "King's Castle: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1905 frames compared (1905 time-up), 0 differing",
+  "21": "Muscle Tower: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 3058 frames compared (3058 time-up), 0 differing",
+  "22": "Mount Paozu: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1841 frames compared (1841 time-up), 0 differing",
+  "23": "Wasteland - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1997 frames compared (1997 time-up), 0 differing",
+  "24": "Wasteland - Night: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1873 frames compared (1873 time-up), 0 differing",
+  "25": "Rocky Area - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1904 frames compared (1904 time-up), 0 differing",
+  "26": "Rocky Area - Night: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2373 frames compared (2373 time-up), 0 differing",
+  "27": "World Tournament Stage - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 4 fight(s), 4648 frames compared (606 ko/234 ko/1663 ko/2145 time-up), 0 differing",
+  "28": "Cell Game - Noon: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2184 frames compared (2184 time-up), 0 differing",
+  "29": "City Ruins - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2687 frames compared (2687 time-up), 0 differing",
+  "30": "City Ruins - Night: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 2007 frames compared (2007 time-up), 0 differing",
+  "31": "Desert - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1943 frames compared (1943 time-up), 0 differing",
+  "32": "Desert - Night: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1878 frames compared (1878 time-up), 0 differing",
+  "33": "Mountain Road - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1923 frames compared (1923 time-up), 0 differing",
+  "34": "Planet - Evening: R-STAGES r-stages-s2r, Tag Team Mod 0.1.0-beta.36, 1 fight(s), 1834 frames compared (1834 time-up), 0 differing"
+ }
+}

@@ -1,0 +1,18 @@
+* text=auto
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bin binary
+*.pnach -text
+*.png binary
+*.ttf binary
+
+# Preserve upstream notice bytes used by dependency hash receipts.
+player-installer/notices/** -text
+player-installer/notices-linux/** -text
+**/tools/vendor/** -text
+**/assets/licenses/** -text

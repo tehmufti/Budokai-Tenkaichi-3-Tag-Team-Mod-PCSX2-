@@ -1,0 +1,112 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "id": "mission100-014",
+  "game_family": "bt3",
+  "title": "014 - Kame House Concerto",
+  "description": "Original Mission 100 enemy roster. Choose your own allies. Native restrictions are preserved in source metadata; story events are optional.",
+  "player_selection": true,
+  "fighters": [
+    {
+      "id": "hero",
+      "team": 1,
+      "slot": 1,
+      "character": 0,
+      "costume": 0,
+      "reserve": false
+    },
+    {
+      "id": "enemy-1",
+      "team": 2,
+      "slot": 1,
+      "character": 25,
+      "costume": 3,
+      "source": {
+        "native_record": [
+          25,
+          3,
+          12,
+          142,
+          198,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-2",
+      "team": 2,
+      "slot": 2,
+      "character": 102,
+      "costume": 2,
+      "source": {
+        "native_record": [
+          102,
+          2,
+          12,
+          138,
+          198,
+          271,
+          6,
+          102,
+          104,
+          999,
+          999
+        ]
+      },
+      "reserve": false
+    },
+    {
+      "id": "enemy-3",
+      "team": 2,
+      "slot": 3,
+      "character": 66,
+      "costume": 2,
+      "source": {
+        "native_record": [
+          66,
+          2,
+          12,
+          137,
+          198,
+          271,
+          6,
+          102,
+          108,
+          96,
+          999
+        ]
+      },
+      "reserve": false
+    }
+  ],
+  "events": [],
+  "source": {
+    "kind": "mission100",
+    "number": 14,
+    "native_metadata": [
+      2,
+      0,
+      0,
+      12,
+      19,
+      0,
+      10,
+      2,
+      65,
+      66,
+      67,
+      68,
+      69
+    ],
+    "table_sha256": "2ed7acd4d6dbab15ea9cb80d3c5af9d28719b4fdb4df61a369e69406d3d8bec7",
+    "restrictions_enforced": false,
+    "stage_verified": false
+  },
+  "cpu_profiles": {}
+}

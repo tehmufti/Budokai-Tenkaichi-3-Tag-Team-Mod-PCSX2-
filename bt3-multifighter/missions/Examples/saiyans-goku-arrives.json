@@ -1,0 +1,734 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "game_family": "bt3",
+  "player_team": 1,
+  "player_selection": false,
+  "menus": {
+    "retry": true,
+    "character_select": false
+  },
+  "cpu_profiles": {},
+  "id": "saiyans-goku-arrives",
+  "title": "Saiyan Invasion - Goku Arrives",
+  "description": "Kid Gohan (Saiyan-battle outfit), Krillin and Piccolo face an untouchable Nappa. Piccolo shields Gohan and falls; soon after, Goku lands, the others withdraw and you take over Goku against a rebalanced Nappa. When Nappa falls, Vegeta steps in for the final round. Defeat Vegeta to win; losing Gohan before Goku arrives, or Goku afterwards, fails. This condensed adaptation omits Kaioken and the Great Ape.",
+  "stage": {
+    "id": 0,
+    "name": "Wasteland - Noon"
+  },
+  "defeat_grace_seconds": 60,
+  "source": {
+    "kind": "authored-show-adaptation",
+    "gameplay_tested": false
+  },
+  "fighters": [
+    {
+      "id": "gohan",
+      "team": 1,
+      "slot": 1,
+      "character": 13,
+      "costume": 1,
+      "hp": 30000,
+      "difficulty": 2,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "nappa",
+      "team": 2,
+      "slot": 1,
+      "character": 80,
+      "costume": 0,
+      "hp": 90000,
+      "difficulty": 3,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 1.3,
+        "defense": 3,
+        "cannot_be_defeated": true
+      }
+    },
+    {
+      "id": "krillin",
+      "team": 1,
+      "slot": 2,
+      "character": 25,
+      "costume": 0,
+      "hp": 30000,
+      "difficulty": 2,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 0.75
+      }
+    },
+    {
+      "id": "vegeta",
+      "team": 2,
+      "slot": 2,
+      "character": 29,
+      "costume": 0,
+      "hp": 42000,
+      "difficulty": 3,
+      "reserve": true,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 1.1,
+        "defense": 1.1
+      }
+    },
+    {
+      "id": "piccolo",
+      "team": 1,
+      "slot": 3,
+      "character": 22,
+      "costume": 0,
+      "hp": 34000,
+      "difficulty": 2,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 0.8,
+        "cannot_be_defeated": true
+      }
+    },
+    {
+      "id": "goku",
+      "team": 1,
+      "slot": 4,
+      "character": 0,
+      "costume": 0,
+      "hp": 45000,
+      "difficulty": 3,
+      "reserve": true,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 1.3,
+        "defense": 1.2
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "nappa-line",
+      "when": {
+        "type": "time",
+        "seconds": 0
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "nappa",
+          "seconds": 2.6,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -12.1,
+              -13,
+              23.8
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -9.9,
+              -12,
+              16.5
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 80,
+            "line": 0,
+            "volume": 100
+          }
+        }
+      ],
+      "timeout_seconds": 30,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "piccolos-sacrifice",
+      "when": {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "time",
+            "seconds": 25
+          },
+          {
+            "type": "any",
+            "conditions": [
+              {
+                "type": "health_below",
+                "fighter": "gohan",
+                "percent": 50
+              },
+              {
+                "type": "time",
+                "seconds": 35
+              }
+            ]
+          }
+        ]
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "krillin",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "nappa",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "recover",
+          "fighter": "piccolo",
+          "health_percent": 1
+        },
+        {
+          "type": "cinematic",
+          "fighter": "nappa",
+          "seconds": 2.4,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -15.4,
+              -33,
+              10.6
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -11.3,
+              -28,
+              8.8
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 22,
+            "line": 71,
+            "volume": 100
+          }
+        },
+        {
+          "type": "defeat",
+          "fighter": "piccolo"
+        },
+        {
+          "type": "cinematic",
+          "fighter": "gohan",
+          "seconds": 2.2,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              6.4,
+              -28,
+              -15.5
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              5.4,
+              -22,
+              -11.1
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.4,
+          "freeze": true
+        },
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "invulnerable": false
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "krillin",
+          "stats": {
+            "invulnerable": false
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "nappa",
+          "stats": {
+            "invulnerable": false
+          }
+        }
+      ],
+      "timeout_seconds": 60,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "goku-lands",
+      "when": {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "event",
+            "event": "piccolos-sacrifice",
+            "delay_seconds": 8
+          },
+          {
+            "type": "time",
+            "seconds": 45
+          }
+        ]
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "krillin",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "nappa",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "enter",
+          "fighter": "goku",
+          "intro": false,
+          "health_percent": 100
+        },
+        {
+          "type": "take_control",
+          "fighter": "goku",
+          "player": 1
+        },
+        {
+          "type": "cinematic",
+          "fighter": "goku",
+          "seconds": 3.2,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              10.1,
+              -14,
+              -22.9
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              8.0,
+              -11,
+              -14.2
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 0,
+            "line": 0,
+            "volume": 100
+          }
+        }
+      ],
+      "timeout_seconds": 60,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "nappa-sizes-up",
+      "when": {
+        "type": "event",
+        "event": "goku-lands"
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "nappa",
+          "seconds": 2.4,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -15.4,
+              -33,
+              10.6
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -11.3,
+              -28,
+              8.8
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.3,
+          "freeze": true
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "allies-withdraw",
+      "when": {
+        "type": "event",
+        "event": "goku-lands"
+      },
+      "actions": [
+        {
+          "type": "despawn",
+          "fighter": "gohan"
+        },
+        {
+          "type": "despawn",
+          "fighter": "krillin"
+        },
+        {
+          "type": "despawn",
+          "fighter": "piccolo"
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "nappa-round",
+      "when": {
+        "type": "event",
+        "event": "nappa-sizes-up"
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "nappa",
+          "stats": {
+            "max_hp": 36000,
+            "health_percent": 100,
+            "damage": 0.95,
+            "defense": 1.0,
+            "invulnerable": false,
+            "cannot_be_defeated": false,
+            "difficulty": 2
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "goku",
+          "stats": {
+            "health_percent": 100,
+            "ki_percent": 100,
+            "blast_stocks": 3
+          }
+        },
+        {
+          "type": "target",
+          "fighter": "goku",
+          "target": "nappa"
+        },
+        {
+          "type": "target",
+          "fighter": "nappa",
+          "target": "goku"
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "vegeta-steps-in",
+      "when": {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "event",
+            "event": "nappa-round"
+          },
+          {
+            "type": "defeated",
+            "fighter": "nappa"
+          }
+        ]
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "goku",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "enter",
+          "fighter": "vegeta",
+          "intro": false,
+          "health_percent": 100
+        },
+        {
+          "type": "cinematic",
+          "fighter": "vegeta",
+          "seconds": 4.35,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -26.2,
+              -16,
+              17.2
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -15.3,
+              -12,
+              12.0
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "animation": {
+            "character": 29,
+            "clip": 384
+          },
+          "voice": {
+            "character": 29,
+            "line": 0,
+            "volume": 100
+          }
+        }
+      ],
+      "timeout_seconds": 60,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "goku-faces-vegeta",
+      "when": {
+        "type": "event",
+        "event": "vegeta-steps-in"
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "goku",
+          "seconds": 2.4,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              8.9,
+              -12,
+              -19.9
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              8.0,
+              -11,
+              -14.2
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.3,
+          "freeze": true
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "nappa-leaves",
+      "when": {
+        "type": "event",
+        "event": "vegeta-steps-in"
+      },
+      "actions": [
+        {
+          "type": "despawn",
+          "fighter": "nappa"
+        }
+      ],
+      "timeout_seconds": 30,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "final-round",
+      "when": {
+        "type": "event",
+        "event": "goku-faces-vegeta"
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "goku",
+          "stats": {
+            "max_hp": 45000,
+            "health_percent": 100,
+            "damage": 1.2,
+            "defense": 1.1,
+            "invulnerable": false,
+            "ki_percent": 100,
+            "blast_stocks": 3
+          }
+        },
+        {
+          "type": "target",
+          "fighter": "goku",
+          "target": "vegeta"
+        },
+        {
+          "type": "target",
+          "fighter": "vegeta",
+          "target": "goku"
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    }
+  ],
+  "win_when": {
+    "type": "all",
+    "conditions": [
+      {
+        "type": "event",
+        "event": "final-round"
+      },
+      {
+        "type": "event",
+        "event": "nappa-leaves"
+      },
+      {
+        "type": "defeated",
+        "fighter": "vegeta"
+      }
+    ]
+  },
+  "fail_when": {
+    "type": "any",
+    "conditions": [
+      {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "defeated",
+            "fighter": "gohan"
+          },
+          {
+            "type": "not",
+            "condition": {
+              "type": "retired",
+              "fighter": "gohan"
+            }
+          }
+        ]
+      },
+      {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "event",
+            "event": "goku-lands"
+          },
+          {
+            "type": "defeated",
+            "fighter": "goku"
+          }
+        ]
+      }
+    ]
+  }
+}

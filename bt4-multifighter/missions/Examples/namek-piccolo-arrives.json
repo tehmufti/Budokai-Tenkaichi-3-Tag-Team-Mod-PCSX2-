@@ -1,0 +1,404 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "game_family": "bt4",
+  "player_team": 1,
+  "player_selection": false,
+  "menus": {
+    "retry": true,
+    "character_select": false
+  },
+  "cpu_profiles": {},
+  "id": "namek-piccolo-arrives",
+  "title": "Namek - Piccolo Arrives",
+  "description": "Kid Gohan, Krillin and Vegeta (Namek armor) hold off an untouchable second-form Frieza for 40 seconds. Piccolo (End) lands between them, Gohan and the others withdraw while the camera is on Frieza, and you take over Piccolo for a fair one-on-one. Defeat Frieza to win; losing Gohan before Piccolo arrives, or Piccolo afterwards, fails. No transformations. This adaptation ends before Frieza reveals his third form.",
+  "stage": {
+    "id": 2,
+    "name": "Planet Namek"
+  },
+  "defeat_grace_seconds": 60,
+  "source": {
+    "kind": "authored-show-adaptation",
+    "gameplay_tested": false
+  },
+  "fighters": [
+    {
+      "id": "gohan",
+      "team": 1,
+      "slot": 1,
+      "character": 13,
+      "costume": 2,
+      "hp": 30000,
+      "difficulty": 2,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      }
+    },
+    {
+      "id": "frieza",
+      "team": 2,
+      "slot": 1,
+      "character": 92,
+      "costume": 0,
+      "hp": 150000,
+      "difficulty": 3,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 1.6,
+        "defense": 6,
+        "cannot_be_defeated": true
+      }
+    },
+    {
+      "id": "krillin",
+      "team": 1,
+      "slot": 2,
+      "character": 25,
+      "costume": 2,
+      "hp": 30000,
+      "difficulty": 2,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 0.7,
+        "defense": 1.2
+      }
+    },
+    {
+      "id": "vegeta",
+      "team": 1,
+      "slot": 3,
+      "character": 29,
+      "costume": 2,
+      "hp": 40000,
+      "difficulty": 3,
+      "reserve": false,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 0.85,
+        "defense": 1.3
+      }
+    },
+    {
+      "id": "piccolo",
+      "team": 1,
+      "slot": 4,
+      "character": 23,
+      "costume": 0,
+      "hp": 45000,
+      "difficulty": 3,
+      "reserve": true,
+      "transformations": {
+        "enabled": false
+      },
+      "stats": {
+        "damage": 1.3,
+        "defense": 1.2
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "frieza-line",
+      "when": {
+        "type": "time",
+        "seconds": 0
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "frieza",
+          "seconds": 2.6,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -22.0,
+              -12,
+              -11.3
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -14.8,
+              -11,
+              -8.9
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 92,
+            "line": 0,
+            "volume": 100
+          }
+        }
+      ],
+      "timeout_seconds": 30,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "piccolo-lands",
+      "when": {
+        "type": "time",
+        "seconds": 40
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "gohan",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "krillin",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "vegeta",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "frieza",
+          "stats": {
+            "invulnerable": true
+          }
+        },
+        {
+          "type": "enter",
+          "fighter": "piccolo",
+          "intro": false,
+          "health_percent": 100
+        },
+        {
+          "type": "take_control",
+          "fighter": "piccolo",
+          "player": 1
+        },
+        {
+          "type": "cinematic",
+          "fighter": "piccolo",
+          "seconds": 3.2,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              13.5,
+              -14,
+              21.1
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              10.1,
+              -11,
+              12.8
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          },
+          "voice": {
+            "character": 23,
+            "line": 0,
+            "volume": 100
+          }
+        }
+      ],
+      "timeout_seconds": 60,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "frieza-sizes-up",
+      "when": {
+        "type": "event",
+        "event": "piccolo-lands"
+      },
+      "actions": [
+        {
+          "type": "cinematic",
+          "fighter": "frieza",
+          "seconds": 2.4,
+          "speed": 1,
+          "camera": {
+            "eye": [
+              -16.1,
+              -31,
+              -7.4
+            ],
+            "target": [
+              0,
+              -10,
+              0
+            ],
+            "end_eye": [
+              -11.8,
+              -26,
+              -6.3
+            ],
+            "end_target": [
+              0,
+              -10,
+              0
+            ],
+            "easing": "smooth"
+          }
+        },
+        {
+          "type": "wait",
+          "seconds": 0.3,
+          "freeze": true
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "allies-withdraw",
+      "when": {
+        "type": "event",
+        "event": "piccolo-lands"
+      },
+      "actions": [
+        {
+          "type": "despawn",
+          "fighter": "gohan"
+        },
+        {
+          "type": "despawn",
+          "fighter": "krillin"
+        },
+        {
+          "type": "despawn",
+          "fighter": "vegeta"
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    },
+    {
+      "id": "duel",
+      "when": {
+        "type": "event",
+        "event": "frieza-sizes-up"
+      },
+      "actions": [
+        {
+          "type": "set_stats",
+          "fighter": "frieza",
+          "stats": {
+            "max_hp": 45000,
+            "health_percent": 100,
+            "damage": 1.0,
+            "defense": 1.0,
+            "invulnerable": false,
+            "cannot_be_defeated": false,
+            "difficulty": 3
+          }
+        },
+        {
+          "type": "set_stats",
+          "fighter": "piccolo",
+          "stats": {
+            "max_hp": 45000,
+            "health_percent": 100,
+            "ki_percent": 100,
+            "blast_stocks": 3,
+            "damage": 1.3,
+            "defense": 1.2
+          }
+        },
+        {
+          "type": "target",
+          "fighter": "piccolo",
+          "target": "frieza"
+        },
+        {
+          "type": "target",
+          "fighter": "frieza",
+          "target": "piccolo"
+        }
+      ],
+      "timeout_seconds": 40,
+      "on_failure": "fail_scenario"
+    }
+  ],
+  "win_when": {
+    "type": "all",
+    "conditions": [
+      {
+        "type": "event",
+        "event": "duel"
+      },
+      {
+        "type": "event",
+        "event": "allies-withdraw"
+      },
+      {
+        "type": "defeated",
+        "fighter": "frieza"
+      }
+    ]
+  },
+  "fail_when": {
+    "type": "any",
+    "conditions": [
+      {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "defeated",
+            "fighter": "gohan"
+          },
+          {
+            "type": "not",
+            "condition": {
+              "type": "retired",
+              "fighter": "gohan"
+            }
+          }
+        ]
+      },
+      {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "event",
+            "event": "piccolo-lands"
+          },
+          {
+            "type": "defeated",
+            "fighter": "piccolo"
+          }
+        ]
+      }
+    ]
+  }
+}
