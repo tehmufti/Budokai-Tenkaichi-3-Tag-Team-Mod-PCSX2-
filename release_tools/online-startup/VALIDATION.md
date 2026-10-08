@@ -34,3 +34,16 @@ one deliberately unprefetched changed-roster start took 34.157 seconds there.
 Lobby prefetch avoids repeating that wait **after** Start. Separate PCs over
 real internet connections and Linux gameplay have not been certified by these
 tests. The release preserves the prior regional adapters and offline game hooks.
+
+## Final installer qualification
+
+The final Version 8 Windows ZIP was installed through its actual setup frontend,
+then retested without any source overlays. All twelve installed startup modules
+matched the reviewed source and remained unchanged. Fresh 3v1, rematch and changed
+ten-fighter 5v5 reached native intros on both clients in **16.156**, **0.337** and
+**14.188 seconds**, respectively, with speculative prebuild disabled for this
+check. Initial warm-up was separately 22.8 seconds.
+
+All three fights completed with 2,121 compared frames and zero differences.
+Return to character selection and graceful cleanup passed; no owned processes
+remained. The full portable source run passed 448 tests (56 skipped).
