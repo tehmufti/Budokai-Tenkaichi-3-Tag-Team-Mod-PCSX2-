@@ -42,6 +42,8 @@ import kit_net
 import kit_prepare_auto
 import kit_prefetch
 import kit_prebuild
+import kit_transfer
+import kit_wire
 import kit_settings
 import kit_spec
 import kit_text
@@ -99,7 +101,7 @@ def iso_region(path):
         return None, serial
 
 
-class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.PrefetchMixin, kit_fight.FightMixin):
+class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.PrebuildMixin, kit_prefetch.PrefetchMixin, kit_fight.FightMixin):
     def __init__(self, args, token):
         self.args = args
         self.ipc = kit_ipc.Server(token)
@@ -150,6 +152,7 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
         self.join_password = ''
         self.advertiser = None
         self.init_fight()
+        self.init_transfers()
         self.init_prebuild()
         self.init_prefetch()
         self.init_hub()
@@ -599,7 +602,11 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
                                            protocol=kit_ident.PROTOCOL))
         (self.run_dir / 'identity.json').write_text(json.dumps(identity, indent=1), encoding='utf-8')
         prep_why = self.prep_problem(install, iso, disc) if self.role == 'host' else None
-        return dict(iso=iso, bios=bios, install=install, identity=identity, catalog=catalog, view=view, emulator=em,
+        old_wire = (self.local or {}).get('wire')
+        if old_wire:
+            old_wire.close()
+        wire = kit_wire.Manager(iso, disc.get('sha256'), kit_paths.ADAPTER, self.states, self.say)
+        return dict(iso=iso, bios=bios, install=install, identity=identity, catalog=catalog, view=view, emulator=em, wire=wire,
                     prep_why=prep_why)
 
     def setup_failed(self, error):
@@ -813,7 +820,9 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
 
     def hello_body(self):
         cat = self.local['catalog']
+        manager = self.local.get('wire')
         return dict(type='HELLO', role=self.role, identity=self.local['identity'],
+                    wire=manager.capability() if manager else None,
                     request=dict(delay=self.cfg.get('delay') or None),
                     lobby=dict(v=2, name=self.profile.get('name') or '', lang=self.lang, ui=self.args.ui or 'tk',
                                catalog=dict(family=cat['family'], disc=cat['disc'],
@@ -920,7 +929,7 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
         rtt = r['rtt']
         self.members[ident] = dict(channel=ch.blocking(), name=self.lobby.members[ident]['name'], ip=ip, rtt=rtt,
                                    rtt_ms=rtt.get('median'), token=r['token'], request_delay=requested,
-                                   lang=lob.get('lang'), last_ping=0.0)
+                                   lang=lob.get('lang'), last_ping=0.0, wire=hello.get('wire'))
         self.lobby.members[ident]['rtt_ms'] = rtt.get('median')
         self.udp.allow(ident, ip)
         ch.try_send(type='WELCOME', member=ident, name=self.lobby.members[ident]['name'])
@@ -1015,7 +1024,8 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
         self.udp = r['udp']
         self.me = int(r['welcome']['member'])
         self.net = dict(channel=r['channel'].blocking(), name=kit_lobby.chat_text(lob.get('name') or 'host')[:32],
-                        rtt=r['rtt'], rtt_ms=r['rtt'].get('median'), token=r['accept'].get('token'), last_ping=0.0)
+                        rtt=r['rtt'], rtt_ms=r['rtt'].get('median'), token=r['accept'].get('token'), last_ping=0.0,
+                        wire=hello.get('wire'))
         self.lobby = None
         self.say(f'Joined the room of {self.net["name"] or "the host"} as {r["welcome"].get("name")} (round trip '
                  f'{r["rtt"]["median"]} ms).')
@@ -1073,6 +1083,7 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
         m = self.members.pop(ident, None)
         if m is None:
             return
+        self.cancel_transfers(ident)
         name = self.lobby.members.get(ident, {}).get('name', f'member {ident}') if self.lobby else str(ident)
         self.say(said or f'{name} left the room{"" if error is None else f" ({error})"}.')
         try:
@@ -1107,6 +1118,10 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
 
     # ---- messages ----------------------------------------------------------------------------------------------------------
     def on_frame(self, ident, kind, payload):
+        if kind == 'W':
+            if self.role == 'guest':
+                self.on_transfer_chunk(ident, payload)
+            return
         if kind == 'P':
             if self.role == 'guest':
                 self.on_prefetch_chunk(ident, payload)
@@ -1473,6 +1488,7 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
             slot = self.args.prep_pine_slot or self.args.pine_slot + 1
             self.prep = kit_prepare_auto.PrepCopy(install, self.local['iso'], slot, self.run_dir, say=self.say,
                                                   test=bool(self.args.test_hooks))
+            self.prep.verified_iso = getattr(self.local.get('wire'), 'iso', None)
             self.prep.engine = self.wanted_engine()
             self.prep.progress = self.on_prep_progress
         self.say(f'Matches are made by this PC\'s Tag Team Mod {install["version"]} ({install["build"]} build), in a '
@@ -1565,6 +1581,16 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
         self.job('warm', switch, then=self.warmed, fail=self.warm_failed)
 
     def tick_prep(self):
+        # A committed match's builder stays parked through transfer, loading
+        # and the native intro. Resetting then cannot steal startup CPU time.
+        prep = self.prep
+        settled = self.phase in ('lobby', 'results') or \
+            (self.phase == 'fight' and getattr(self.session, 'interactive', None) is not None)
+        if self.role == 'host' and prep is not None and getattr(prep, 'reset_deferred', False) and settled and \
+                not any(self.busy(name) for name in ('warm', 'prep', 'prebuild', 'suspend', 'reset')):
+            self.job('reset', prep.finish_deferred_reset,
+                     then=lambda _, owner=prep: self.sync_warm(force=True) if self.prep is owner else None,
+                     fail=lambda error: self.say(f'The private reset could not finish: {error}'))
         self.rewarm_if_cold()
         self.tick_engine()
         self.tick_prebuild()
@@ -1591,7 +1617,11 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
         steps = kit_prepare_auto.WARM_STEPS + kit_prepare_auto.PREP_STEPS
         name = step.split('.', 1)[-1]
         left = None
-        if name in steps:
+        if name == 'selector':
+            later = kit_prepare_auto.PREP_STEPS if self.phase == 'preparing' else ()
+            left = round((eta if eta is not None else kit_prepare_auto.ETA['selector']) +
+                         sum(kit_prepare_auto.ETA[k] for k in later))
+        elif name in steps:
             later = steps[steps.index(name) + 1:]
             if self.phase != 'preparing':
                 later = [k for k in later if k in kit_prepare_auto.WARM_STEPS]
@@ -1658,6 +1688,7 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
     # ---- shutdown -----------------------------------------------------------------------------------------------------------
     def shutdown(self, reason=''):
         self.invalidate_preboot()
+        self.cancel_transfers()
         self.stop_prefetch_receive()
         self.stop_bot()
         if self.session is not None and self.session.result is None:
@@ -1675,6 +1706,9 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
             if self.emulator.stop():
                 self.say('Closed the game window this session started.')
         self.close_prep()
+        manager = (self.local or {}).get('wire')
+        if manager:
+            manager.close()
         for s in (self.listener, self.udp):
             if s is not None:
                 try:
@@ -1696,4 +1730,5 @@ class Controller(kit_hub.HubMixin, kit_prebuild.PrebuildMixin, kit_prefetch.Pref
 
 # messages only the host sends (a host ignores them from a guest)
 HOST_ONLY = ('BULK', 'LOBBY', 'WELCOME', 'PREPARE', 'PROGRESS', 'PREP_FAILED', 'MATCH', 'GO', 'RESYNC', 'RESULT', 'VOTE_STATE',
-             'RETRY', 'TO_LOBBY', 'JOINFIGHT', 'END_FIGHT', 'PREFETCH', 'PREFETCH_END', 'PREFETCH_ABORT')
+             'RETRY', 'TO_LOBBY', 'JOINFIGHT', 'END_FIGHT', 'PREFETCH', 'PREFETCH_END', 'PREFETCH_ABORT',
+             'TRANSFER_OFFER', 'TRANSFER_END', 'TRANSFER_ABORT')

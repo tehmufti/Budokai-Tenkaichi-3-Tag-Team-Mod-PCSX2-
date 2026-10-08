@@ -12,6 +12,49 @@ from pathlib import Path
 
 MEMORY = 'eeMemory.bin'
 EE_SIZE = 0x8000000
+_MEMORY_TOKEN = object()
+
+
+class VerifiedMemory:
+    """Immutable, path/SHA/size-bound RAM from a fully checked compact decode.
+
+    Nothing on disk, in metadata, or supplied by a peer can enable this path.
+    Every reuse still hashes the complete current archive. The corresponding
+    decoder proved every machine entry, ZIP CRC and original archive byte.
+    """
+
+    __slots__ = ('_path', '_sha', '_size', '_memory')
+
+    def __init__(self, path, decoded, token):
+        if token is not _MEMORY_TOKEN:
+            raise ValueError('Verified memory requires the complete decoder receipt')
+        object.__setattr__(self, '_path', Path(path).resolve())
+        object.__setattr__(self, '_sha', decoded.archive_sha256)
+        object.__setattr__(self, '_size', len(decoded.archive))
+        object.__setattr__(self, '_memory', decoded.memory)
+
+    def __setattr__(self, name, value):
+        raise AttributeError('Verified memory is immutable')
+
+    def read(self, path, expected_sha=None, expected_size=None):
+        path = Path(path)
+        if path.resolve() != self._path or expected_sha is not None and expected_sha != self._sha or \
+                expected_size is not None and expected_size != self._size or \
+                path.stat().st_size != self._size or sha256(path) != self._sha:
+            raise ValueError('The verified decoded archive identity changed')
+        return self._memory
+
+
+def decoded_memory(path, decoded):
+    """Bind only a decoder-created receipt to its fully hashed published file."""
+    import kit_wire_codec
+    if type(decoded) is not kit_wire_codec.DecodedState or type(decoded.memory) is not bytes or \
+            len(decoded.memory) != EE_SIZE or type(decoded.archive) is not bytes or \
+            hashlib.sha256(decoded.archive).hexdigest() != decoded.archive_sha256:
+        raise ValueError('Invalid complete decoded archive receipt')
+    value = VerifiedMemory(path, decoded, _MEMORY_TOKEN)
+    value.read(path)
+    return value
 
 
 def _read_all(path):

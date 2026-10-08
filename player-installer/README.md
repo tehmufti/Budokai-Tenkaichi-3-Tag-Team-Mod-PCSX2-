@@ -79,8 +79,12 @@ All eight player Python dependencies are bundled, version-pinned and
 hash-checked; they install without contacting a package server. Internet is
 needed only for missing system prerequisites or obtaining PCSX2.
 
-No emulator starts during installation. The game ISO and original BIOS remain
-unchanged. PCSX2 and the BIOS are copied into an isolated profile; existing
+After validation, Windows setup briefly starts a hidden, isolated emulator to
+build reusable online selection caches from your own disc and BIOS. This adds
+about two minutes on the tested PC and about 20 MB of cache files. No match
+roster is prebuilt. If this optional step fails, Play remains available and
+online falls back to its checked native preparation. The game ISO and original
+BIOS remain unchanged. PCSX2 and the BIOS are copied into an isolated profile; existing
 emulator settings, memory cards and save states are not imported or overwritten.
 The private profile needs its own copy of the BIOS because the mod runs its own
 PCSX2 settings, so it never changes the PCSX2 you already use.

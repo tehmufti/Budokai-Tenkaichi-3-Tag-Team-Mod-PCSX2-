@@ -42,18 +42,23 @@ class PrefetchMixin:
     def publish_prebuild(self, meta):
         if self.role != 'host' or self.phase != 'lobby' or self.busy('prefetch-state'):
             return False
-        self.job('prefetch-state', self.prefetch_state_job, meta, self.match_delay(),
+        self.job('prefetch-state', self.prefetch_state_job, meta, self.match_delay(), self.args.max_stall,
                  then=self.prefetch_state_ready, fail=lambda e: self.say(f'Lobby download deferred: {e}'))
         return True
 
-    def prefetch_state_job(self, prepared, delay):
-        meta = kit_match.netplay_state(prepared['file'], delay, self.args.max_stall, self.states, self.say)
+    def prefetch_state_job(self, prepared, delay, max_stall=None):
+        max_stall = self.args.max_stall if max_stall is None else max_stall
+        meta = kit_match.netplay_state(prepared['file'], delay, max_stall, self.states, self.say,
+                                      base_controls=kit_match.prepared_controls(prepared))
         words = kit_verify.file_words(meta['state'])
         problems = kit_verify.problems(words, prepared['spec'], netplay_fixups.fixed_sha256())
         if problems:
             raise ValueError('Lobby match differs from selected rules: ' + '; '.join(problems[:5]))
-        return dict(meta, spec=prepared['spec'], spec_sha=prepared['spec_sha'], pnach=prepared['pnach'],
+        meta = dict(meta, spec=prepared['spec'], spec_sha=prepared['spec_sha'], pnach=prepared['pnach'],
                     verify_sha=kit_verify.sha(words), options=prepared.get('options'))
+        if hasattr(self, 'wire_artifact'):
+            meta['wire'] = self.wire_artifact(meta)
+        return meta
 
     def prefetch_state_ready(self, meta):
         if self.role != 'host' or self.phase != 'lobby' or not self._prefetch_meta_current(meta):
@@ -88,8 +93,9 @@ class PrefetchMixin:
                 # the unmarked offer is retried on the next lobby tick.
                 continue
             self.prefetch_offered[ident] = dict(sha=meta['state_sha256'], channel=channel)
+            descriptor = self.make_transfer(ident, meta, 'prefetch') if hasattr(self, 'make_transfer') else None
             self.send_to(ident, type='PREFETCH', sha256=meta['state_sha256'], size=meta['size'],
-                         spec=meta['spec'], spec_sha=meta['spec_sha'])
+                         spec=meta['spec'], spec_sha=meta['spec_sha'], transfer=descriptor)
 
     def msg_PREFETCH(self, ident, message):
         if self.role != 'guest' or self.phase != 'lobby':
@@ -106,6 +112,12 @@ class PrefetchMixin:
             return
         if kit_match.have_state(sha, self.states) is not None:
             self.send(type='PREFETCH_WANT', sha256=sha, send=False)
+            return
+        descriptor = message.get('transfer')
+        if isinstance(descriptor, dict) and hasattr(self, 'begin_transfer'):
+            if descriptor.get('archive_sha256') == sha and descriptor.get('archive_size') == size and \
+                    descriptor.get('spec_sha') == message['spec_sha'] and descriptor.get('epoch') == 0:
+                self.begin_transfer(descriptor, 'prefetch')
             return
         existing = self.prefetch_receiving
         if existing is not None and existing['sha'] == sha and existing['size'] == size and \

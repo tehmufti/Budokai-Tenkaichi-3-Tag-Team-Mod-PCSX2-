@@ -8,7 +8,7 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +155,7 @@ class StateCacheConcurrencyTests(unittest.TestCase):
         self.source = Path(self.directory.name) / 'base.p2s'
         self.states = Path(self.directory.name) / 'states'
         memory = bytearray(512)
+        struct.pack_into('<III', memory, 16, 0x4E504331, 4, 2)
         struct.pack_into('<II', memory, 32, kit_match.BUILT_DELAY, kit_match.BUILT_MAX_STALL)
         struct.pack_into('<II', memory, 64, 0, 5)
         with zipfile.ZipFile(self.source, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
@@ -162,6 +163,7 @@ class StateCacheConcurrencyTests(unittest.TestCase):
             archive.writestr(kit_state.MEMORY, memory)
         self.patches = [patch.object(kit_state, 'EE_SIZE', 512),
                         patch.object(kit_match, 'QUEUE_CONTROL', 64),
+                        patch.object(kit_match, '_control_guard_words', return_value={16: 0x4E504331, 20: 4, 24: 2}),
                         patch.object(kit_match, 'control_words', return_value=(32, 36))]
         for mock in self.patches:
             mock.start()
@@ -282,6 +284,125 @@ class StateCacheConcurrencyTests(unittest.TestCase):
                 release.set()
             first.result(timeout=3)
         self.assert_cache(result, 3)
+
+
+
+class DecodedMemoryTests(unittest.TestCase):
+    setUp = ArchiveTests.setUp
+    write_source = ArchiveTests.write_source
+
+    def proof(self):
+        import kit_wire_codec
+        archive = self.source.read_bytes()
+        decoded = kit_wire_codec.DecodedState(archive, bytes(self.memory),
+            hashlib.sha256(archive).hexdigest(), kit_wire_codec._DECODE_TOKEN)
+        return kit_state.decoded_memory(self.source, decoded)
+
+    def test_decoded_memory_cannot_be_enabled_by_metadata_or_direct_constructor(self):
+        with self.assertRaises(ValueError):
+            kit_state.VerifiedMemory(self.source, {}, None)
+        with self.assertRaises(ValueError):
+            kit_state.decoded_memory(self.source, {'archive_sha256': kit_state.sha256(self.source)})
+
+    def test_decoder_receipt_constructor_rejects_unproved_input(self):
+        import kit_wire_codec
+        with self.assertRaises(ValueError):
+            kit_wire_codec.DecodedState(b'archive', bytes(self.memory), '0' * 64, None)
+
+    def test_snapshot_preserves_ram_and_requires_current_full_file_hash(self):
+        proof = self.proof()
+        self.assertEqual(proof.read(self.source, kit_state.sha256(self.source), self.source.stat().st_size), self.memory)
+        original_size = self.source.stat().st_size
+        data = bytearray(self.source.read_bytes())
+        data[20] ^= 1
+        self.source.write_bytes(data)
+        self.assertEqual(self.source.stat().st_size, original_size)
+        with self.assertRaisesRegex(ValueError, 'identity changed'):
+            proof.read(self.source)
+
+    def test_snapshot_rejects_another_path_even_with_identical_bytes(self):
+        proof = self.proof()
+        self.target.write_bytes(self.source.read_bytes())
+        with self.assertRaises(ValueError):
+            proof.read(self.target)
+
+    def test_snapshot_rejects_wrong_expected_sha_or_size(self):
+        proof = self.proof()
+        for sha, size in [('0' * 64, self.source.stat().st_size), (kit_state.sha256(self.source), 1)]:
+            with self.subTest(sha=sha, size=size), self.assertRaises(ValueError):
+                proof.read(self.source, sha, size)
+
+    def test_snapshot_is_immutable_and_memory_is_bytes(self):
+        proof = self.proof()
+        with self.assertRaises(AttributeError):
+            proof._sha = '0' * 64
+        self.assertIs(type(proof.read(self.source)), bytes)
+
+    def test_invalid_decoder_ram_shape_or_archive_hash_is_rejected(self):
+        import kit_wire_codec
+        archive = self.source.read_bytes()
+        for memory, sha in [(b'short', hashlib.sha256(archive).hexdigest()), (bytes(self.memory), '0' * 64)]:
+            decoded = kit_wire_codec.DecodedState(archive, memory, sha, kit_wire_codec._DECODE_TOKEN)
+            with self.subTest(sha=sha), self.assertRaises(ValueError):
+                kit_state.decoded_memory(self.source, decoded)
+
+    def test_verify_uses_only_proved_ram_and_retains_word_reader(self):
+        import kit_verify
+        proof = self.proof()
+        def words(ram, static=False):
+            return {32: struct.unpack('<I', ram.read_ranges([(32, 4)])[0])[0], 'static': static}
+        with patch.object(kit_verify, 'FileRam', side_effect=AssertionError('redundant decode')), \
+                patch.object(kit_verify, 'words', side_effect=words):
+            self.assertEqual(kit_verify.file_words(self.source, static=True, snapshot=proof), {32: 8, 'static': True})
+        with self.assertRaises(ValueError):
+            kit_verify.file_words(self.source, snapshot={'sha': kit_state.sha256(self.source)})
+
+    def test_manager_bounds_proof_to_one_snapshot_and_invalidates_changed_file(self):
+        import kit_wire
+        manager = kit_wire.Manager.__new__(kit_wire.Manager)
+        manager.lock = threading.RLock()
+        manager.decoded_memory = self.proof()
+        sha, size = kit_state.sha256(self.source), self.source.stat().st_size
+        self.assertIs(manager.snapshot_for(self.source, sha, size), manager.decoded_memory)
+        self.assertIsNone(manager.snapshot_for(self.source, None, size))
+        self.assertIsNone(manager.snapshot_for(self.source, sha, True))
+        self.write_source(other=b'changed native state')
+        self.assertIsNone(manager.snapshot_for(self.source, sha, size))
+        self.assertIsNone(manager.decoded_memory)
+
+    def test_room_cleanup_discards_receipt(self):
+        import kit_wire
+        manager = kit_wire.Manager.__new__(kit_wire.Manager)
+        manager.lock = threading.RLock()
+        manager.iso = None
+        manager.decoded_memory = self.proof()
+        manager.discard_snapshot()
+        self.assertIsNone(manager.decoded_memory)
+        manager.decoded_memory = self.proof()
+        manager.close()
+        self.assertIsNone(manager.decoded_memory)
+
+    def test_canceled_decode_cannot_publish_memory_into_the_new_room(self):
+        import types
+        import kit_wire
+        import kit_wire_codec
+        archive = self.source.read_bytes()
+        decoded = kit_wire_codec.DecodedState(archive, bytes(self.memory), hashlib.sha256(archive).hexdigest(),
+            kit_wire_codec._DECODE_TOKEN)
+        manager = kit_wire.Manager.__new__(kit_wire.Manager)
+        manager.lock = threading.RLock()
+        manager.iso = types.SimpleNamespace(sha256='a' * 64)
+        manager.codec = types.SimpleNamespace(decode_state_with_memory=lambda *a: decoded)
+        manager.decoded_memory = None
+        part = self.target.with_suffix('.wire.part')
+        part.write_bytes(b'wire')
+        descriptor = dict(codec=kit_wire.CODEC, iso_sha256='a' * 64, size=4,
+            sha256=hashlib.sha256(b'wire').hexdigest(), archive_sha256=decoded.archive_sha256,
+            archive_size=len(archive))
+        result = manager.restore(descriptor, part, self.target, current=lambda: False)
+        self.assertEqual(result, str(self.target))  # immutable checked disk cache is allowed
+        self.assertEqual(self.target.read_bytes(), archive)
+        self.assertIsNone(manager.decoded_memory)
 
 
 if __name__ == '__main__':

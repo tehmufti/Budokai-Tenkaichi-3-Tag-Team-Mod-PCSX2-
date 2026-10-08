@@ -43,14 +43,23 @@ la CPU son opcionales; los cambios de recursos paran brevemente el combate
 en un fotograma acordado para que todos los PC cambien el modelo a la vez.
 
 INICIO DEL COMBATE
+El instalador de Windows crea dos cachés de selección nativa verificadas con
+tu propio disco y BIOS (unos 20 MB con el disco USA probado). Evitan los logos
+y la navegación inicial; no preparan plantillas de combate concretas.
+Si cambia la instalación, las cachés antiguas se rechazan y se reconstruyen.
+Los combates USA pueden enviar un estado compacto que utiliza recursos ya
+comprobados en las ISO idénticas de los jugadores. Cada estado reconstruido se
+verifica contra el archivo original del anfitrión antes de cargarlo; los demás
+adaptadores mantienen la transferencia completa.
 El anfitrión prepara la selección de personajes, escenario y reglas mientras
 la sala está abierta, y envía el combate comprobado a los invitados antes de
 Empezar. Cambiar la selección invalida esa preparación; Empezar puede usar
 la preparación normal sin esperar a la descarga en segundo plano. La caché
 no bloquea el botón Listo. Todos los jugadores participantes deben terminar
-de cargar antes de que empiecen las introducciones juntos. El primer arranque
-de la sala es independiente de los inicios posteriores. La espera depende
-del procesador, del almacenamiento y de la conexión.
+de cargar antes de que empiecen las introducciones juntos. Se conservan las
+introducciones nativas. La espera depende del procesador, del almacenamiento
+y de la conexión. Linux mantiene la preparación nativa; el acceso rápido con
+cachés de selección locales se aplica actualmente a Windows.
 
 SALA DE COMBATE Y HUB
 La sala de combate es la ventana para elegir personajes, equipos y reglas.

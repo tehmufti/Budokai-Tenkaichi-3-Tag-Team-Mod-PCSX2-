@@ -256,8 +256,13 @@ def problems(w, spec, fixup_code=None, level='full'):
     return out
 
 
-def file_words(path, static=False):
-    return words(FileRam(path), static=static)
+def file_words(path, static=False, *, snapshot=None):
+    if snapshot is not None:
+        import kit_state
+        if type(snapshot) is not kit_state.VerifiedMemory:
+            raise ValueError('Invalid decoded memory proof')
+        return words(BytesRam(snapshot.read(path)), static)
+    return words(FileRam(path), static)
 
 
 def differences(a, b, prefix=''):

@@ -1,3 +1,26 @@
+## Version 9 - scenario and CPU-only introduction updates
+
+- CPU-only online matches relay the host dialogue and resource completion gates; entrances no longer wait for the silent timeout.
+- Modded Scenarios includes only Namek: Piccolo Arrives, Saiyan Invasion: Goku Arrives, and Cell Games: Gohan Awakens.
+- Key scenes reset living fighters to safe stage positions; fallen allies cannot stall reinforcement events.
+- Offline scenario launch requests do not enter the private online match-making copy.
+
+## 0.1.0-beta.9 (Version 9)
+
+- Windows setup creates two small, authenticated neutral selection caches locally from the player's own disc and BIOS. Fresh fighters, costumes and stages still load from the disc; no complete roster or arena match is prebuilt or distributed.
+- Fresh online starts skip the repeated game boot and menu navigation. Cache ownership, source identity, archive integrity and the live native menu acknowledgement are checked before use; damaged or outdated caches fall back to normal preparation.
+- The hidden builder keeps boot and native menu navigation at normal speed, accelerates cached restoration and match resource loading, avoids unused controller/audio services and rendering work, and combines the held native export with online conversion. Shorter acknowledgement and checkpoint polling recognizes completed native work sooner without changing readiness guards or timeouts. All final game-code, resource, archive and lobby checks remain enabled. Client gameplay speed is unchanged.
+- The private Windows builder uses FIFO presentation with frame skipping, preventing its hidden window from capping accelerated preparation at desktop refresh speed. The player's graphics settings and normal match speed are unchanged.
+- Accelerated private match confirmation holds one input until the native game acknowledges it, fixing missed confirmation after a builder resumes. Cancellation, timeouts, lost windows and replaced processes release or close only the owned input source; the complete roster, stage, time and music readback remains required.
+- Independent installation files are fully hashed with at most four readers. Canonical identities, source-change checks and cache invalidation remain intact.
+- Generated boot patches are reused only after authenticating their exact source identity and content. A foreign occupied patch file is never overwritten.
+- BT3 USA checkpoints use compact transfers containing verified references to the matching local ISO plus compressed remaining data. Clients reconstruct and verify the exact native archive. Other supported discs retain the full checked archive transfer.
+- Fresh converter proofs avoid repeated sender compression. Per-client initialization happens only in the owned paused frame-zero emulator, before the all-loaded barrier. Rematches repeat these ownership and state checks.
+- A fully verified compact decode can reuse its immutable memory snapshot for lobby verification and paused per-client initialization. Each reuse checks the complete current archive identity; original archive SHA, every entry hash and CRC, native state, machine-word readback and ownership guards remain enabled. Canceled or replaced matches cannot publish a usable snapshot into a new owner.
+- Resetting the hidden builder is deferred until after checkpoint delivery, reducing contention during loading. Cancel, room changes and shutdown discard stale work and close only the captured private processes.
+- An unfinished private worker continues at normal speed until it reports ACTIVE. Only then may its owned process tree be parked, preventing a deliberate suspension from being mistaken for a frozen introduction. The genuine freeze watchdog is unchanged.
+- Retains Version 8 gameplay hooks, regional adapters, settings defaults, installers and dependencies. Pending scenario development remains excluded from the player payload. See the source release's startup validation notes for measured timings and network limitations.
+
 ## 0.1.0-beta.8 (Version 8)
 
 - Faster online starts: a private accelerated builder returns its fully verified match before its hidden intro/reset completes. It switches battle engines without rebooting and performs the online archive conversion in one guarded pass.

@@ -19,6 +19,7 @@ The end: every game parks in its result menu (neutral pads); the host sends RESU
 Vote: Retry needs every player within 10 s; Return to lobby by anyone or the time out). RETRY: every PC PINE-loads its
 own copy again (save slot 241) and attaches late; TO_LOBBY: every PC pauses and minimises its game.
 """
+import copy
 import json
 import os
 import shutil
@@ -67,6 +68,8 @@ class FightMixin:
         self.resyncs = {}                    # host: member -> kit_resync.HostResync
         self.receiving = None
         self.rematch_copy = None
+        self.load_generation = 0
+        self.load_lock = threading.RLock()
         self.loaded = set()                  # host: members whose game loaded this match
         self.my_loaded = False
         self.go = False
@@ -173,6 +176,7 @@ class FightMixin:
         self.startup_started_at = time.perf_counter()
         self.match = dict(spec=spec, spec_sha=sha, title=title, delay=delay, seats=seats,
                           slot=seats.get(self.me), mask=kit_spec.slot_mask(spec),
+                          max_stall=self.args.max_stall,
                           drop_load_failures=(lob.room.get('drop_load_failures') is True))
         lob.phase = 'preparing'
         lob.delay_hint = delay
@@ -198,10 +202,11 @@ class FightMixin:
         self.match['prep_gen'] = gen
         if self.adopt_prebuild(spec, options, gen):
             return
-        self.job('prep', self.prepare_job, self.prep, gen, spec, folder, options, self.match['title'],
+        controls = kit_match.transport_controls(dict(delay=self.match['delay'], max_stall=self.match['max_stall']))
+        self.job('prep', self.prepare_job, self.prep, gen, spec, folder, options, self.match['title'], controls,
                  then=lambda meta, g=gen: self.auto_prepared(meta, g), fail=lambda e, g=gen: self.auto_failed(e, g))
 
-    def prepare_job(self, prep, gen, spec, folder, options, title):
+    def prepare_job(self, prep, gen, spec, folder, options, title, controls=None):
         if not prep.lock.acquire(blocking=False):
             self.on_prep_progress('prep.wait_warm' if prep.state in ('cold', 'warming', 'failed') else
                                   'prep.wait_copy', 0, None)
@@ -211,11 +216,11 @@ class FightMixin:
                 import kit_prepare_auto
                 raise kit_prepare_auto.Cancelled()
             prep.cancel.clear()
-            return self._prepare_locked(prep, spec, folder, options, title)
+            return self._prepare_locked(prep, spec, folder, options, title, controls=controls, deferred_reset=True)
         finally:
             prep.lock.release()
 
-    def _prepare_locked(self, prep, spec, folder, options, title):
+    def _prepare_locked(self, prep, spec, folder, options, title, *, controls=None, deferred_reset=False):
         import kit_ident
         sha = kit_spec.spec_sha(spec)
         made = kit_match.made_match(sha, options)
@@ -224,17 +229,28 @@ class FightMixin:
             return made
         if folder.exists():
             shutil.rmtree(folder)
-        report = prep.prepare(spec, folder, language=self.host_language(), options=options)
+        prepare_options = dict(language=self.host_language(), options=options, controls=controls)
+        if deferred_reset:
+            prepare_options['deferred_reset'] = True
+        report = prep.prepare(spec, folder, **prepare_options)
         meta = dict(schema=2, name=folder.name, title=title, spec=spec, spec_sha=sha, kit=kit_ident.KIT_VERSION,
                     verify_sha=report['verify_sha'], options=options, pnach=report['pnach'], family=report['family'],
                     created=time.strftime('%Y-%m-%d %H:%M:%S'), installation=prep.install.get('root'),
                     build=prep.install.get('version'), seconds=report.get('seconds'), timings=report.get('timings'),
                     online_blocks=report.get('online_blocks'), test_blocks=report.get('test_blocks'),
                     fingerprint=report.get('fingerprint'), netplay_sha256=report['netplay_sha256'],
+                    controls=(report.get('netplay') or {}).get('controls'),
                     director=report.get('director'))
         (folder / 'match.json').write_text(json.dumps(meta, indent=1), encoding='utf-8')
         kit_match.prune_made(spare={folder.name})
         meta['folder'], meta['file'] = str(folder), str(folder / 'netplay.p2s')
+        try:
+            import kit_wire
+            # Added only after writing disk metadata. Cached match.json and
+            # remote descriptors can never supply this process-local object.
+            meta['_fresh_proof'] = kit_wire.fresh_preparation_proof(meta['file'], report)
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            self.say(f'Fresh snapshot optimization unavailable ({type(error).__name__}); full checks remain enabled.')
         return meta
 
     def auto_prepared(self, meta, gen=None):
@@ -250,18 +266,33 @@ class FightMixin:
         self.match_made(meta)
 
     def match_made(self, meta):
-        self.match.update(verify_sha=meta.get('verify_sha'), pnach=meta.get('pnach'), base=meta['file'])
+        self.match.update(verify_sha=meta.get('verify_sha'), pnach=meta.get('pnach'), base=meta['file'],
+                          base_controls=kit_match.prepared_controls(meta))
         self.set_phase('sending')
         self.progress = dict(step='prep.state', pct=0)
-        self.job('state', self.state_job, meta['file'], then=self.offer_match, fail=self.state_failed)
+        owner = self.match
+        self.job('state', self.state_job, meta['file'], dict(owner), meta.get('_fresh_proof'),
+                 then=lambda meta, o=owner: self.offer_match(meta) if self.match is o else None,
+                 fail=lambda e, o=owner: self.state_failed(e) if self.match is o else None)
 
-    def state_job(self, base):
-        meta = kit_match.netplay_state(base, self.match['delay'], self.args.max_stall, self.states, self.say)
-        words = kit_verify.file_words(meta['state'])
-        found = kit_verify.problems(words, self.match['spec'], netplay_fixups.fixed_sha256())
+    def state_job(self, base, owner=None, fresh_proof=None):
+        owner = self.match if owner is None else owner
+        meta = kit_match.netplay_state(base, owner['delay'], owner.get('max_stall', self.args.max_stall),
+                                      self.states, self.say, base_controls=owner.get('base_controls'))
+        import kit_wire
+        proved = type(fresh_proof) is kit_wire.FreshArchiveProof and \
+            fresh_proof.matches(meta['state_sha256'], meta['size'])
+        words = fresh_proof.words() if proved else kit_verify.file_words(meta['state'])
+        found = kit_verify.problems(words, owner['spec'], netplay_fixups.fixed_sha256())
         if found:
             raise KitError('TTM-NET-31', what='The match file does not hold the lobby\'s match: ' + '; '.join(found[:5]))
         meta['verify_sha'] = kit_verify.sha(words)
+        meta.update(spec=owner['spec'], spec_sha=owner['spec_sha'])
+        if hasattr(self, 'wire_artifact'):
+            manager = (getattr(self, 'local', None) or {}).get('wire')
+            if proved and manager is not None:
+                manager.register_fresh(fresh_proof)
+            meta['wire'] = self.wire_artifact(meta)
         return meta
 
     def state_failed(self, error):
@@ -304,6 +335,8 @@ class FightMixin:
     def prep_failed(self, code, notice=None, **values):
         """The match cannot start: PREP_FAILED to every guest, everybody back to the lobby."""
         error = KitError(code, **values)
+        if hasattr(self, 'cancel_transfers'):
+            self.cancel_transfers()
         self.send(type='PREP_FAILED', **error.payload())
         self.say(str(error))
         if self.lobby:
@@ -336,7 +369,7 @@ class FightMixin:
             return
         self.epoch += 1
         self.match.update(state=meta['state'], sha=meta['state_sha256'], size=meta['size'],
-                          verify_sha=meta['verify_sha'], epoch=self.epoch)
+                          verify_sha=meta['verify_sha'], epoch=self.epoch, wire=meta.get('wire'))
         self.loaded = set()
         self.my_loaded = False
         self.go = False
@@ -352,10 +385,13 @@ class FightMixin:
 
     def offer_to(self, ident):
         m = self.match
+        transfer = self.make_transfer(ident, dict(state=m['state'], state_sha256=m['sha'], size=m['size'],
+                                                   spec=m['spec'], spec_sha=m['spec_sha'], wire=m.get('wire')),
+                                      'match', self.epoch) if hasattr(self, 'make_transfer') else None
         self.send_to(ident, type='MATCH', sha256=m['sha'], size=m['size'], delay=m['delay'], epoch=self.epoch,
                      spec=m['spec'], spec_sha=m['spec_sha'], verify_sha=m['verify_sha'], pnach=m['pnach'],
                      title=m['title'], slot=m['seats'].get(ident), seats={str(k): v for k, v in m['seats'].items()},
-                     max_stall=self.args.max_stall)
+                     max_stall=self.args.max_stall, transfer=transfer)
 
     # ---- guest: the offered match ----------------------------------------------------------------------------------------
     def msg_PREPARE(self, ident, m):
@@ -423,6 +459,8 @@ class FightMixin:
             self.send(type='REFUSE', codes=['TTM-NET-13'], **error.payload())
             self.host_gone(error)
             return
+        if int(m['epoch']) <= self.epoch and self.match and self.match.get('sha'):
+            return
         self.epoch = int(m['epoch'])
         self.match = dict(spec=spec, spec_sha=m['spec_sha'], title=m.get('title') or kit_spec.title(spec,
                                                                                                  self.local['view']),
@@ -438,6 +476,19 @@ class FightMixin:
         have = kit_match.have_state(m['sha256'], self.states)
         if have is not None and have.stat().st_size != self.match['size']:
             have = None
+        descriptor = m.get('transfer')
+        if descriptor is not None and hasattr(self, 'begin_transfer'):
+            self.set_phase('sending')
+            owner = self.match
+            if have is not None:
+                self.stop_transfer('prefetch')
+                owner['state'] = str(have)
+                self.queue_state_verification(have, owner)
+            elif not self.promote_transfer(descriptor, owner):
+                self.stop_transfer('prefetch')
+                if not self.begin_transfer(descriptor, 'match', owner):
+                    self.verify_failed(ValueError('Malformed match transfer descriptor'))
+            return
         promoted = have is None and self.promote_prefetch(m['sha256'])
         self.send(type='WANT', send=have is None and not promoted)
         self.set_phase('sending')
@@ -510,9 +561,12 @@ class FightMixin:
         elif self.resync is not None:
             self.resync.end()
 
-    def verify_file(self, path):
-        words = kit_verify.file_words(path)
-        m = self.match or {}
+    def verify_file(self, path, owner=None):
+        m = owner if owner is not None else self.match or {}
+        manager = (getattr(self, 'local', None) or {}).get('wire')
+        snapshot = manager.snapshot_for(path, m.get('sha'), m.get('size')) \
+            if manager is not None and hasattr(manager, 'snapshot_for') else None
+        words = kit_verify.file_words(path, snapshot=snapshot) if snapshot is not None else kit_verify.file_words(path)
         found = kit_verify.problems(words, m['spec'], netplay_fixups.fixed_sha256())
         if m.get('verify_sha') and kit_verify.sha(words) != m['verify_sha']:
             found.append('its check words differ from the host\'s (verify_sha)')
@@ -587,6 +641,7 @@ class FightMixin:
         self.my_loaded = False
         self.go = False
         self.rematch_copy = None
+        self.load_generation += 1
         changed = self.emulator.install_pnach(self.match['pnach'])
         running = self.emulator.pid and self.emulator.alive() and self.link is not None
         if running and changed:
@@ -595,45 +650,186 @@ class FightMixin:
             self.link = None
             running = False
         if running:
-            self.job('copy', self.build_copy, then=self.copy_built_for_load, fail=self.load_failed)
+            request = self.load_request()
+            self.job('copy', self.build_copy, request,
+                     then=lambda result, r=request: self.copy_built_for_load(result) if self.load_current(r) else None,
+                     fail=lambda error, r=request: self.load_failed(error) if self.load_current(r) else None)
         else:
-            self.job('launch', self.launch_game, then=self.game_launched, fail=self.load_failed)
+            request = self.load_request()
+            self.job('launch', self.launch_game, request,
+                     then=lambda result, r=request: self.launch_completed(result, r),
+                     fail=lambda error, r=request: self.load_failed(error) if self.load_current(r) else None)
 
     def machine_path(self, name):
         return self.emulator.root / 'sstates' / name
 
-    def build_copy(self):
-        """This PC's copy of the match (its slot, watched side and display settings) in PCSX2 save slot 241."""
-        target = self.emulator.state_file(REMATCH_SLOT)
-        kit_match.machine_copy(self.match['state'], target, self.my_slot(), self.watch_side,
-                               self.profile.get('local'), self.my_seal())
-        return dict(path=str(target), sha=self.match['sha'], epoch=self.epoch)
+    def load_request(self):
+        """Freeze the current load owner and all per-PC inputs before a worker starts."""
+        return dict(owner=self.match, epoch=self.epoch, generation=self.load_generation,
+                    match=copy.deepcopy(self.match), slot=self.my_slot(), watch=copy.deepcopy(self.watch_side),
+                    local=copy.deepcopy(self.profile.get('local')), seal=self.my_seal(), emulator=self.emulator,
+                    iso=self.local['iso'], fullscreen=bool(self.cfg.get('fullscreen')),
+                    snapshot=self._decoded_load_snapshot())
 
-    def launch_game(self):
+    def _decoded_load_snapshot(self):
+        manager = (getattr(self, 'local', None) or {}).get('wire')
+        m = self.match or {}
+        return manager.snapshot_for(m['state'], m['sha'], m['size']) \
+            if manager is not None and hasattr(manager, 'snapshot_for') and m.get('state') else None
+
+    def load_current(self, request):
+        return self.match is request['owner'] and self.epoch == request['epoch'] and \
+            self.load_generation == request['generation'] and self.emulator is request['emulator'] and \
+            self.phase in ('sending', 'loading', 'fight') and \
+            all(self.match.get(key) == request['match'].get(key)
+                for key in ('state', 'sha', 'delay', 'mask', 'pnach', 'spec_sha', 'max_stall'))
+
+    def _check_load_current(self, request):
+        if not self.load_current(request):
+            raise ValueError('The initial match load was canceled or superseded.')
+
+    def _paused_machine_allowed(self, request):
+        em = request['emulator']
+        return em.START_PAUSED is True and em.CAN_POST_KEYS is True
+
+    def _make_load_copy(self, request, target, fast):
+        m = request['match']
+        if fast:
+            plan = kit_match.paused_machine_copy(m['state'], target, request['slot'], request['watch'],
+                request['local'], request['seal'], state_sha=m['sha'], delay=m['delay'], mask=m['mask'],
+                snapshot=request.get('snapshot'))
+        else:
+            kit_match.machine_copy(m['state'], target, request['slot'], request['watch'],
+                                   request['local'], request['seal'])
+            plan = None
+        self._check_load_current(request)
+        # The scalar plan remains sufficient after construction; do not retain 128 MiB RAM in Retry records.
+        return dict(path=str(target), sha=m['sha'], epoch=request['epoch'],
+                    request=dict(request, snapshot=None), plan=plan)
+
+    def build_copy(self, request=None):
+        """This PC's copy of the match (its slot, watched side and display settings) in PCSX2 save slot 241."""
+        request = self.load_request() if request is None else request
+        with self.load_lock:
+            self._check_load_current(request)
+            em = request['emulator']
+            fast = self._paused_machine_allowed(request)
+            # Decide fallback before loading or mutating common-state RAM.
+            # Background Retry copy construction must not pause an active fight.
+            if fast and self.phase != 'fight' and self.link is not None:
+                if em.pine_owner() != em.pid or getattr(self.link, 'pid', em.pid) != em.pid:
+                    raise ValueError('The match copy PINE owner changed before pausing.')
+                fast = em.ensure_paused(self.link)
+            return self._make_load_copy(request, em.state_file(REMATCH_SLOT), fast)
+
+    def launch_game(self, request=None):
+        request = self.load_request() if request is None else request
+        with self.load_lock:
+            return self._launch_game(request)
+
+    def _launch_game(self, request):
         from pinelink import nc, PineLink
         import kit_ident
-        em = self.emulator
+        self._check_load_current(request)
+        em = request['emulator']
         if self.link is not None:
             try:
                 self.link.close()
             except OSError:
                 pass
             self.link = None
-        copy = self.machine_path('netplay-machine.p2s')
-        kit_match.machine_copy(self.match['state'], copy, self.my_slot(), self.watch_side, self.profile.get('local'),
-                               self.my_seal())
-        pid = em.launch(copy, self.local['iso'], fullscreen=bool(self.cfg.get('fullscreen')))
+        target = em.root / 'sstates' / 'netplay-machine.p2s'
+        record = self._make_load_copy(request, target, self._paused_machine_allowed(request))
+        self._check_load_current(request)
+        pid = em.launch(target, request['iso'], fullscreen=request['fullscreen'])
+        process_token = self._load_process_token(em, pid)
         self.remember_pid(pid)
-        info = em.wait_ready(nc.CONTROL, nc.MAGIC, timeout=max(self.args.timeout, 120))
+        try:
+            info = em.wait_ready(nc.CONTROL, nc.MAGIC, timeout=max(self.args.timeout, 120))
+            self._check_load_current(request)
+        except BaseException:
+            if em.pid == pid:
+                em.stop()
+            raise
         problems = kit_ident.runtime_problems(info or {})
         if problems:
+            if em.pid == pid:
+                em.stop()
             code, text = problems[0]
             raise KitError(code, what=text, build=info.get('version'), tested=', '.join(kit_ident.TESTED_PINE))
         em.place()
         link = PineLink(self.args.pine_slot, pid, owner=em.pine_owner).connect()
         em.link = link
-        self.live_check(link, copy)
-        return dict(pid=pid, info=info, link=link)
+        try:
+            if record['plan'] is not None:
+                self._apply_load_plan(request, record, link, pid,
+                                      loaded_path=em.root / 'sstates' / 'netplay.p2s')
+            else:
+                self.live_check(link, target)
+            self._check_load_current(request)
+        except BaseException:
+            link.close()
+            if em.pid == pid:
+                em.stop()
+            raise
+        return dict(pid=pid, info=info, link=link, process_token=process_token)
+
+    @staticmethod
+    def _load_process_token(em, pid):
+        """The original process identity, for cleaning up a canceled launch only."""
+        proc = getattr(em, 'proc', None)
+        if proc is not None and getattr(proc, 'pid', None) == pid:
+            return ('process', proc)
+        if os.name != 'nt' or not pid:
+            return None
+        import ctypes
+        import ctypes.wintypes as wt
+        import kit_win
+        handle = kit_win.kernel32.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return None
+        try:
+            times = [wt.FILETIME() for _ in range(4)]
+            get_times = kit_win.kernel32.GetProcessTimes
+            get_times.argtypes = [wt.HANDLE] + [ctypes.POINTER(wt.FILETIME)] * 4
+            size, path = wt.DWORD(32768), ctypes.create_unicode_buffer(32768)
+            if not get_times(handle, *(ctypes.byref(value) for value in times)) or \
+                    not kit_win.kernel32.QueryFullProcessImageNameW(handle, 0, path, ctypes.byref(size)):
+                return None
+            return ('windows', os.path.normcase(path.value), times[0].dwHighDateTime, times[0].dwLowDateTime)
+        finally:
+            kit_win.kernel32.CloseHandle(handle)
+
+    def launch_completed(self, result, request):
+        with self.load_lock:
+            if self.load_current(request):
+                self.game_launched(result)
+                return
+            # Cancellation may happen after the worker returns but before its
+            # queued callback. Close its own link, never a newer load's link.
+            try:
+                result['link'].close()
+            except (OSError, RuntimeError):
+                pass
+            em, pid = request['emulator'], result['pid']
+            token = result.get('process_token')
+            if self.emulator is em and em.pid == pid and em.pine_owner() == pid and token is not None and \
+                    self._load_process_token(em, pid) == token:
+                em.stop()
+
+    def _apply_load_plan(self, request, record, link, pid, *, loaded_path=None):
+        """A source/target/owner-bound plan; failure after loading always closes this VM."""
+        em = request['emulator']
+        def current():
+            return self.load_current(request) and em.pid == pid and em.pine_owner() == pid
+        self._check_load_current(request)
+        plan = record['plan']
+        if record['epoch'] != request['epoch'] or record['sha'] != request['match']['sha'] or \
+                plan['sha'] != record['sha'] or kit_match.sha256_file(record['path']) != plan['sha'] or \
+                (loaded_path is not None and kit_match.sha256_file(loaded_path) != plan['sha']):
+            raise ValueError('The initial loaded machine archive/epoch guard changed.')
+        kit_match.apply_paused_machine(link, plan, current=current)
+        self._check_load_current(request)
 
     def my_seal(self):
         """netplay_core sched_sealed of this PC's copy: the host seals its own game (NO_SEAL); a guest's game may run
@@ -760,14 +956,45 @@ class FightMixin:
             if not self.emulator.ensure_running(self.link):
                 self.say('PCSX2 did not start running the match (it stayed paused).')
         else:
-            self.job('pineload', self.pine_load, then=lambda _: self.begin_fight(late=True), fail=self.load_failed)
+            self.schedule_pine_load(self.rematch_copy)
 
-    def pine_load(self):
+    def schedule_pine_load(self, record):
+        request = record['request']
+        self.job('pineload', self.pine_load, record,
+                 then=lambda _, r=request: self.begin_fight(late=True) if self.load_current(r) else None,
+                 fail=lambda error, r=request: self.load_failed(error) if self.load_current(r) else None)
+
+    def pine_load(self, record=None):
+        record = self.rematch_copy if record is None else record
+        request = record['request']
+        with self.load_lock:
+            em = request['emulator']
+            pid = em.pid
+            try:
+                return self._pine_load(request, record, pid)
+            except BaseException:
+                # A rejected paused plan may have applied only part of a batch.
+                # Stop this owned VM; never resume or switch to another path.
+                if record['plan'] is not None and em.pid == pid and em.pine_owner() == pid:
+                    em.stop()
+                raise
+
+    def _pine_load(self, request, record, pid):
+        self._check_load_current(request)
         link = self.link
+        em = request['emulator']
+        if em.pine_owner() != pid or pid != getattr(link, 'pid', pid):
+            raise ValueError('The match load PINE owner changed.')
+        if record['plan'] is not None:
+            if record['epoch'] != request['epoch'] or kit_match.sha256_file(record['path']) != record['sha']:
+                raise ValueError('The common Retry archive/epoch guard changed.')
+            if not em.ensure_paused(link):
+                raise ValueError('The common match cannot be loaded into an unpaused VM.')
         link.w32(LOAD_SENTINEL, kit_postmatch.LOADING)
         t0 = time.time()
         link.load_state(REMATCH_SLOT)
         while True:
+            self._check_load_current(request)
             try:
                 if link.u32(LOAD_SENTINEL) != kit_postmatch.LOADING:
                     break
@@ -777,7 +1004,14 @@ class FightMixin:
                 raise KitError('TTM-NET-22', what='PCSX2 did not load the match (PINE load of slot 241).',
                                logs=str(self.run_dir))
             time.sleep(0.005)
-        self.emulator.ensure_running(link)
+        self._check_load_current(request)
+        if record['plan'] is not None:
+            self._apply_load_plan(request, record, link, pid)
+        self._check_load_current(request)
+        resumed = em.ensure_running(link)
+        self._check_load_current(request)
+        if record['plan'] is not None and not resumed:
+            raise ValueError('The guarded initial match did not resume after its machine words were verified.')
         return round(time.time() - t0, 3)
 
     # ---- the fight --------------------------------------------------------------------------------------------------------
@@ -842,12 +1076,16 @@ class FightMixin:
         self.vote_state = None
         self.results = None
         if self.rematch_copy is None or self.rematch_copy.get('epoch') != self.epoch:
-            self.job('copy', self.build_copy, then=self.copy_ready, fail=lambda e: self.say(f'retry copy: {e}'))
+            request = self.load_request()
+            self.job('copy', self.build_copy, request,
+                     then=lambda result, r=request: self.copy_ready(result) if self.load_current(r) else None,
+                     fail=lambda e, r=request: self.say(f'retry copy: {e}') if self.load_current(r) else None)
         self.say(f'Fight {self.fight_no} (epoch {self.epoch}) starts'
                  f'{"" if self.my_slot() is None else f", you play slot {self.my_slot()}"}.')
 
     def copy_ready(self, copy):
-        self.rematch_copy = copy
+        if self.load_current(copy['request']):
+            self.rematch_copy = copy
 
     # ---- host services (kit_services) ------------------------------------------------------------------------------
     def wants_service(self):
@@ -1579,6 +1817,7 @@ class FightMixin:
         self.results = None
         self.hide_overlay()
         self.match['epoch'] = self.epoch
+        self.load_generation += 1
         if self.role == 'host':
             self.loaded = {k for k in self.loaded if k in self.members}
             self.lobby.phase = 'loading'
@@ -1593,14 +1832,22 @@ class FightMixin:
         self.set_phase('loading')
         self.load_mode = 'pine'
         self.progress = dict(step='load.retry', pct=0)
-        if self.rematch_copy is not None:
-            self.job('pineload', self.pine_load, then=lambda _: self.begin_fight(late=True), fail=self.load_failed)
+        request = self.load_request()
+        if self.rematch_copy is not None and self.rematch_copy.get('plan') is None:
+            self.rematch_copy = dict(self.rematch_copy, epoch=self.epoch, request=request)
+            self.schedule_pine_load(self.rematch_copy)
         else:
-            self.job('copy', self.build_copy, then=self.retry_copy_built, fail=self.load_failed)
+            # Recompute the guards from the immutable common archive for this
+            # new owner epoch/profile. The already verified file is reused.
+            self.job('copy', self.build_copy, request,
+                     then=lambda result, r=request: self.retry_copy_built(result) if self.load_current(r) else None,
+                     fail=lambda error, r=request: self.load_failed(error) if self.load_current(r) else None)
 
     def retry_copy_built(self, copy):
+        if not self.load_current(copy['request']):
+            return
         self.rematch_copy = copy
-        self.job('pineload', self.pine_load, then=lambda _: self.begin_fight(late=True), fail=self.load_failed)
+        self.schedule_pine_load(copy)
 
     def msg_TO_LOBBY(self, ident, m):
         if self.role == 'guest':
@@ -1627,6 +1874,12 @@ class FightMixin:
         self.set_phase('lobby')
 
     def leave_match_state(self, keep_match=False):
+        self.load_generation += 1
+        manager = (getattr(self, 'local', None) or {}).get('wire')
+        if manager is not None and hasattr(manager, 'discard_snapshot'):
+            manager.discard_snapshot()
+        if hasattr(self, 'cancel_transfers'):
+            self.cancel_transfers()
         self.stop_prefetch_receive()
         self.pending_preboot_load = False
         self.stop_receive()

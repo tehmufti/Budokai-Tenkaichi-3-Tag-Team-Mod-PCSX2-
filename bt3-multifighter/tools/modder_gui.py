@@ -114,7 +114,7 @@ class Workbench(QMainWindow):
         self.build_runtime()
         from story_editor import StoryEditor
         self.story_editor=StoryEditor(self)
-        self.tabs.addTab(self.story_editor, 'Story missions')
+        self.tabs.addTab(self.story_editor, 'Custom Scenarios')
         self.build_settings()
         self.build_tools()
         self.statusBar().showMessage('Offline asset browsing is ready. Live trainer monitoring is opt-in.')

@@ -42,13 +42,21 @@ CPU transformations are optional; extra resource changes briefly hold the match
 at an agreed frame so all PCs replace the model together.
 
 MATCH STARTUP
+Windows setup builds two reusable, checked native selection caches locally
+from your own disc and BIOS (about 20 MB on the tested USA disc). These skip
+boot logos and menu navigation; they do not prebuild particular rosters.
+If the installation changes, stale caches are rejected and rebuilt safely.
+USA matches can transfer a compact checkpoint which references checked resources
+already on each player's identical ISO. Every reconstructed checkpoint is verified
+against the host's original file before loading; other adapters retain full transfer.
 The host prepares settled character/stage/rule selections while the room is
 open, and sends the checked match to guests before Start. New selections
 invalidate that preparation; Start can use the normal preparation path without
 waiting for a background download. Ready is never held back by this cache.
 The game still waits for all participating players to load before the native
-introductions begin together. The first room initialization is separate from
-subsequent starts. Actual wait depends on CPU, storage and connection speed.
+introductions begin together. Native introductions are retained. Actual wait
+depends on CPU, storage and connection speed. Linux retains native preparation;
+the local selection-cache shortcut currently applies to Windows.
 
 MATCH ROOM AND HANGOUT
 The match room is the window where you choose characters, teams and rules.

@@ -21,14 +21,15 @@ A preparation then pays only for the match itself:
   at loop == 1      SCENE+0x10 (Duel Time index) and both sides' 161-bit transformation availability sets
                     (SCENE+0x2D0 / +0x540): every transformation online, whatever the copy's save has unlocked
   read back         the SCENE counts, characters, colours and stage the game wrote (TTM-NET-31 when they differ)
-  capture           the mod's own playable checkpoint (kit 2.0: the match held just before its intro, playable
-                    without the watcher; its archive-verified export receipt precedes the intro), copied as capture.p2s
+  capture           the native held checkpoint, copied as capture.p2s after an exact whole-archive/CRC receipt
+                    bound to this private owner; conversion applies the guarded normal release in the final archive
   convert           kit_prepare.convert with the spec (single view, players, the online writes, layout 3, verify)
   back to select    Start, Down, Down, Cross, Up, Cross (the watcher reloads its clean character-select checkpoint),
                     then the native picks again: the copy waits at map select for the next match. This happens in
                     the background AFTER the converted match is delivered, serialized by the copy's ownership lock.
-The private builder holds accelerated turbo during boot, menus and loading; native menu key holds/gaps preserve their
-emulated duration. Client games retain the enforced 1x profile. Screenshot pauses are opt-in, separate from test hooks.
+The private builder runs ordinary boot and all native menu navigation at nominal speed. Only authenticated cached
+selector restores and native resource loading hold accelerated turbo. Client games retain their enforced 1x profile.
+Screenshot pauses are opt-in, separate from test hooks.
 While the online match runs the copy's process tree is suspended (NtSuspendProcess) and resumed before the next
 preparation; a copy that does not answer then (PINE, scene) is closed and started again (cold).
 Windows only: the copy is driven by key messages to its hidden window.
@@ -70,7 +71,7 @@ BLANK_SHA256 = '47ebe237a3987f843fc1'          # (prefix) the installer's blank 
 PRIVATE_SPEED = kit_prepare.PRIVATE_SPEED
 # Conservative step estimates for the accelerated private builder. The old
 # 1x values and synchronous menu reset overstated warm-match waiting by a minute.
-ETA = dict(copy=5, start=5, boot=15, mode=5, picks=5, settings=1, confirm=1, loading=10, capture=1, convert=3,
+ETA = dict(copy=5, start=5, boot=15, mode=5, picks=5, selector=6, settings=1, confirm=1, loading=10, capture=1, convert=3,
            back=12)
 WARM_STEPS = ('copy', 'start', 'boot', 'mode', 'picks')
 WAIT_ES = {'its first screen': 'su primera pantalla', 'the main menu': 'el menú principal',
@@ -91,6 +92,19 @@ def native_words(native):
     return {SAVE_TIME: kit_spec.TIMES.index(native['time']), SAVE_COM: native['com'],
             SAVE_REFEREE: native['referee'], SAVE_CPU1: 1, SAVE_CPU2: 1,
             SAVE_DESTRUCT: 0 if native['destructible'] else 1}
+
+
+def held_receipt_owned(record, owner, emulator_pid):
+    """A held archive is usable only by the current private preparation owner."""
+    return (type(record) is dict and type(record.get('schema')) is int and record['schema'] == 1 and
+            record.get('kind') == kit_prepare.HELD_EXPORT_KIND and
+            record.get('status') == kit_prepare.HELD_EXPORT_STATUS and type(owner) is dict and
+            type(owner.get('schema')) is int and owner['schema'] == 1 and
+            type(owner.get('emulator_pid')) is int and owner['emulator_pid'] > 0 and owner['emulator_pid'] == emulator_pid and
+            isinstance(owner.get('token'), str) and len(owner['token']) == 32 and
+            all(c in '0123456789abcdef' for c in owner['token']) and
+            type(record.get('owner')) is dict and type(record['owner'].get('schema')) is int and
+            type(record['owner'].get('emulator_pid')) is int and record['owner'] == owner)
 
 
 class PrepCopy:
@@ -125,6 +139,16 @@ class PrepCopy:
         self.reset_thread = None
         self.reset_token = None
         self.reset_running = False
+        self.reset_deferred = False
+        self.reset_owner = None
+        self.suspended_tokens = {}
+        self.selector_cache = None
+        self.selector_identity = None
+        self.selector_lease = None
+        self.selector_boot = None
+        self.verified_iso = None
+        self.export_owner = None
+        self.held_export = None
 
     # ---- small helpers -------------------------------------------------------------------------------------------------
     def event(self, what, **fields):
@@ -287,6 +311,39 @@ class PrepCopy:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(BLANK_CARD, target)
         self.settings_written = None
+        # Neutral templates must never depend on the host's offline options.
+        # Every committed match reapplies its complete online configuration.
+        self.write_settings({}, {}, 'en')
+        import kit_selector_cache
+        self.selector_cache = kit_selector_cache.SelectorCache()
+        self.selector_identity = kit_selector_cache.identity(self)
+        self.selector_lease = None
+        self.selector_boot = None
+
+    def cached_selector(self, engine):
+        return bool(self.selector_cache and self.selector_identity and
+                    self.selector_cache.available(engine, self.selector_identity))
+
+    def restore_selector(self, engine):
+        import kit_selector_cache
+        if self.selector_lease is None:
+            self.selector_lease = kit_selector_cache.find_watcher(self)
+        result = self.selector_cache.restore(self, engine, self.selector_identity, self.selector_lease,
+                                             boot=self.selector_boot)
+        self.selector_boot = None
+        self.event('selector restored', engine=engine, **result)
+        return result
+
+    def cache_selector(self):
+        """Publish only a genuinely selected, clean native selector in our copy."""
+        import kit_selector_cache
+        if self.cached_selector(self.engine):
+            return
+        self.selector_lease = kit_selector_cache.find_watcher(self)
+        state = self.base.save()
+        record = self.selector_cache.publish(state, self.engine, self.selector_identity, self.selector_lease, self)
+        self.event('selector cached', engine=self.engine, bytes=state.stat().st_size,
+                   sha256=record['state_sha256'])
 
     def write_settings(self, gameplay, services, language):
         """The copy's mod-settings.json for this match (only when it changes): EVERY key set (the copy's own mod's
@@ -297,18 +354,23 @@ class PrepCopy:
             return
         code, out, err = self.base.copy_python('-c', 'import copy, json, sys; sys.path.insert(0, "tools"); import '
                                                'mod_settings; d = copy.deepcopy(mod_settings.DEFAULTS); '
-                                               'd.update(json.loads(sys.argv[1])); mod_settings.save_settings(d)',
+                                               'd.update(json.loads(sys.argv[1])); mod_settings.save_settings(d); '
+                                               'print(json.dumps(mod_settings.load_settings()))',
                                                json.dumps(values))
         if code != 0:
             raise KitError('TTM-NET-23', what=f'The match-making copy\'s mod settings could not be written: '
                                               f'{err.strip()[-300:]}', fix='Press Ready again.',
                            what_es=f'No se pudieron escribir los ajustes del mod de la copia: {err.strip()[-300:]}',
                            fix_es='Pulsa Listo otra vez.')
-        code, out, err = self.base.copy_python(self.base.dest / 'game' / 'tools' / 'mod_settings.py', '--show')
         try:
             shown = json.loads(out)
         except ValueError:
-            shown = {}
+            shown = None
+        if not isinstance(shown, dict):
+            raise KitError('TTM-NET-23', what='The private builder did not return its saved effective settings.',
+                           fix='Press Ready again.',
+                           what_es='La copia privada no devolvió sus ajustes efectivos guardados.',
+                           fix_es='Pulsa Listo otra vez.')
         wrong = {k: shown.get(k) for k, v in values.items() if k in shown and shown.get(k) != v and
                  not (isinstance(v, float) and isinstance(shown.get(k), (int, float)) and abs(v - shown[k]) < 1e-9)}
         if code != 0 or wrong:
@@ -319,40 +381,102 @@ class PrepCopy:
         self.settings_written = values
         self.event('settings', values={k: values[k] for k in sorted(values)})
 
-    def launch(self):
-        self.progress('prep.start', 0, ETA['start'])
+    def launch(self, cached=False):
+        if not cached:
+            self.loading_speed(False)
+        # A verified neutral selector skips the boot/menu/pick steps. Do not
+        # estimate those discarded steps while this fast path is running.
+        self.progress('prep.selector' if cached else 'prep.start', 0,
+                      ETA['selector'] if cached else ETA['start'])
         self.started = time.time()
-        self.base.launch()
+        if os.name == 'nt':
+            import kit_prepare_launch
+            self.selector_boot = self.selector_cache.stage_boot(self, self.engine, self.selector_identity) \
+                if cached else None
+            kit_prepare_launch.launch(self, self.selector_identity, boot=self.selector_boot)
+        else:
+            self.base.launch()
         self.event('launched', pcsx2=self.base.pid, cmd=self.base.cmd_pid, desktop=self.base.desktop)
-        self.wait(lambda s: s['scene'] is not None, 120, 'its first screen')
+        if not cached:
+            self.wait(lambda s: s['scene'] is not None, 120, 'its first screen')
 
     def close(self):
         """Close the copy's Play session (by PID: its cmd.exe tree and its PCSX2)."""
         # Invalidate a pending reset before taking its lock. Its normal check()
         # then stops it, rather than sending keys to an emulator being closed.
         self.reset_token = None
+        self.reset_deferred = False
+        self.reset_owner = None
+        self.export_owner = None
+        self.held_export = None
         with self.lock:
             self.loading_speed(False)
             self.resume()
             self.base.close()
             self.base.pid = self.base.cmd_pid = None
+            self.suspended = []
+            self.suspended_tokens = {}
+            boot, self.selector_boot = self.selector_boot, None
+            if boot is not None:
+                import kit_selector_cache
+                try:
+                    kit_selector_cache._boot_path(self.base.dest, boot['claim']['state_path']).unlink(missing_ok=True)
+                except (OSError, ValueError, KeyError):
+                    pass
             if self.state != 'failed':
                 self.state = 'cold'
 
     def loading_speed(self, enabled):
-        """Accelerate the private builder; native menu waits preserve their frame count."""
+        """Accelerate cached restoration/resource loading; ordinary menus run at nominal speed."""
         enabled = bool(enabled and self.base.desktop and self.base.pid)
         if enabled == self.fast_loading:
             return
+        base = self.base
+        pid, desktop, slot = base.pid, base.desktop, getattr(self, 'slot', None)
         try:
-            kit_win.post_key(self.base.pid, kit_prepare.PREP_SPEED_KEY, enabled, self.base.desktop)
-        finally:
-            # Always attempt key-up on exits. HoldTurbo cannot leave a toggle
-            # armed for a later match or alter the client game's speed profile.
+            token = self._private_process_token(pid) if kit_win.WINDOWS else None
+        except (OSError, RuntimeError, ValueError, TypeError):
+            token = None
+        expected = os.path.normcase(str(base.dest / 'game/runtime28/pcsx2-qt.exe'))
+
+        def owned():
+            return (self.base is base and base.pid == pid and base.desktop == desktop and
+                    type(slot) is int and desktop == f'ttm-kit-prep-{slot}' and token is not None and
+                    getattr(self, 'slot', None) == slot and kit_win.listener_pid(slot) == pid and
+                    os.path.normcase(kit_win.process_path(pid)) == expected and
+                    self._private_process_token(pid) == token)
+
+        try:
+            if not kit_win.post_key(pid, kit_prepare.PREP_SPEED_KEY, enabled, desktop):
+                raise OSError('The private loading-speed key has no owned window')
+            if self.base is not base or base.pid != pid or base.desktop != desktop:
+                raise Cancelled()
+        except BaseException:
+            if self.base is base and base.pid == pid:
+                self.fast_loading = False
+            try:
+                if token is not None and self._private_process_token(pid) == token:
+                    kit_win.post_key(pid, kit_prepare.PREP_SPEED_KEY, False, desktop)
+            except (OSError, RuntimeError, ValueError, TypeError):
+                pass
+            try:
+                current_owner = owned()
+            except (OSError, RuntimeError, ValueError, TypeError):
+                current_owner = False
+            if current_owner:
+                self.close()
+            raise
+        else:
             self.fast_loading = enabled
+        finally:
+            # HoldTurbo captures the previous limiter. Releasing it restores
+            # that original Nominal mode before any native menu navigation.
+            if not enabled and self.base is base and base.pid == pid:
+                self.fast_loading = False
 
     # ---- 6.2 boot, 6.4 mode, 6.5 picks -------------------------------------------------------------------------------
     def boot(self, timeout=240):
+        self.loading_speed(False)
         self.progress('prep.boot', 0, ETA['boot'])
         end, tries = time.time() + timeout, 0
         while time.time() < end:
@@ -387,6 +511,7 @@ class PrepCopy:
                        what_es='La copia del anfitrión no llegó al menú principal del juego.', fix_es='Pulsa Listo otra vez: el kit la vuelve a arrancar.')
 
     def commit_mode(self):
+        self.loading_speed(False)
         self.progress('prep.mode', 0, ETA['mode'])
         # A returned main menu may retain the previous pager's magic but be
         # disarmed (state0). Never press Cross into that stock Duel row while
@@ -444,6 +569,11 @@ class PrepCopy:
 
     def native_picks(self):
         """One fighter per side (the cursor's: always unlocked), END twice: the map select."""
+        self.loading_speed(False)
+        # A restored neutral map selector is already finished. Confirming END
+        # here would instead start an unwanted native fight.
+        if self.at_map_select():
+            return
         self.progress('prep.picks', 0, ETA['picks'])
         self.sleep(3.0 / (PRIVATE_SPEED if self.fast_loading else 1.0))  # selector intro
         for side in (0, 1):
@@ -511,15 +641,39 @@ class PrepCopy:
             if not (self.base.pid and kit_win.pid_alive(self.base.pid)):
                 self.make_copy()
                 self.check()
-                self.launch()
-                self.loading_speed(True)
-                self.boot()
-                self.commit_mode()
+                if self.cached_selector(self.engine):
+                    self.launch(cached=True)
+                    self.loading_speed(True)
+                    try:
+                        self.restore_selector(self.engine)
+                    except Cancelled:
+                        raise
+                    except Exception as error:
+                        # Reject the cache and reboot normally; never leave a
+                        # partial load or failed worker authorized for a match.
+                        self.event('selector rejected', error=str(error)[:300])
+                        self.close()
+                        self.state = 'warming'
+                        # Closing restores temporary presentation/core settings.
+                        # Rebuild the isolated profile and its checked identity
+                        # before ordinary boot; never reuse the pre-close one.
+                        self.make_copy()
+                        self.check()
+                        self.launch()
+                        self.loading_speed(False)
+                        self.boot()
+                        self.commit_mode()
+                else:
+                    self.launch()
+                    self.loading_speed(False)
+                    self.boot()
+                    self.commit_mode()
             elif not self.at_select():
                 self.close()
                 return self._warm_steps()
             if not self.at_map_select():
                 self.native_picks()
+            self.cache_selector()
             self.state = 'warm'
             self.event('warm', seconds=round(time.time() - t0, 1))
             self.say(f'The host\'s match-making copy is ready ({time.time() - t0:.0f} s).')
@@ -552,7 +706,12 @@ class PrepCopy:
             self.warming = True
             try:
                 if self.base.pid and kit_win.pid_alive(self.base.pid):
-                    self.loading_speed(True)
+                    if self.cached_selector(engine) and self.at_map_select():
+                        self.loading_speed(True)
+                        self.restore_selector(engine)
+                        self.event('engine switched cached', engine=engine)
+                        return 'warm'
+                    self.loading_speed(False)
                     self.state = 'warming'
                     end = time.time() + 30
                     while time.time() < end:
@@ -562,6 +721,7 @@ class PrepCopy:
                             self.engine = engine
                             self.commit_mode()
                             self.native_picks()
+                            self.cache_selector()
                             self.state = 'warm'
                             self.event('engine switched', engine=engine)
                             return 'warm'
@@ -655,20 +815,108 @@ class PrepCopy:
             raise KitError('TTM-NET-23', what='The host\'s game does not answer.', fix='Press Ready again.',
                            what_es='El juego del anfitrión no responde.', fix_es='Pulsa Listo otra vez.')
         try:
-            self.write_spec(c, spec)
+            base = self.base
+            pid, desktop, slot = base.pid, base.desktop, getattr(self, 'slot', None)
+            fast = self.fast_loading
+            guarded = fast and kit_win.WINDOWS
+            token = self._private_process_token(pid) if guarded else None
+            expected = os.path.normcase(str(base.dest / 'game/runtime28/pcsx2-qt.exe'))
+
+            def captured_live():
+                try:
+                    return (token is not None and self._private_process_token(pid) == token and
+                            os.path.normcase(kit_win.process_path(pid)) == expected)
+                except (OSError, RuntimeError, ValueError, TypeError):
+                    return False
+
+            def require_owner():
+                if guarded and not (self.base is base and base.pid == pid and base.desktop == desktop and
+                        type(slot) is int and desktop == f'ttm-kit-prep-{slot}' and self.slot == slot and
+                        kit_win.listener_pid(slot) == pid and captured_live()):
+                    raise KitError('TTM-NET-23', what='The private match-confirm owner changed.',
+                                   fix='Press Ready again.',
+                                   what_es='Cambió la copia privada que confirma el combate.', fix_es='Pulsa Listo otra vez.')
+
+            def close_uncertain_input():
+                # A failed delivery may leave the original key held. Never
+                # terminate a replacement PID or another private/client VM.
+                if captured_live():
+                    try:
+                        kit_win.kill_tree(pid)
+                    except (OSError, RuntimeError, ValueError, TypeError):
+                        pass
+                    if self.base is base and base.pid == pid:
+                        self.fast_loading = False
+                        self.state = 'cold'
+
+            require_owner()
+            obj = self.write_spec(c, spec)
             self.event('spec written', teams=kit_spec.teams_of(spec), stage=spec['stage'])
             self.check()
+            # One input is admitted only while the exact written selector
+            # still owns map select and the native match has not started.
+            if (u32(c, LOOP) != 0 or u32(c, TEAM_OBJECT) != obj or
+                    u32(c, u32(c, MANAGER) + 0x18) != TEAM_SELECT or
+                    u32(c, obj + 0x3C6C) != 1):
+                raise KitError('TTM-NET-23', what="The host's game left the written map selector before confirm.",
+                               fix='Press Ready again.',
+                               what_es='El juego del anfitrión salió del selector escrito antes de confirmar.',
+                               fix_es='Pulsa Listo otra vez.')
             key = __import__('kit_emu').PAD1_KEYS['circle' if __import__('native_map').JPN else 'cross']
-            kit_win.post_key(self.base.pid, key, True, self.base.desktop)
-            time.sleep(max(1 / 30, 0.2 / PRIVATE_SPEED) if self.fast_loading else .2)
-            kit_win.post_key(self.base.pid, key, False, self.base.desktop)
-            t0 = time.time()
-            while time.time() - t0 < 15 and u32(c, LOOP) != 1:
-                time.sleep(0.005)
-            if u32(c, LOOP) != 1:
+            def await_native_start():
+                started = time.time()
+                while time.time() - started < 15:
+                    self.check()
+                    require_owner()
+                    if u32(c, LOOP) == 1:
+                        return started
+                    time.sleep(0.005)
                 raise KitError('TTM-NET-23', what='The host\'s game did not start the match after the confirm.',
                                fix='Press Ready again.',
                                what_es='El juego del anfitrión no empezó el combate tras confirmarlo.', fix_es='Pulsa Listo otra vez.')
+
+            primary, delivery_failed = None, False
+            try:
+                try:
+                    delivered = kit_win.post_key(pid, key, True, desktop)
+                except BaseException:
+                    delivery_failed = guarded
+                    raise
+                if guarded and not delivered:
+                    delivery_failed = True
+                    raise KitError('TTM-NET-23', what='The private match-confirm key has no owned window.',
+                                   fix='Press Ready again.',
+                                   what_es='La tecla para confirmar el combate no tiene una ventana propia.',
+                                   fix_es='Pulsa Listo otra vez.')
+                if guarded:
+                    # Queued host key events can both arrive between pad polls.
+                    # Admit one held Cross and release it at the native start acknowledgement.
+                    t0 = await_native_start()
+                else:
+                    time.sleep(1 / 120 if fast else .2)
+            except BaseException as error:
+                primary = error
+                raise
+            finally:
+                try:
+                    if not guarded or captured_live():
+                        released = kit_win.post_key(pid, key, False, desktop)
+                        if guarded and not released:
+                            raise KitError('TTM-NET-23', what='The private match-confirm key could not be released.',
+                                           fix='Press Ready again.',
+                                           what_es='No se pudo soltar la tecla para confirmar el combate.',
+                                           fix_es='Pulsa Listo otra vez.')
+                except BaseException:
+                    delivery_failed = guarded
+                    if primary is None:
+                        raise
+                finally:
+                    if delivery_failed:
+                        close_uncertain_input()
+            if not guarded:
+                t0 = await_native_start()
+            self.check()
+            require_owner()
             c.write(SCENE + 0x10, struct.pack('<I', time_word))
             for s, team in enumerate(spec['teams']):
                 c.write(SCENE + 0x270 * s + 0x2D0, AVAILABLE_QWORDS)
@@ -763,7 +1011,7 @@ class PrepCopy:
 
         The normal watcher's checkpoint log is intentionally late (after the
         intro acknowledgement). The trainer publishes this receipt only after
-        patch_state has fully checked the exported archive. An old receipt,
+        the original archive's complete payloads/CRCs have been checked. An old receipt,
         foreign disc, escaped output path or changed file is never accepted;
         convert() still independently checks all native guards and the spec.
         """
@@ -777,9 +1025,13 @@ class PrepCopy:
                 record = json.loads(receipt.read_text(encoding='utf-8'))
                 output = Path(record['output']).resolve()
                 directory = receipt.parent.resolve()
+                held = record.get('kind') == kit_prepare.HELD_EXPORT_KIND
                 if (directory.parent != root or output.parent != directory or output.suffix != '.p2s'
                         or record.get('serial') != serial or str(record.get('crc')).upper() != CRC.upper()
-                        or record.get('status') != 'Offline copy patched and archive-verified; not loaded into the emulator'):
+                        or (held and (not held_receipt_owned(record, self.export_owner, self.base.pid) or
+                            not output.name.endswith('-ready-held.p2s') or record.get('source') != str(output)))
+                        or (not held and record.get('status') !=
+                            'Offline copy patched and archive-verified; not loaded into the emulator')):
                     continue
                 wanted = record.get('output_sha256')
                 if not isinstance(wanted, str) or len(wanted) != 64:
@@ -793,6 +1045,7 @@ class PrepCopy:
                 if (before.st_size <= 0 or (before.st_size, before.st_mtime_ns) !=
                         (after.st_size, after.st_mtime_ns) or digest.hexdigest() != wanted):
                     continue
+                self.held_export = record if held else None
                 self.event('early export verified', checkpoint=str(output), sha256=wanted)
                 return output
             except (OSError, ValueError, KeyError, TypeError):
@@ -824,7 +1077,7 @@ class PrepCopy:
                     return path
             pct = min(95, int((time.time() - t0) * 100 / ETA['loading']))
             self.progress('prep.loading', pct, max(1, ETA['loading'] - (time.time() - t0)))
-            time.sleep(0.3)
+            time.sleep(0.01)
         raise KitError('TTM-NET-23', what=f'The host\'s match was not ready within {int(timeout)} s.',
                        fix='Press Start again: the kit starts the copy again.',
                        what_es=f'El combate del anfitrión no estuvo listo en {int(timeout)} s.',
@@ -833,6 +1086,7 @@ class PrepCopy:
     def return_to_select(self):
         """From the live (prepared) fight: Start, Return to Character Select, Yes; the watcher reloads its clean
         character-select checkpoint and keeps Team Battle."""
+        self.loading_speed(False)
         self.keys(['start'], gap=1.5)
         self.keys(['down', 'down', 'cross'], gap=0.6)
         self.keys(['up', 'cross'], gap=0.6)
@@ -850,13 +1104,17 @@ class PrepCopy:
                        fix='Press Ready again: the kit starts it again.',
                        what_es='La copia del anfitrión no volvió a la pantalla de equipos.', fix_es='Pulsa Listo otra vez: el kit la vuelve a arrancar.')
 
-    def prepare(self, spec, folder, mod=None, language='en', options=None):
+    def prepare(self, spec, folder, mod=None, language='en', options=None, *, controls=None, deferred_reset=False):
         """Make `spec` into `folder` (capture.p2s, netplay.p2s), returning the verified report and timings.
-        The private copy returns to map selection in the background after delivery."""
+        Committed Starts may park the private copy until delivery/intro finish;
+        other owners return it to map selection in the background immediately."""
         with self.lock:
-            return self._prepare(spec, Path(folder), mod, language, options)
+            return self._prepare(spec, Path(folder), mod, language, options, controls=controls,
+                                 deferred_reset=deferred_reset)
 
-    def _prepare(self, spec, folder, mod, language, options):
+    def _prepare(self, spec, folder, mod, language, options, *, controls=None, deferred_reset=False):
+        import kit_match
+        controls = kit_match.transport_controls(controls)
         t0 = time.time()
         timings = {}
         self._finish_pending_reset()
@@ -896,6 +1154,10 @@ class PrepCopy:
                 self.event('test: invalid colour written', fighter=written['teams'][1][-1])
             self.checkpoint_before = self.newest_checkpoint()
             self.exports_before = {str(p.resolve()) for p in self.export_receipts()}
+            self.export_owner = dict(schema=1, token=os.urandom(16).hex(), emulator_pid=self.base.pid)
+            self.held_export = None
+            kit_prepare.independent_write(self.base.dest / 'game' / kit_prepare.HELD_EXPORT_OWNER,
+                                          json.dumps(self.export_owner).encode('utf-8'))
             self.loading_speed(True)
             self.confirm(written)
             confirmed = True
@@ -919,7 +1181,7 @@ class PrepCopy:
         except Cancelled:
             self.loading_speed(False)
             self.event('cancelled', confirmed=confirmed)
-            if confirmed:
+            if confirmed and self.base.pid:
                 self._recover_after_confirm()
             else:
                 self.state = 'warm'
@@ -927,7 +1189,7 @@ class PrepCopy:
         except BaseException as error:
             self.loading_speed(False)
             self.event('prepare failed', error=str(error)[:500])
-            if confirmed:
+            if confirmed and self.base.pid:
                 try:
                     self._recover_after_confirm()
                 except BaseException:  # noqa: BLE001 - recovery failed: cold start next time
@@ -943,23 +1205,40 @@ class PrepCopy:
         try:
             report = kit_prepare.convert(folder / 'capture.p2s', folder,
                                          self.base.dest / 'game' / 'assets' / 'characters.json',
-                                         python=self.base.python(), say=self.say, spec=spec, options=options)
+                                         python=self.base.python(), say=self.say, spec=spec, options=options,
+                                         controls=controls, held_export=self.held_export)
         except BaseException:
             self.schedule_reset()
             raise
         timings['convert'] = round(time.time() - t, 1)
-        self.schedule_reset()
+        self.schedule_reset(deferred=True) if deferred_reset else self.schedule_reset()
         report['timings'] = timings
         report['seconds'] = round(time.time() - t0, 1)
         report['copy_after'] = self.state
         self.event('prepared', seconds=report['seconds'], timings=timings, verify_sha=report.get('verify_sha'))
         return report
 
-    def schedule_reset(self):
+    def schedule_reset(self, *, deferred=False):
         """Return the private copy in the background, serialized with every owner."""
         token = object()
         self.reset_token = token
+        self.reset_thread = None
         self.state = 'resetting'
+        self.reset_deferred = False
+        self.reset_owner = None
+        if deferred:
+            try:
+                if self._park_pending_reset(token):
+                    self.reset_deferred = True
+                    self.event('reset deferred', pids=self.suspended)
+                    return
+            except (OSError, RuntimeError, ValueError) as error:
+                # The delivered archive is already verified. An unrelated or
+                # replaced worker must not receive suspend/menu commands.
+                self.event('reset owner changed', error=str(error)[:300])
+                self.reset_token = None
+                self.state = 'cold'
+                return
 
         def reset():
             with self.lock:
@@ -968,6 +1247,56 @@ class PrepCopy:
 
         self.reset_thread = threading.Thread(target=reset, name='ttm-prep-reset', daemon=True)
         self.reset_thread.start()
+
+    def _private_process_token(self, pid):
+        from kit_fight import FightMixin
+        return FightMixin._load_process_token(self.base, pid)
+
+    def _reset_owner_current(self, owner):
+        return self.base is owner['base'] and self.base.pid == owner['pid'] and \
+            self.base.cmd_pid == owner['cmd_pid'] and kit_win.listener_pid(self.slot) == owner['pid'] and \
+            all(self._private_process_token(pid) == token for pid, token in owner['tokens'].items())
+
+    def _park_pending_reset(self, token):
+        """Defer the unchanged private tree; park only after its worker is ACTIVE."""
+        if os.name != 'nt' or not self.base.pid or self.reset_token is not token:
+            return False
+        pids = kit_win.process_tree(self.base.cmd_pid, self.base.pid)
+        tokens = {pid: self._private_process_token(pid) for pid in pids}
+        owner = dict(base=self.base, pid=self.base.pid, cmd_pid=self.base.cmd_pid, tokens=tokens)
+        expected = os.path.normcase(str(self.base.dest / 'game' / 'runtime28' / 'pcsx2-qt.exe'))
+        if self.base.pid not in tokens or any(value is None for value in tokens.values()) or \
+                os.path.normcase(kit_win.process_path(self.base.pid)) != expected or \
+                not self._reset_owner_current(owner):
+            raise ValueError('The private reset process tree is no longer owned.')
+        watcher_state = self.watcher().get('state')
+        if not self._reset_owner_current(owner):
+            raise ValueError('The private reset owner changed before parking.')
+        self.reset_owner = owner
+        if watcher_state != 'ACTIVE':
+            # PREPARING may still charge a native running-time watchdog.
+            # Leave it running at nominal speed; defer selector reset only.
+            self.event('reset waiting for worker', watcher=watcher_state, pid=owner['pid'])
+            return True
+        done = kit_win.suspend_pids(pids)
+        self.suspended, self.suspended_tokens = done, {pid: tokens[pid] for pid in done}
+        if not self._reset_owner_current(owner):
+            self.resume()
+            raise ValueError('The private reset owner changed while suspending.')
+        if set(done) != set(pids):
+            self.resume()
+            return False
+        self.reset_owner = owner
+        return True
+
+    def finish_deferred_reset(self):
+        """Consume a parked reset once delivery is over, or before the next owner."""
+        with self.lock:
+            if getattr(self, 'reset_deferred', False) and self.reset_token is not None:
+                self._finish_pending_reset()
+                if self.state == 'warm':
+                    self.suspend()
+            return self.state
 
     def _finish_pending_reset(self):
         """Called with lock held. Also covers a new request winning the worker race.
@@ -979,17 +1308,45 @@ class PrepCopy:
         token = self.reset_token
         if token is None or self.reset_running:
             return
+        owner = getattr(self, 'reset_owner', None)
+        if owner is not None and not self._reset_owner_current(owner):
+            self.resume()
+            self.reset_token = None
+            self.reset_deferred = False
+            self.reset_owner = None
+            self.state = 'cold'
+            self.event('reset discarded', reason='private owner changed')
+            return
         previous = self.warming
         self.warming = self.reset_running = True
         started = time.time()
         try:
+            if not self.resume():
+                raise ValueError('The private reset process tree did not fully resume.')
             self.loading_speed(True)
-            sample = self.wait_for_fight()
-            self.event('copy in its fight', clock=sample.get('clock'), fighters=sample.get('fighters'))
-            if self.capture_shots:
-                self.test_shot('prepared-fight')
-            self.return_to_select()
-            self.native_picks()
+            if self.cached_selector(self.engine):
+                # The playable export precedes cleanup. Wait for the worker to
+                # release its borrowed state slots before loading any template.
+                end = time.monotonic() + 90
+                while time.monotonic() < end:
+                    self.check()
+                    status = self.watcher()
+                    if status.get('state') == 'ACTIVE':
+                        break
+                    if status.get('state') == 'FAILED':
+                        raise ValueError('Preparation worker failed before selector reset')
+                    self.sleep(.05)
+                else:
+                    raise TimeoutError('Preparation worker did not release its state slots')
+                self.restore_selector(self.engine)
+            else:
+                self.loading_speed(True)
+                sample = self.wait_for_fight()
+                self.event('copy in its fight', clock=sample.get('clock'), fighters=sample.get('fighters'))
+                if self.capture_shots:
+                    self.test_shot('prepared-fight')
+                self.return_to_select()
+                self.native_picks()
             self.check()
             self.state = 'warm'
             self.event('reset complete', seconds=round(time.time() - started, 1))
@@ -1004,6 +1361,8 @@ class PrepCopy:
             if self.reset_token is token:
                 self.reset_token = None
             self.reset_running = False
+            self.reset_deferred = False
+            self.reset_owner = None
             self.warming = previous
 
     def _recover_after_confirm(self):
@@ -1019,6 +1378,7 @@ class PrepCopy:
             self.close()
             self.state = 'cold'
         finally:
+            self.loading_speed(False)
             self.warming = False
 
     # ---- 6.9 suspend while the online match runs ------------------------------------------------------------------------------
@@ -1035,11 +1395,16 @@ class PrepCopy:
 
     def resume(self):
         if self.suspended:
-            done = kit_win.resume_pids(self.suspended)
+            tokens = getattr(self, 'suspended_tokens', {})
+            owned = [pid for pid in self.suspended if pid not in tokens or
+                     self._private_process_token(pid) == tokens[pid]]
+            done = kit_win.resume_pids(owned)
             self.event('resumed', pids=done)
-            self.suspended = []
-            if self.state == 'suspended':
+            self.suspended = [pid for pid in owned if tokens and pid not in done]
+            self.suspended_tokens = {pid: tokens[pid] for pid in self.suspended}
+            if self.state == 'suspended' and not self.suspended:
                 self.state = 'warm'
+        return not self.suspended
 
     def _resume_checked(self):
         """Resume, then the health check: PINE answers and the team screen shows within 10 s, else a cold start."""
@@ -1074,6 +1439,8 @@ def main():
     ap.add_argument('--test-ko', action='store_true')
     ap.add_argument('--suspend-test', type=float, default=0.0)
     ap.add_argument('--keep', action='store_true')
+    ap.add_argument('--build-selector-cache', action='store_true',
+                    help='Build both local neutral engine templates once; no matches or user saves are created')
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1087,6 +1454,12 @@ def main():
         t = time.time()
         copy.warm()
         results.append(dict(step='warm', seconds=round(time.time() - t, 1)))
+        if args.build_selector_cache:
+            for engine in ('teams', 'ffa'):
+                t = time.time()
+                copy.switch_engine(engine)
+                copy.cache_selector()
+                results.append(dict(step='selector-cache', engine=engine, seconds=round(time.time()-t, 3)))
         for i, path in enumerate(args.spec):
             spec = json.loads(Path(path).read_text(encoding='utf-8'))
             if args.suspend_test and i:
@@ -1100,9 +1473,11 @@ def main():
                                 copy_after=report['copy_after']))
             print(json.dumps(results[-1]), flush=True)
     finally:
-        (out / 'results.json').write_text(json.dumps(results, indent=1), encoding='utf-8')
-        if not args.keep:
-            copy.close()
+        try:
+            (out / 'results.json').write_text(json.dumps(results, indent=1), encoding='utf-8')
+        finally:
+            if not args.keep:
+                copy.close()
     return 0
 
 

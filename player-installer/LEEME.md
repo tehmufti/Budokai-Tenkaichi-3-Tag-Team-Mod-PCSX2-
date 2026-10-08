@@ -77,8 +77,12 @@ y repite la instalación en una carpeta nueva. Las dependencias de Python del mo
 vienen incluidas y verificadas; solo se necesita Internet para instalar
 requisitos del sistema que falten o para descargar PCSX2.
 
-No se distribuyen juegos ni BIOS, y no se abre ningún emulador durante la
-instalación. Tu ISO y tu BIOS original no se modifican. PCSX2 y la BIOS se
+No se distribuyen juegos ni BIOS. Tras las comprobaciones, el instalador de
+Windows abre brevemente un emulador oculto y aislado para crear cachés de
+selección en línea con tu propia ISO y BIOS. En el equipo probado añade unos
+dos minutos y unos 20 MB. No prepara ninguna plantilla de combate. Si
+este paso opcional falla, Play sigue disponible y las partidas en línea usan
+la preparación nativa verificada. Tu ISO y tu BIOS original no se modifican. PCSX2 y la BIOS se
 copian a un perfil independiente; tus ajustes, tarjetas de memoria y estados
 guardados de PCSX2 no se importan ni se sobrescriben. El perfil privado
 necesita su propia copia de la BIOS porque el mod usa sus propios ajustes de

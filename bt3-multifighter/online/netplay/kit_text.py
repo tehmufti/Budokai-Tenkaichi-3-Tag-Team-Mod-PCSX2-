@@ -329,6 +329,8 @@ TEXT = {
     'prep.copy': {'en': 'Copying the host\'s Tag Team Mod (first time only)', 'es': 'Copiando el Tag Team Mod del '
                                                                                     'anfitrión (solo la primera vez)'},
     'prep.start': {'en': 'Starting the host\'s game', 'es': 'Iniciando el juego del anfitrión'},
+    'prep.selector': {'en': 'Starting the verified selection cache',
+                      'es': 'Iniciando la selección verificada en caché'},
     'prep.boot': {'en': 'Opening the game\'s main menu', 'es': 'Abriendo el menú principal del juego'},
     'prep.picks': {'en': 'Going to the map select', 'es': 'Yendo a la selección de escenario'},
     'prep.settings': {'en': 'Writing the match settings', 'es': 'Escribiendo los ajustes del combate'},
