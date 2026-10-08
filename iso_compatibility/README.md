@@ -73,7 +73,7 @@ stage data only. The original ISO and all non-stage bytes are preserved.
 `Build expanded maps.cmd` builds it if missing; the current copy is already built.
 
 In the main BT3 **Mod settings â†’ Presentation**, enable **Experimental 2x maps**,
-then restart through **Play (any teams).cmd**. Disable it and restart to return
+then restart through **Play.cmd**. Disable it and restart to return
 to the original ISO. This option does not affect the separate BT4 launcher or
 the legacy preset launchers. Use a fresh match; an old battle savestate contains
 the stage data that was present when that state was saved.
