@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **beta.46 installer** from [Releases](../../releases/latest).
+Download the **beta.46 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.46).
 Windows and Linux x86-64 downloads are available. Supply your own compatible
 game disc image, PS2 BIOS and PCSX2 installation; none is included here.
 The release includes English and Spanish mod interfaces.
