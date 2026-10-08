@@ -72,6 +72,8 @@ def draw(extensions=()):
     """extensions: viewport_hud.hud_extensions entries (guarded caption calls after each view's revival call).
     With none, the same bytes as before."""
     a=Assembler(DRAW);save(a);gate(a,'native')
+    import story_cinematics as story
+    story.emit_active(a,'native','not_story')
     # Keep stock intro/results and checked shared cinematics in their native
     # renderer. Free-action specials retain all four independent viewports.
     cinema.gate(a,'native',combat=False)

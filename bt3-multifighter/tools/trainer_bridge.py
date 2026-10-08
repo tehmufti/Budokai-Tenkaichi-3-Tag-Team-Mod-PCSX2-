@@ -98,6 +98,9 @@ def snapshot(p):
             fighter[name+'_max'] = word(data, row+maximum)
         fighter['alive'] = 0 < fighter['hp'] <= 0x1000000
         state['fighters'].append(fighter)
+    import story_runtime
+    story=story_runtime.snapshot(p)
+    if story is not None:state['story']=story
     return state
 
 

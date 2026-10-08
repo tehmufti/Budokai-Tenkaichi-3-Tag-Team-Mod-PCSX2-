@@ -47,6 +47,7 @@ from fresh_team_trainer import Session, StreamingSession, PreparationBusyError, 
 import native_preparation
 import menu_return
 import battle_mode_policy
+import story_missions
 from battle_mode_policy import ACTOR_COUNTS
 from battle_mode_policy import TEAM_CAPACITY
 
@@ -601,7 +602,7 @@ class Autopilot:
         if not (obs.streaming and obs.clean):return
         with PineClient(timeout=5) as p:
             if self.preparation_enabled:
-                native_preparation.arm(p, include_single_ffa=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans))
+                native_preparation.arm(p, include_single_ffa=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) or story_missions.pending_for(self.battle_mode))
             else:
                 native_preparation.disarm(p)
 
@@ -1099,7 +1100,7 @@ class Autopilot:
     def early_loading(self, obs):
         """Cover native arena/intro loading, then defer dialogue to prepared start."""
         if not self.preparation_enabled:return
-        teams = obs.selected_early_teams(include_single=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans))
+        teams = obs.selected_early_teams(include_single=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) or story_missions.pending_for(self.battle_mode))
         if teams is None or obs.battle_state not in (-1, 0, 1): return
         self.set_loading_teams(teams)
         if self.presentation is not None and hasattr(self.presentation, 'set_mode'):
@@ -2220,11 +2221,11 @@ class Autopilot:
                         self.report(say(SAY_CARRIES_CHANGES), obs, 'warning')
                     self.state = 'BATTLE'; continue
                 if obs.key in self.handled: continue
-                if max(obs.rows) <= 1 and not battle_mode_policy.prepare_singleton(self.battle_mode,self.humans):
+                if max(obs.rows) <= 1 and not (battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) or story_missions.pending_for(self.battle_mode)):
                     if self.cover_started: self.uncover()
                     self.handled.add(obs.key); self.state = 'BATTLE'
                     self.report(say(SAY_ONE_ON_ONE), obs); continue
-                if not supported_teams(obs.rows, include_single=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans)):
+                if not supported_teams(obs.rows, include_single=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) or story_missions.pending_for(self.battle_mode)):
                     if self.cover_started: self.uncover()
                     self.handled.add(obs.key)
                     self.state = 'BATTLE'

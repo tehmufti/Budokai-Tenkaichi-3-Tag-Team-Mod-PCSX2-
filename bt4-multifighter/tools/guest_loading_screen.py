@@ -391,10 +391,14 @@ def payload(menu_surface=True,native_modals=True):
             import native_menu_services as menus
             import team_assignment as teams
             import ingame_settings as settings
+            import scenario_menu as scenarios
             menus.scope(a,'legacy_menu')
             a.lw(9,8,teams.STATE);a.addiu(10,0,1);a.branch(5,9,10,'settings_modal')
             a.lw(9,8,teams.LEASE);a.branch(5,9,0,'menu_ready')
             a.label('settings_modal');a.li(8,settings.CONTROL);a.lw(9,8);a.li(10,settings.MAGIC)
+            a.branch(5,9,10,'scenario_modal');a.lw(9,8,4);a.addiu(10,0,1);a.branch(5,9,10,'scenario_modal')
+            a.lw(9,8,8);a.branch(5,9,0,'menu_ready')
+            a.label('scenario_modal');a.li(8,scenarios.CONTROL);a.lw(9,8);a.li(10,scenarios.MAGIC)
             a.branch(5,9,10,'legacy_menu');a.lw(9,8,4);a.addiu(10,0,1);a.branch(5,9,10,'legacy_menu')
             a.lw(9,8,8);a.branch(5,9,0,'menu_ready')
             a.label('legacy_menu')

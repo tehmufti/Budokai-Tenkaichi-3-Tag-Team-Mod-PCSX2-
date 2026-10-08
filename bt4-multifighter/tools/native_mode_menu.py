@@ -20,6 +20,7 @@ import ingame_settings
 import team_assignment
 import controller_assignment
 import player_slot_labels
+import scenario_menu
 
 CODE,OFF,ON,CONTROL,END=0x07690000,0x076A0000,0x076C1000,0x076FF000,0x07700000
 ALT_OFF,ALT_ON=0x06C40000,0x06C61000
@@ -27,7 +28,7 @@ MAGIC=0x324D4E42
 CHECKPOINT_WAIT,PENDING_CHOICE=0xD0,0xD4
 # Choice numbers stay stable across additions and native return routing.
 SELECTIONS=old.SELECTIONS+(('teams',2),('teams',0),('training',1),('training',2),('training_coop',2),('teams',4),('ffa',4),('coop',4),('training',4),('training_coop',4),('teams',3),('ffa',3),('coop',3),('training',3),('training_coop',3))
-PAGES=((0,1,3,6),(4,5,1,0,6,7),(4,5,1,0,6,7),(5,1,0,7),(4,5,1,0,7),(5,1,0,7))
+PAGES=((0,1,2,3,6),(4,5,1,0,6,7),(4,5,1,0,6,7),(5,1,0,7),(4,5,1,0,7),(5,1,0,7))
 # CONTROL: magic,state(1 armed/2 custom/3 committed/4 original),page,result,lease,owner,
 # epoch; snapshots: rows/count/cursor at100,scroll140,off144,on148,resource14c.
 
@@ -44,6 +45,8 @@ def owned_atlases(a,fail,tag):
 def payload():
     a=Assembler(CODE);services.save(a)
     a.call(controller_assignment.CODE)
+    a.lw(4,29,services.STACK+0x18);a.call(scenario_menu.ROUTE)
+    a.lw(4,29,services.STACK+0x18);a.call(scenario_menu.CODE);a.branch(5,2,0,'return')
     a.lw(4,29,services.STACK+0x18);a.call(ingame_settings.CODE);a.branch(5,2,0,'return')
     a.lw(4,29,services.STACK+0x18);a.call(team_assignment.CODE);a.branch(5,2,0,'return')
     a.lw(4,29,services.STACK+0x18);a.call(coop_character_select.CODE)
@@ -107,7 +110,11 @@ def payload():
     a.label('training_coop');a.addiu(15,0,16);a.branch(4,13,0,'commit')
     a.addiu(10,0,5);a.addiu(15,0,11);a.branch(4,13,10,'commit');a.jump('restore')
     a.label('root_choice');a.addiu(10,0,6);a.branch(4,13,10,'settings')
+    a.addiu(10,0,2);a.branch(4,13,10,'scenarios')
     a.i(11,10,13,4);a.branch(4,10,0,'restore');a.addiu(14,13,1);a.jump('page')
+    a.label('scenarios');a.li(10,scenario_menu.CONTROL);a.li(12,scenario_menu.MAGIC);a.sw(12,10)
+    a.addiu(12,0,1);a.sw(12,10,4);a.addiu(12,0,180);a.sw(12,10,8);a.sw(0,10,12)
+    a.li(12,old.PAD);a.lw(12,12,0x150);a.sw(12,10,16);a.jump('consume')
     a.label('settings');a.li(10,ingame_settings.CONTROL);a.li(12,ingame_settings.MAGIC);a.sw(12,10)
     a.addiu(12,0,1);a.sw(12,10,4);a.addiu(12,0,180);a.sw(12,10,8);a.sw(0,10,12)
     a.li(12,old.PAD);a.lw(12,12,0x150);a.sw(12,10,16);a.jump('consume')
@@ -238,7 +245,7 @@ def prepare(ram,settings=None):
 @lru_cache(maxsize=1)
 def code_pieces():
     """Include AFTER old.code_pieces in cold-boot/checkpoint construction."""
-    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()
+    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()
 
 
 class ReadOnlyMemory:
@@ -297,6 +304,7 @@ class Controller:
         self.custom_match=False;self.pending_return_page=None
         self.settings_menu=ingame_settings.Controller()
         self.team_menu=team_assignment.Controller()
+        self.scenarios=scenario_menu.Controller(self.settings)
         # Assemble immutable programs, badges and logo during boot, before
         # the user reaches the main menu. These do not inspect or mutate RAM.
         code_pieces()
@@ -332,6 +340,11 @@ class Controller:
 
     def tick(self,p,*,allow_activate=True,checkpoint_ready=True):
         if self.closed:return None
+        self.scenarios.settings=self.settings
+        self.scenarios.checkpoint_ready=checkpoint_ready
+        if self.scenarios.tick(p):return None
+        if self.scenarios.failed:
+            self.custom_match=False;self.scenarios.failed=False
         self.team_menu.settings=self.settings
         if self.team_menu.tick(p):return None
         settings=self.settings_menu.tick(p)
@@ -386,8 +399,16 @@ class Controller:
             # snapshots rows; otherwise a "clean" checkpoint keeps our labels.
             if not self.owned:
                 self.reset(p);return None
-            p.write_u32(CONTROL+16,180);self.active=True;return None
+            p.write_u32(CONTROL+16,180);self.active=True
+            if (state[1]==4 and allow_activate and ready(p) and not self.scenarios.launched and
+                    self.scenarios.quick_document() is not None):
+                # Workbench "Test this mission": open the Modded Modes root page through the
+                # guest's own return-page route (as after a custom match); scenario_menu launches it.
+                p.write_u32(CONTROL+64,1);p.write_u32(CONTROL+4,1)
+            return None
         if not allow_activate:return None
+        if self.pending_return_page is None and self.scenarios.quick_document() is not None:
+            self.pending_return_page=0
         plan=owned_plan(ReadOnlyMemory(p),self.settings)
         # Assets are staged first. Publish magic last: PINE writes can span
         # multiple commands while guest frames run. No live code/object edits.
@@ -412,4 +433,5 @@ class Controller:
         # The guest restores ownership itself after at most 180 pad updates;
         # no detached process or fresh emulator connection is created here.
         self.team_menu.shutdown()
+        self.scenarios.shutdown()
         self.closed=True;self.active=False

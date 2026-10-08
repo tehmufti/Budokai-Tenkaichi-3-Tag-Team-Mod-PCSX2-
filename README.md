@@ -71,14 +71,14 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Beta.46 source checkpoint
+## Development source versus beta.46
 
-This tag includes the runtime source corresponding to the original beta.46
-Windows and Linux installers. Documentation has been sanitized and line endings
-normalized. The verified region tables retain identical required mappings with
-unused development-tool entries removed. The optional Workbench/scenario-editor
-source is provided for developers; those scenario features are not part of the
-beta.46 player payload. The latest development integration is on `main`.
+This repository starts from the current development source. The scenario
+builder, presets and associated runtime edits are included for development;
+they have not been merged into the beta.46 player installer. The downloadable
+beta.46 Windows and Linux installers are the exact previously tested artifacts.
+Building the current source creates a development payload, not those identical
+beta.46 binaries. Change the version before distributing a modified build.
 
 ## License
 
