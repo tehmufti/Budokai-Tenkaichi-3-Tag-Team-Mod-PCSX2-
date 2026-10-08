@@ -25,7 +25,9 @@ from kit_codes import KitError
 
 VERSION = '0.1.0-beta.35'                      # the build the kit's data were recorded from
 KNOWN_BUILDS = tuple(f'0.1.0-beta.{n}' for n in range(35, 43))      # kit 2.0: beta.35 .. beta.42
-FIRST_CANDIDATE = 35
+# The public series restarted at Version 7. Candidates still have to pass the
+# guest-code fingerprint checks; a version number never certifies their code.
+FIRST_CANDIDATE = 7
 BUILD = re.compile(r'0\.1\.0-beta\.(\d+)')
 KEY = re.compile('[0-9a-f]{16}')
 
@@ -101,9 +103,9 @@ def read_installation(path):
     build = build_status(marker.get('version'))
     if build == 'refused':
         raise KitError('TTM-NET-24', what=f'{root} is Tag Team Mod {marker.get("version")}; making online matches '
-                                          f'needs {" or ".join(KNOWN_BUILDS)} (or a later 0.1.0-beta).',
+                                          'needs Version 7 or later, or a reviewed legacy build.',
                        what_es=f'{root} es Tag Team Mod {marker.get("version")}; crear combates en línea necesita '
-                               f'{" o ".join(KNOWN_BUILDS)} (o una 0.1.0-beta posterior).')
+                               'la versión 7 o posterior, o una versión anterior revisada.')
     profile, folder = disc_profile(game)
     if profile.get('adapter') not in __import__('kit_adapter').SUPPORTED:
         raise KitError('TTM-NET-24', what=f'The game disc chosen in that installation is {profile.get("adapter")}, '
@@ -128,7 +130,7 @@ def read_installation(path):
 
 
 def build_status(version):
-    """'known' (beta.35 .. beta.42), 'candidate' (a later 0.1.0-beta.N: the capture's code check decides) or 'refused'."""
+    """Reviewed legacy build, Version 7+ candidate (code checks decide), or refused."""
     if version in KNOWN_BUILDS:
         return 'known'
     m = BUILD.fullmatch(str(version or ''))
