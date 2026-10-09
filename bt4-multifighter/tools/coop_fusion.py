@@ -116,6 +116,9 @@ def tick(previous):
         a.lw(8,17,off);a.addiu(8,8,-241);a.i(11,8,8,2);a.branch(5,8,0,'done')
     a.jump('cancel')
     a.label('pending')
+    # A changed option cancels unanswered offers without disturbing the
+    # accepted queue/active ownership handled above.
+    a.li(9,fusion.DISABLED);a.lw(9,9);a.branch(5,9,0,'cancel')
     a.lw(9,16,60);a.r(0x23,9,9,8);a.branch(6,9,0,'cancel')
     a.li(8,participation.CONSUMED);a.lw(8,8);a.i(12,8,8,4);a.branch(5,8,0,'cancel')
     a.li(8,core.POINTERS);a.lw(17,8);a.lw(18,8,8)

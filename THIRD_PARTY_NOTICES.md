@@ -27,3 +27,12 @@ PCSX2, Python, Microsoft runtimes, game images and PS2 BIOS files are not
 included in this source repository. The installer uses locally supplied or
 upstream-installed components. See `player-installer/THIRD_PARTY_NOTICES.md`
 for the player release's distribution notices.
+
+Natural and Fighter motion samples are adapted from the CMU Graphics Lab
+Motion Capture Database, using Bruce Hahne's BVH conversion. The data
+was obtained from mocap.cs.cmu.edu, created with NSF EIA-0196217 funding.
+These animation assets retain their separate CMU terms: incorporation
+in projects and commercial products is permitted; resale of the motion
+data itself, including converted data, is prohibited. See
+each runtime's assets/licenses/CMU-Motion-Capture.txt and CMU-READMEFIRST.txt.
+The mod code remains GPL-3.0-only; it does not relicense these assets.

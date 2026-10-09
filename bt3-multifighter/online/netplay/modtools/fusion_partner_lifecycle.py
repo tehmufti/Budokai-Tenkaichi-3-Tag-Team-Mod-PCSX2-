@@ -23,10 +23,15 @@ import battle_mode_policy as policy
 
 SYNC, ELIGIBILITY, BEGIN, COMMIT = 0x077D0000, 0x077D1000, 0x077D2000, 0x077D3000
 CLEANUP, OLD_ELIGIBILITY, OLD_BEGIN = 0x077D5000, 0x077D7000, 0x077D7400
+DENIED = 0x077D7800
 RESERVED, CONTACT = 0x077D9000, 0x077DA000
 EXTRA_COMMIT, EXTRA_ELIGIBILITY, EXTRA_BEGIN, SIDE = 0x077DB000,0x077DD000,0x077DD400,0x077DD800
 ADMIT_BEGIN=0x077DDC00
 CONTROL, END = 0x077DF000, 0x077E0000
+# Zero preserves the historical enabled behavior in existing checkpoints. Only
+# new initiation is gated: accepted queues, model commits and timed defusion
+# must finish even when the option changes during a fusion.
+DISABLED = CONTROL + 32
 PART_CONTROL, PART_ROWS, CONSUME = 0x077CF000, 0x077CF100, 0x077C2000
 ELIGIBILITY_HOOK, BEGIN_HOOK, COMMIT_HOOK = 0x073E0000, 0x073E0400, A(0x1C29BC)
 NATIVE = elf_reader(elf_path(ROOT))[2]
@@ -190,20 +195,30 @@ def sync_code(quad_support=False):
 
 def eligibility_code():
     a=Assembler(ELIGIBILITY);save(a);a.call(SYNC);a.branch(4,2,0,'old')
+    a.li(8,DISABLED);a.lw(8,8);a.branch(5,8,0,'denied')
     restore(a);a.jump(EXTRA_ELIGIBILITY)
     a.label('old');restore(a);a.jump(OLD_ELIGIBILITY)
+    a.label('denied');restore(a);a.move(2,0);a.jr()
     return a.finish()
 
 
 def scoped_entry(entry,base,old,admission=False):
     """A guarded native prologue; an unserviced extra still hits the old veto."""
     a=Assembler(base);save(a);a.call(SYNC);a.branch(4,2,0,'old')
+    a.li(8,DISABLED);a.lw(8,8);a.branch(5,8,0,'denied')
     restore(a)
     if admission:a.jump(ADMIT_BEGIN)
     else:
         for word in struct.unpack('<2I',NATIVE(entry,8)):a.emit(word)
         a.jump(entry+8)
-    a.label('old');restore(a);a.jump(old);return a.finish()
+    a.label('old');restore(a);a.jump(old)
+    # Reuse the saved-frame epilogue: these entries each own only 0x400 bytes.
+    a.label('denied');a.jump(DENIED)
+    data=a.finish();assert len(data)<=0x400;return data
+
+
+def denied_code():
+    a=Assembler(DENIED);restore(a);a.move(2,0);a.jr();return a.finish()
 
 
 def side_code():
@@ -216,6 +231,7 @@ def side_code():
 
 def begin_code(timed=False):
     a=Assembler(BEGIN);save(a);a.call(SYNC);a.branch(4,2,0,'native')
+    a.li(8,DISABLED);a.lw(8,8);a.branch(5,8,0,'denied')
     a.li(8,core.PAIR+4);a.lw(8,8);a.branch(5,8,0,'denied')
     # An actor already promised to another fusion cannot become a survivor.
     a.call(RESERVED);a.branch(5,2,0,'denied')
@@ -363,14 +379,16 @@ def pieces():
             (EXTRA_BEGIN,scoped_entry(A(0x2039B0),EXTRA_BEGIN,OLD_BEGIN,True)),
             (ADMIT_BEGIN,forms.admission(A(0x2039B0),ADMIT_BEGIN,OLD_BEGIN)),(SIDE,side_code()),
             (OLD_ELIGIBILITY,safety.owned_code(A(0x203788),OLD_ELIGIBILITY,2,NATIVE(A(0x203788),8))),
-            (OLD_BEGIN,safety.owned_code(A(0x2039B0),OLD_BEGIN,2,NATIVE(A(0x2039B0),8)))]
+            (OLD_BEGIN,safety.owned_code(A(0x2039B0),OLD_BEGIN,2,NATIVE(A(0x2039B0),8))),
+            (DENIED,denied_code())]
 
 
-def build_memory(ram,config=None,source='<offline-prepared>',*,allow_human_partner=False,human_mask=0):
+def build_memory(ram,config=None,source='<offline-prepared>',*,allow_human_partner=False,human_mask=0,enabled=True):
     import team_participation as participation
     import team_start_gate as start
     require=lambda ok,text:None if ok else (_ for _ in ()).throw(ValueError(text))
     require(len(ram)==0x8000000,'Requires128MiB EE RAM')
+    require(type(enabled) is bool,'Fusion enabled must be Boolean')
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     manager,count=u(core.ACTORS),u(core.MODE+4)
     require(count in ACTOR_COUNTS and (u(core.MODE),u(core.MODE+8),u(core.MODE+12))==(1,manager,count),
@@ -397,7 +415,7 @@ def build_memory(ram,config=None,source='<offline-prepared>',*,allow_human_partn
     import special_pause as pause
     require(ram[contact.PROTECTED:contact.PROTECTED+8]==struct.pack('<2I',(2<<26)|(pause.CONTACT>>2),0),'Install special pause before fusion contact reservation')
     require(ram[pause.CONTACT:pause.CONTACT+len(pause.contact_code())]==pause.contact_code(),'Changed prior pause contact policy')
-    blocks=pieces()+[(CONTROL,struct.pack('<8I',1,manager,count,1,0,0,0,0))]
+    blocks=pieces()+[(CONTROL,struct.pack('<9I',1,manager,count,1,0,0,0,0,int(not enabled)))]
     blocks += [(ELIGIBILITY_HOOK,struct.pack('<2I',(2<<26)|(ELIGIBILITY>>2),0)),
                (A(0x203830),struct.pack('<I',(3<<26)|(SIDE>>2))),
                (BEGIN_HOOK,struct.pack('<2I',(2<<26)|(BEGIN>>2),0)),
@@ -408,6 +426,29 @@ def build_memory(ram,config=None,source='<offline-prepared>',*,allow_human_partn
                 limitations=['Extra initiation requires the active private form-reload worker; native tag guards remain.',
                     'Consumed partner retains backing allocations and actual model identity for safe lifecycle teardown.',
                     'Requires participation consumption and fully initialized owned effect families before a fusion.'])
+
+
+def settings_plan(ram,enabled,source='<fusion-settings>'):
+    """Change only future fusion admission, retaining active receipts/owners.
+
+    Reject old code rather than silently writing a setting it cannot honor.
+    Check the scoped runtime identity, so native matches remain untouched.
+    """
+    if type(enabled) is not bool:raise ValueError('Fusion enabled must be Boolean')
+    if len(ram)!=0x8000000:raise ValueError('Requires128MiB EE RAM')
+    u=lambda p:struct.unpack_from('<I',ram,p)[0]
+    manager,count=u(core.ACTORS),u(core.MODE+4)
+    if count not in ACTOR_COUNTS or (u(core.MODE),u(core.MODE+8),u(core.MODE+12))!=(1,manager,count):
+        raise ValueError('Fusion settings require an active prepared match')
+    if (u(CONTROL),u(CONTROL+4),u(CONTROL+8))!=(1,manager,count):
+        raise ValueError('Fusion settings owner changed')
+    code=eligibility_code()
+    if ram[ELIGIBILITY:ELIGIBILITY+len(code)]!=code:
+        raise ValueError('Fusion option requires the current admission guards')
+    if u(DISABLED) not in (0,1):raise ValueError('Invalid fusion option state')
+    data=struct.pack('<I',int(not enabled))
+    return dict(serial=SERIAL,crc=CRC,source=str(source),control=CONTROL,
+                blocks=[dict(address=DISABLED,expected_hex=ram[DISABLED:DISABLED+4].hex(),data_hex=data.hex())])
 
 
 def validate_contact_memory(ram,manager,count):

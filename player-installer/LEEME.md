@@ -267,8 +267,8 @@ Los registros técnicos y las herramientas de diagnóstico permanecen en inglés
 ## Ajustes
 
 **Modos del mod → Ajustes del mod** (con el mando) y **Mod settings.cmd**
-(editor de escritorio) ofrecen todos los ajustes con las mismas 17 categorías:
-Menús, Jugadores y mandos, Controles, Movimiento, Cinemáticas, Fusión,
+(editor de escritorio) ofrecen todos los ajustes con las mismas 18 categorías:
+Menús, Jugadores y mandos, Controles, Movimiento, Cinemáticas, Reglas de combate, Fusión,
 Luchadores, Gigantes, Interfaz, Interfaz dividida, Espectador, Reanimación,
 Inferioridad numérica, Forcejeos de rayos, Entrenamiento,
 Opciones de inicio (reiniciar), Diagnóstico. Ambos incluyen también las
@@ -364,7 +364,7 @@ reactivarlos.
 ### Cambiar el disco del juego
 
 El editor de escritorio (Mod settings.cmd; Mod settings.sh en Linux) tiene una
-página más después de las 17 categorías: **Disco del juego**. Con ella eliges
+página más después de las 18 categorías: **Disco del juego**. Con ella eliges
 cuál de tus ISO inicia Play, y cada cambio se aplica al momento (Guardar y
 Cancelar son para las demás páginas):
 
@@ -657,3 +657,16 @@ partida todas las combinaciones de personajes, trajes, efectos, fusiones y
 escenarios. El paquete solo incluye las herramientas para jugar, sin
 herramientas de desarrollo. Consulta **CHANGELOG.md** para ver los cambios y
 **THIRD_PARTY_NOTICES.md** para las licencias de las dependencias.
+
+## Opciones de combate de la versión 11
+
+Movimiento ofrece los estilos Clásico, Natural y Luchador. Caminar y correr por el suelo
+sigue desactivado por defecto; el estilo se aplica al próximo combate nuevo. Fusión
+incluye Permitir fusiones para jugadores y CPU, sin quitar personajes fusionados
+elegidos de antemano.
+
+Reglas de combate activa las salidas del ring en los escenarios originales de torneo.
+Tocar suelo prohibido elimina al luchador sin posibilidad de reanimarlo. Volar fuera
+es seguro hasta tocar el suelo. Los aliados siguen luchando y el equipo pierde
+cuando no queda nadie. Un jugador eliminado puede controlar a un aliado CPU vivo.
+Desactiva Eliminación por salir del ring para jugar sin esa regla.

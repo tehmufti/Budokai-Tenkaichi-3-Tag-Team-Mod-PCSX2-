@@ -359,7 +359,7 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # would otherwise switch targets with.
     builders.append(lambda r: spectator_switch.build_memory(r, source=source))
     builders.append(lambda r: team_participation.build_memory(r, present_mask=present_mask, source=source))
-    builders.append(lambda r: fusion_partner_lifecycle.build_memory(r, source=source, allow_human_partner=(battle_mode=='coop'),human_mask=human_extras if humans>=3 or assignment is not None else 0))
+    builders.append(lambda r: fusion_partner_lifecycle.build_memory(r, source=source, enabled=preferences['fusion_enabled'], allow_human_partner=(battle_mode=='coop'),human_mask=human_extras if humans>=3 or assignment is not None else 0))
     builders.append(lambda r: special_camera_arbitration.build_memory(r, source=source))
     builders.append(lambda r: special_concurrency.build_memory(r, source=source))
     builders.append(lambda r: ordinary_form_admission.build_memory(r, source=source))
@@ -439,6 +439,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     if humans>=3 or assignment is not None:
         import four_player_mode
         builders.append(lambda r: four_player_mode.build_memory(r,mode=battle_mode,humans=humans,source=source,settings=preferences,assignment=assignment))
+    import tournament_ringout
+    builders.append(lambda r: tournament_ringout.build_memory(r, settings=preferences, source=source))
     import rush_cinematics
     builders.append(lambda r: rush_cinematics.build_memory(r, enabled=preferences['rush_cinematics']))
     import lockoff_target

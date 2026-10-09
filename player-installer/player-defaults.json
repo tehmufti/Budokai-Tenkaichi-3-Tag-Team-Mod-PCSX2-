@@ -115,5 +115,8 @@
   "ground_walk_tilt_percent": 60,
   "ground_walk_speed_percent": 40,
   "ground_run_speed_percent": 100,
-  "ground_size_speed": true
+  "ground_size_speed": true,
+  "ground_motion_style": "classic",
+  "fusion_enabled": true,
+  "tournament_ring_outs": true
 }

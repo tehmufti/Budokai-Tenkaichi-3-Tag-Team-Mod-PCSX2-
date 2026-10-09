@@ -129,6 +129,9 @@ def tick(previous):
     a.li(8,core.POINTERS);a.r(0,9,0,18,2);a.r(0x21,8,8,9);a.lw(17,8)
     a.lw(19,16,F['partner']);a.li(8,core.POINTERS);a.r(0,9,0,19,2);a.r(0x21,8,8,9);a.lw(20,8)
     a.lw(8,16);a.addiu(9,0,2);a.branch(4,8,9,'queued')
+    # Status 1 is an unanswered offer. Queued/committed transactions must
+    # finish normally if the host disables future fusions mid-match.
+    a.li(8,fusion.DISABLED);a.lw(8,8);a.branch(5,8,0,'cancel')
     a.li(8,CONTROL);a.lw(8,8,16);a.lw(9,16,F['ttl']);a.r(0x23,9,9,8);a.branch(6,9,0,'cancel')
     for reg in (17,20):
         a.move(4,reg);a.call(feed.ROW);a.branch(4,2,0,'cancel');a.lw(8,2);a.branch(6,8,0,'cancel')

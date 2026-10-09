@@ -425,6 +425,8 @@ def validate_memory(ram):
         b=four_player_mode.dependency_override(ram,p,b)
         import story_runtime
         b=story_runtime.dependency_override(ram,p,b)
+        import tournament_ringout
+        b=tournament_ringout.dependency_override(ram,p,b)
         if ram[p:p+len(b)]!=b:
             if p==HOOKS[1]:
                 import body_swap_runner as bodies

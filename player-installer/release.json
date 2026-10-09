@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.1.0-beta.10",
+  "version": "0.1.0-beta.11",
   "channel": "public-beta",
   "python": "3.11",
   "pcsx2": "2.8.2",
