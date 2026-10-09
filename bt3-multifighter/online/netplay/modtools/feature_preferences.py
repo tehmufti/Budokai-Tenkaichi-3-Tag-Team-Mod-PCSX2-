@@ -85,6 +85,8 @@ OPTIONS = {
     'keep_preparation_diagnostics': (False,'bool',None,None,'Diagnostics','Keep preparation RAM dumps (uses a lot of disk space)'),
     'capture_freeze_dumps': (False,'bool',None,None,'Diagnostics','Save a large diagnostic snapshot if a match freezes'),
     'record_battle_diagnostics': (False,'bool',None,None,'Diagnostics','Write diagnostic battle history to disk'),
+    'fusion_enabled': (True,'bool',None,None,'Fusion','Allow fusions'),
+    'tournament_ring_outs': (True,'bool',None,None,'Battle rules','Tournament ring-outs'),
     'fusion_duration_enabled': (False,'bool',None,None,'Fusion','Timed fusion and automatic defusion'),
     'fusion_duration_seconds': (40,'int',1,300,'Fusion','Fusion time limit (seconds)'),
     'show_fusion_timer': (True,'bool',None,None,'Fusion','Show remaining fusion time'),
@@ -123,6 +125,7 @@ OPTIONS = {
     # ground_locomotion (beta.37, v2 beta.38). Off installs nothing; the others only matter while it is on
     # (ingame_settings DEPENDS). Speeds are % of a natural run (ground_locomotion RUN_BASE/WALK_BASE); tilt 0
     # always runs; size scales the speed by the fighter's legs (ground_legs.py).
+    'ground_motion_style': ('classic','choice',('classic','natural','fighter'),None,'Movement','Walking and running style'),
     'ground_running': (False,'bool',None,None,'Movement','Walk and run on the ground'),
     'ground_walk_tilt_percent': (60,'int',0,95,'Movement','Stick tilt to run (%; 0 = always run)'),
     'ground_walk_speed_percent': (40,'int',10,100,'Movement','Walking speed (% of normal)'),

@@ -247,8 +247,8 @@ save state from a different mod build is not a supported upgrade path.
 ## Settings
 
 **Modded Modes → Mod Settings** (controller) and **Mod settings.cmd** (desktop
-editor) offer every setting in the same 17 categories: Menus, Players and controllers,
-Controls, Movement, Cinematics, Fusion, Fighters, Giants, HUD, Split-screen HUD,
+editor) offer every setting in the same 18 categories: Menus, Players and controllers,
+Controls, Movement, Cinematics, Battle rules, Fusion, Fighters, Giants, HUD, Split-screen HUD,
 Spectating, Revival, Outnumbered, Beam struggles, Training, Launch
 options (restart), Diagnostics. Both also
 offer the per-character CPU transformation exceptions and Restore defaults
@@ -330,7 +330,7 @@ you turn the mod mode menus off, only Mod settings.cmd can turn them back on.
 ### Switching the game disc
 
 The desktop editor (Mod settings.cmd; Mod settings.sh on Linux) has one more
-page after the 17 categories: **Game disc**. It chooses which of your ISOs Play
+page after the 18 categories: **Game disc**. It chooses which of your ISOs Play
 starts, and each change applies at once (Save and Cancel are for the other
 pages):
 
@@ -583,3 +583,15 @@ needed for an ordinary installer report.
 
 The package contains player runtime tools only: no Workbench, research captures
 or developer test suite. See CHANGELOG.md and THIRD_PARTY_NOTICES.md.
+
+## Version 11 gameplay options
+
+Movement offers Classic, Natural and Fighter walking/running styles. Ground walking/running
+is off by default; style changes apply to the next fresh match. Fusion has an Allow fusions
+switch for humans and CPUs. It does not remove preselected fused characters.
+
+Battle rules enables ring-outs automatically on the original tournament stages.
+Touching a disallowed ground surface permanently eliminates that fighter; flying
+outside is safe until ground contact. Teammates keep fighting, and a team loses
+only when nobody remains. Ring-outs prevent revival but allow the existing CPU
+teammate takeover. Turn Tournament ring-outs off to disable this rule.

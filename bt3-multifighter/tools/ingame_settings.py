@@ -114,6 +114,7 @@ DEPENDS = {
     'beam_assist_multiplier_percent': ('beam_assist_enabled', True),
     'beam_assist_cpu': ('beam_assist_enabled', True),
     'beam_assist_range': ('beam_assist_enabled', True),
+    'ground_motion_style': ('ground_running', True),
     'ground_walk_tilt_percent': ('ground_running', True),
     'ground_walk_speed_percent': ('ground_running', True),
     'ground_run_speed_percent': ('ground_running', True),

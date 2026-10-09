@@ -1,10 +1,11 @@
 """Approved authored walk/run clips plus the unchanged native-compatible steps.
 
-The approved revision-3 Mannequiny adaptation supplies local bone rotations and
-hip weight shift. Runtime ground_root_motion retargets that shift after native
+Classic (Mannequiny) and the approved Natural/Fighter (CMU capture) styles
+supply local bone rotations and hip weight shift. Runtime ground_root_motion retargets that shift after native
 conversion using the current character's own root and leg length. Other bones
 retain native bind translations, so bodies are never stretched to Goku's mesh.
-See assets/licenses/Mannequiny.txt for the animation-data attribution.
+See assets/licenses/Mannequiny.txt and CMU-Motion-Capture.txt for the separate
+animation-data terms and attribution.
 
 Only ground actions 13/14, animation IDs 2..9 use authored motion. IDs10/11 and
 the STOP set's8/9 keep the previous sidestep/brake clips byte for byte. Native
@@ -380,40 +381,40 @@ def decompress_literal(packed):
     return bytes(out)
 
 
-def canonical(gait, anim, profile='male'):
-    if profile not in ('male', 'female'):
+def canonical(gait, anim, profile='male', style='classic'):
+    if profile not in ('male', 'female') or style not in ground_motion.STYLES:
         raise ValueError('Invalid ground motion profile')
     if gait == STOP:
         gait = RUN
     gait = WALK if gait in WALKING else RUN
     if anim in (8, 9):
         gait = WALK
-    if gait == RUN:
+    if gait == RUN or style != 'classic':
         profile = 'male'
     return gait, anim, profile
 
 
-def authored_pose(gait, anim, t, profile='male'):
+def authored_pose(gait, anim, t, profile='male', style='classic'):
     """Approved local rotations and leg-normalized hip motion at native time t.
 
 Native start clips use the same continuous cycle as their loop. The game's
 existing blend and our movement ramp ease the entry without distorting knees.
 """
     frames = FRAMES[(gait, anim)]
-    gait, anim, profile = canonical(gait, anim, profile)
+    gait, anim, profile = canonical(gait, anim, profile, style)
     base, turn = TURNED.get(anim, (anim, 0))
     phase = (t/frames) % 1.
     if base == 9:
         phase = (-phase) % 1.
-    root, pose = ground_motion.sample('walk' if gait == WALK else 'run', phase, profile)
+    root, pose = ground_motion.sample('walk' if gait == WALK else 'run', phase, profile, style)
     if turn:
         for bone, angle in TURN.items():
             pose[bone] = qnorm(qmul(qaxis((0, 1, 0), turn*angle), pose[bone]))
     return root, pose
 
 
-def motion_tag(gait, anim, profile):
-    gait, anim, profile = canonical(gait, anim, profile)
+def motion_tag(gait, anim, profile, style='classic'):
+    gait, anim, profile = canonical(gait, anim, profile, style)
     anim = TURNED.get(anim, (anim, 0))[0]
     # Starts and loops have the same root curve. Aliases use one immutable row.
     if anim == 2:
@@ -421,7 +422,7 @@ def motion_tag(gait, anim, profile):
     return 0x4000 + 2*(1 + (40 if profile == 'female' else 0) + gait*10 + anim-2)
 
 
-def decoded_clip(gait, anim, profile='male'):
+def decoded_clip(gait, anim, profile='male', style='classic'):
     frames = FRAMES[(gait, anim)]
     authored = not (gait == STOP and anim in (8, 9)) and anim not in SIDESTEP
     # Preserve brake and sideways clip bytes exactly. Forward/backward motion
@@ -429,7 +430,7 @@ def decoded_clip(gait, anim, profile='male'):
     keys = frames+1 if authored else (STOP_KEYS if gait == STOP else 17)
     times = key_times(frames, keys)
     if authored:
-        samples = [authored_pose(gait, anim, t, profile) for t in times]
+        samples = [authored_pose(gait, anim, t, profile, style) for t in times]
         poses = [p for _, p in samples]
         root = [(t, xyz) for t, (xyz, _) in zip(times, samples)]
     else:
@@ -440,11 +441,11 @@ def decoded_clip(gait, anim, profile='male'):
         keys = [(t, p[bone]) for t, p in zip(times, poses)]
         packed = {encode_quat(q) for _, q in keys}
         tracks[bone] = keys[:1] if len(packed) == 1 else keys
-    return encode_clip(frames, tracks, root, motion_tag(gait, anim, profile) if authored else 0)
+    return encode_clip(frames, tracks, root, motion_tag(gait, anim, profile, style) if authored else 0)
 
 
-@functools.lru_cache(maxsize=2)
-def _built_set(profile):
+@functools.lru_cache(maxsize=6)
+def _built_set(profile, style):
     """{(set, anim): native clip bytes (8-byte size header + literal byte-pair stream)} for the five sets and anims
     2..11; SHARED entries are the very same bytes object as their source (one copy in RAM)."""
     out = {}
@@ -452,14 +453,14 @@ def _built_set(profile):
         for anim in IDS:
             key = (gait, anim)
             if key in SHARED: continue
-            out[key] = compress_literal(decoded_clip(gait, anim, profile))
+            out[key] = compress_literal(decoded_clip(gait, anim, profile, style))
     for key, source in SHARED.items(): out[key] = out[source]
     return tuple(out.items())
 
 
-def build_set(profile='male'):
+def build_set(profile='male', style='classic'):
     """An independent directory of cached immutable clip bytes for this profile."""
-    return dict(_built_set(profile))
+    return dict(_built_set(profile, style))
 
 
 def frames():
@@ -486,6 +487,10 @@ def stance_speed(gait):
 
 
 STANCE_SPEED = {g: ground_motion.STANCE_TRAVEL['walk' if g in WALKING else 'run']/LOOP_FRAMES[g] for g in SETS}
+
+
+def style_stance_speed(gait, style='classic'):
+    return ground_motion.stance_travel('walk' if gait in WALKING else 'run', style)/LOOP_FRAMES[gait]
 
 
 def digest(clips=None):

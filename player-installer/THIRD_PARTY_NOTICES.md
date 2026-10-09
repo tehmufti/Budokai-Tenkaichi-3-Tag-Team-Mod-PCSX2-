@@ -45,3 +45,12 @@ No game ISO, PS2 BIOS, memory card, game save, RAM capture or extracted native
 game executable is included. Fighter portraits and native references are
 extracted locally from the selected ISO during setup. This is an unofficial
 fan modification, not an official Dragon Ball or PCSX2 release.
+
+Natural and Fighter motion samples are adapted from the CMU Graphics Lab
+Motion Capture Database, using Bruce Hahne's BVH conversion. The data
+was obtained from mocap.cs.cmu.edu, created with NSF EIA-0196217 funding.
+These animation assets retain their separate CMU terms: incorporation
+in projects and commercial products is permitted; resale of the motion
+data itself, including converted data, is prohibited. See
+game/assets/licenses/CMU-Motion-Capture.txt and CMU-READMEFIRST.txt.
+The mod code remains GPL-3.0-only; it does not relicense these assets.

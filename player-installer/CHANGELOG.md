@@ -1,3 +1,10 @@
+## Version 11
+
+- Movement settings add Natural and Fighter walking/running styles alongside Classic. Walking/running remains off by default.
+- Fusion settings can disable new fusions for humans and CPUs without removing preselected fused characters.
+- Tournament stages use native ground-contact ring-outs. Eliminated fighters cannot revive; teammates continue until the whole team is defeated. Eligible players can take over a surviving CPU teammate. Battle rules can disable ring-outs.
+- Online hosts control the new gameplay settings for the whole room. Windows and Linux installers and updaters include the same changes.
+
 ## Version 10
 
 - New installations default Beam clash camera to Keep players' views. Existing saved settings are preserved.

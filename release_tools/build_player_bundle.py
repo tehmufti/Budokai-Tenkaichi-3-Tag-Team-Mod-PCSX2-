@@ -17,7 +17,8 @@ JSON_ASSETS=('buu_fanout_family1_legacy.json','buu_fanout_legacy.json','loading_
 ADAPTER_ASSETS={'bt3-usa':('pal_native_map.json','jpn_native_map.json','bt3_english_names.json')}
 NATIVE_MAP_TABLES=('pal_native_map.json','jpn_native_map.json')
 # Shared non-Python runtime assets: explicit paths prevent source models or previews entering the payload.
-SHARED_ASSETS=('assets/licenses/Mannequiny.txt',)
+SHARED_ASSETS=('assets/licenses/Mannequiny.txt', 'assets/licenses/CMU-Motion-Capture.txt',
+               'assets/licenses/CMU-READMEFIRST.txt')
 
 
 def put(archive,name,data):

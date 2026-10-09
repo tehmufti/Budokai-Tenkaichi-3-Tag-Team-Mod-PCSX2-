@@ -73,6 +73,8 @@ def descriptors(profile='lean'):
     import fresh_team_ai as ai
     import native_preparation as preparation
     import guest_loading_screen as cover
+    import ground_locomotion as ground
+    import tournament_ringout as ringout
     impure, battle, manager = A(0x2E9808), A(0x2FEB38), A(0x2FEB14)
     cinematic_camera, camera_manager, scene = A(0x2FEBCC), A(0x2FEBD4), A(0x331DC8)
     rows = []
@@ -130,7 +132,11 @@ def descriptors(profile='lean'):
     add(DIRECT, 6, core.MODE, 0, 4, 'mod mode/count/manager/configured')
     add(DIRECT, 6, core.PAIR, 0, 2, 'pair engine enable / alias-active (0 between actor slices)')
     add(DIRECT, 6, cinematic.CONTROL, 0, 24, 'cinematic policy record (shared stop, latches)')
+    add(DIRECT, 6, ground.CONTROL, 0, 16, 'ground movement identity/settings/style/version (no telemetry)')
+    add(DIRECT, 6, ringout.CONTROL, 0, 6, 'tournament identity, enabled flag and permanent elimination mask')
     if full:
+        add(DIRECT, 6, ground.ACTORS, 0, 12 * ground.ROW // 4, 'ground movement per-fighter gait and phase state')
+        add(DIRECT, 6, ringout.CONTROL + ringout.F['pointers'], 0, 12, 'tournament captured fighter pointers')
         add(DIRECT, 6, core.POINTERS, 0, 12, 'mod actor pointers')
         add(DIRECT, 6, A(0x31C640), 0, 12, 'native model pointer table')
         add(DIRECT, 6, ai.CONTROL + 0x10, 0, 2, 'fresh AI frames / alive mask')

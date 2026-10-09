@@ -34,6 +34,7 @@ GAMEPLAY = (
     # who is coming at you (a warning changes when a player can act: one rule for everybody)
     'lockon_threat_marks',
     # Movement
+    'ground_motion_style', 'fusion_enabled', 'tournament_ring_outs',
     'ground_running', 'ground_walk_tilt_percent', 'ground_walk_speed_percent', 'ground_run_speed_percent',
     'ground_size_speed',
     # Cinematics

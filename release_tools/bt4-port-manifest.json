@@ -48,6 +48,16 @@
       "bt4": "aa1f38bcfc76da93037a05a42e27659520afa055135f518357c4ecfe42e42a9f",
       "shared": true
     },
+    "assets/licenses/CMU-Motion-Capture.txt": {
+      "bt3": "066f7ab08e77a06a4cc1ec2d31ad180d78c87bf9dd02973a47e5e03cfeacd4ca",
+      "bt4": "066f7ab08e77a06a4cc1ec2d31ad180d78c87bf9dd02973a47e5e03cfeacd4ca",
+      "shared": true
+    },
+    "assets/licenses/CMU-READMEFIRST.txt": {
+      "bt3": "8e6fe2e640b3728ef2e43e722cb5ae9cdf0010028c0517c4226ed165f9037930",
+      "bt4": "8e6fe2e640b3728ef2e43e722cb5ae9cdf0010028c0517c4226ed165f9037930",
+      "shared": true
+    },
     "assets/licenses/Mannequiny.txt": {
       "bt3": "cb1f77744884f80225b25bf2e77e873c67df31869eedb5d27c3dd345649a2677",
       "bt4": "cb1f77744884f80225b25bf2e77e873c67df31869eedb5d27c3dd345649a2677",
@@ -294,8 +304,8 @@
       "shared": true
     },
     "tools/coop_fusion.py": {
-      "bt3": "cb0acd5ee1fa6c1f3d2ab1996c7c76b1a9ae55777854737db728f92753ecc1c1",
-      "bt4": "cb0acd5ee1fa6c1f3d2ab1996c7c76b1a9ae55777854737db728f92753ecc1c1",
+      "bt3": "dfd58439a5e535e8ce71e339af287ea51cf914e8130d450b1db3e3950e1b2032",
+      "bt4": "dfd58439a5e535e8ce71e339af287ea51cf914e8130d450b1db3e3950e1b2032",
       "shared": true
     },
     "tools/corpse_safety.py": {
@@ -499,8 +509,8 @@
       "shared": true
     },
     "tools/feature_preferences.py": {
-      "bt3": "886369d8963a649b2c21940b05d58d171ce4e63ede36a48843d36400ce3bb142",
-      "bt4": "886369d8963a649b2c21940b05d58d171ce4e63ede36a48843d36400ce3bb142",
+      "bt3": "1424ede6bc081ff7bc12cf333deaffa155f72d0a443631f80e8dc498334772b9",
+      "bt4": "1424ede6bc081ff7bc12cf333deaffa155f72d0a443631f80e8dc498334772b9",
       "shared": true
     },
     "tools/ffa_targeting.py": {
@@ -559,8 +569,8 @@
       "shared": true
     },
     "tools/fresh_team_trainer.py": {
-      "bt3": "85548599d5540b7b03180c8ba30a072c9142d6d2d6c548797b75ebd63f9a53d7",
-      "bt4": "478fbf13d9cedc6f2e28f77cdd4040574daf83518878f399ef4485436ca737e4",
+      "bt3": "1620aa8498d4192c7c090a3fe9fdaf232f8b351d7ddfd0a8f461e12117df9039",
+      "bt4": "07f62f1d74a16878ac58d2781ccc4acc4c6068ca685130686affa0437e680e05",
       "shared": false
     },
     "tools/fusion_audio_restore.py": {
@@ -594,8 +604,8 @@
       "shared": false
     },
     "tools/fusion_partner_lifecycle.py": {
-      "bt3": "377c759645c9651b117a52136cda65d9b831c56c6bfeb229b937173e0698e5f2",
-      "bt4": "377c759645c9651b117a52136cda65d9b831c56c6bfeb229b937173e0698e5f2",
+      "bt3": "0e50cdb91b950c0ccc6db8f07771d5ae4fbbe63335b120661a60e0d44f033c44",
+      "bt4": "0e50cdb91b950c0ccc6db8f07771d5ae4fbbe63335b120661a60e0d44f033c44",
       "shared": true
     },
     "tools/fusion_rules.py": {
@@ -614,8 +624,8 @@
       "shared": true
     },
     "tools/ground_clips.py": {
-      "bt3": "f3fb2aff12f5dbed94a172a534543eb59a8fe02a3c9b84eeb17e87e8bcce9483",
-      "bt4": "f3fb2aff12f5dbed94a172a534543eb59a8fe02a3c9b84eeb17e87e8bcce9483",
+      "bt3": "c9534b305d945378f52001474768f4392a4297245165459cb88eba036a894e49",
+      "bt4": "c9534b305d945378f52001474768f4392a4297245165459cb88eba036a894e49",
       "shared": true
     },
     "tools/ground_effect_bounds.py": {
@@ -629,13 +639,18 @@
       "shared": false
     },
     "tools/ground_locomotion.py": {
-      "bt3": "e9001af13411722a5a6146165aa479119c13857b4e5365bc3369e0caa8785b22",
-      "bt4": "e9001af13411722a5a6146165aa479119c13857b4e5365bc3369e0caa8785b22",
+      "bt3": "9e94c8c06acdc2832eedbf178e7843186f4322558487be2d5c2ff6b5918c543c",
+      "bt4": "9e94c8c06acdc2832eedbf178e7843186f4322558487be2d5c2ff6b5918c543c",
       "shared": true
     },
     "tools/ground_motion.py": {
-      "bt3": "9174486ed706e6137fbd45d7af16dfa8a31791ab95d4c042ee2630469a1ad4a2",
-      "bt4": "9174486ed706e6137fbd45d7af16dfa8a31791ab95d4c042ee2630469a1ad4a2",
+      "bt3": "d1dce038922fe4262a986bba731d018fc3ed9bab2ec9e4e73f99fcbb70b366e4",
+      "bt4": "d1dce038922fe4262a986bba731d018fc3ed9bab2ec9e4e73f99fcbb70b366e4",
+      "shared": true
+    },
+    "tools/ground_motion_cmu.py": {
+      "bt3": "145d9868a05f36ea8beb02030a5343ab8a139632a1692f5befe0c152ad6f1910",
+      "bt4": "145d9868a05f36ea8beb02030a5343ab8a139632a1692f5befe0c152ad6f1910",
       "shared": true
     },
     "tools/ground_root_motion.py": {
@@ -679,8 +694,8 @@
       "shared": true
     },
     "tools/ingame_settings.py": {
-      "bt3": "08e1a384431adf2d4a4f43689120b255dadc6d027b87cb24239df4c8669384e9",
-      "bt4": "08e1a384431adf2d4a4f43689120b255dadc6d027b87cb24239df4c8669384e9",
+      "bt3": "79ca71456b6f07fc1893c1c7fb58862f48d91209e88a3d200c1e72fa745d88bc",
+      "bt4": "79ca71456b6f07fc1893c1c7fb58862f48d91209e88a3d200c1e72fa745d88bc",
       "shared": true
     },
     "tools/initial_targets.py": {
@@ -784,8 +799,8 @@
       "shared": true
     },
     "tools/localization.py": {
-      "bt3": "3ac62f2ae29f8741cc4b76377c1c179c71f9a3edc102e20da5fbaaa967cf3521",
-      "bt4": "3ac62f2ae29f8741cc4b76377c1c179c71f9a3edc102e20da5fbaaa967cf3521",
+      "bt3": "7071a57f54f5c917210d5e1d97b4d2f49588a00798c420ad769835dc25178f87",
+      "bt4": "7071a57f54f5c917210d5e1d97b4d2f49588a00798c420ad769835dc25178f87",
       "shared": false
     },
     "tools/lockoff_target.py": {
@@ -834,8 +849,8 @@
       "shared": false
     },
     "tools/mod_settings.py": {
-      "bt3": "80f8b3503f71ad95a38641f5cae0de5a7a5a887fe54858470672a173ad0c1d89",
-      "bt4": "f8635dd2432f88d217c0d359df32c21c50a3eb5ddb876f4941e0e056e5d78711",
+      "bt3": "3a0dfab7dc76ccc2768f3891fa233bea78e7b74aee6a4021e33dd9bdb12a5082",
+      "bt4": "2740df56761dbde25eb80c7eb0a771021ae02a2d4593ea0311b0b4220cf1ff47",
       "shared": false
     },
     "tools/modded_training.py": {
@@ -844,8 +859,8 @@
       "shared": true
     },
     "tools/modder_gui.py": {
-      "bt3": "45fb7ffa74b4a9f05123191c1d80914fa1e708dd3c355fc4e3b20157e5ffbcef",
-      "bt4": "a22525b5e4f7dbfccb4bbfc10e4689f7c9843a0cbb44329af447e755a20caa9d",
+      "bt3": "4567beceeab842c3a0ee3006dc70804f00600d0401037e3052a36d442ef1ba23",
+      "bt4": "27859ef9d83978c5ad889b00c86df6b3690e02ea1d5045e80bc11ccd5c5bfa0b",
       "shared": false
     },
     "tools/mode_menu.py": {
@@ -884,8 +899,8 @@
       "shared": true
     },
     "tools/multiplayer_fusion.py": {
-      "bt3": "6b8adfd30a03d93f0df8cae30fbdae242f2585793e4973df63f6104c810fb877",
-      "bt4": "6b8adfd30a03d93f0df8cae30fbdae242f2585793e4973df63f6104c810fb877",
+      "bt3": "cb96155e502048649ef5b0881282958a67a4555949843960eeb20b63a3399293",
+      "bt4": "cb96155e502048649ef5b0881282958a67a4555949843960eeb20b63a3399293",
       "shared": true
     },
     "tools/multiview_layout.py": {
@@ -1214,13 +1229,13 @@
       "shared": true
     },
     "tools/story_cinematics.py": {
-      "bt3": "a2c1988d2232ef970b045e6f42b6a431f77ee2f8a980fb9278b06e4dc93d1413",
-      "bt4": "a2c1988d2232ef970b045e6f42b6a431f77ee2f8a980fb9278b06e4dc93d1413",
+      "bt3": "9e354208025603cca519883e8c0d244001db1386e4bf6b43ea72856f18ca8241",
+      "bt4": "9e354208025603cca519883e8c0d244001db1386e4bf6b43ea72856f18ca8241",
       "shared": true
     },
     "tools/story_editor.py": {
-      "bt3": "8b549259209ef0bf13d2fc3c3c4c0d3caa69b5158cb56dd3f934205e6c521d28",
-      "bt4": "8b549259209ef0bf13d2fc3c3c4c0d3caa69b5158cb56dd3f934205e6c521d28",
+      "bt3": "7e3317049ad8618bae4cea58f25acae1808159db3d58a88ce8c4210fabade5a1",
+      "bt4": "7e3317049ad8618bae4cea58f25acae1808159db3d58a88ce8c4210fabade5a1",
       "shared": true
     },
     "tools/story_graph.py": {
@@ -1234,13 +1249,13 @@
       "shared": true
     },
     "tools/story_missions.py": {
-      "bt3": "5a0e6e2ac5c14432281fac01d65f3149e8aa4db022026e33224a9eeb72a86f39",
-      "bt4": "5a0e6e2ac5c14432281fac01d65f3149e8aa4db022026e33224a9eeb72a86f39",
+      "bt3": "e6b2889a8e881c898e37f76abd1e3b745c0a3ba8dfefc729ce1cd8ffcbe9e8c6",
+      "bt4": "e6b2889a8e881c898e37f76abd1e3b745c0a3ba8dfefc729ce1cd8ffcbe9e8c6",
       "shared": true
     },
     "tools/story_preview.py": {
-      "bt3": "16ea25aebb31a0e2ab7947d5e4a5a63ae529919799d4116cb540fd0435b179af",
-      "bt4": "16ea25aebb31a0e2ab7947d5e4a5a63ae529919799d4116cb540fd0435b179af",
+      "bt3": "b4d6dd92d1315bcfc6f5991699cf56457961a0c5ea47c5db11a2b2b632fa54c4",
+      "bt4": "b4d6dd92d1315bcfc6f5991699cf56457961a0c5ea47c5db11a2b2b632fa54c4",
       "shared": true
     },
     "tools/story_quicklaunch.py": {
@@ -1254,8 +1269,8 @@
       "shared": true
     },
     "tools/story_runtime.py": {
-      "bt3": "c5ca4a4ab68214afdf2e156632a7c59bab59b845b6b77ba157ddf4e89e8d20a6",
-      "bt4": "c5ca4a4ab68214afdf2e156632a7c59bab59b845b6b77ba157ddf4e89e8d20a6",
+      "bt3": "02612cb64221a17f95d19b0956716c4feb9e3ad065cbf950bcab3e2438046138",
+      "bt4": "02612cb64221a17f95d19b0956716c4feb9e3ad065cbf950bcab3e2438046138",
       "shared": true
     },
     "tools/story_voice.py": {
@@ -1349,8 +1364,8 @@
       "shared": true
     },
     "tools/teammate_revive.py": {
-      "bt3": "700c7699c01d17dfa48588e37e8707134db08b2a522e6a530e5d26e8c1613ca2",
-      "bt4": "700c7699c01d17dfa48588e37e8707134db08b2a522e6a530e5d26e8c1613ca2",
+      "bt3": "96bf5f26e5c06f974af7420b3afa488f579f1312ee1f2123af68c1b5d3f66a59",
+      "bt4": "96bf5f26e5c06f974af7420b3afa488f579f1312ee1f2123af68c1b5d3f66a59",
       "shared": true
     },
     "tools/teammate_revive_ring.py": {
@@ -1371,6 +1386,11 @@
     "tools/throw_camera.py": {
       "bt3": "704e66c83eeab289184503534e31182a5094883d15d9b7475bf0639bc462c7fa",
       "bt4": "704e66c83eeab289184503534e31182a5094883d15d9b7475bf0639bc462c7fa",
+      "shared": true
+    },
+    "tools/tournament_ringout.py": {
+      "bt3": "13b390c1658abd19fe094fc3b6c1482aba044daa93483b19803faadb83eeb699",
+      "bt4": "13b390c1658abd19fe094fc3b6c1482aba044daa93483b19803faadb83eeb699",
       "shared": true
     },
     "tools/trainer_bridge.py": {
@@ -1436,6 +1456,11 @@
     "tools/widescreen_support.py": {
       "bt3": "ab69d4c43ba1b5fb2e9beaf6565d499fa0187745f2add2047483dca2caf52a09",
       "bt4": "403e006673afb9159a60b25e66d06179f36ec13147e10ffa0f52b5af4a6faea1",
+      "shared": true
+    },
+    "tools/workbench_layout.py": {
+      "bt3": "f45bc9563bf6de22aef22cf177ef4e02243a5d1c81bcd10bbd03d3ad52b09948",
+      "bt4": "f45bc9563bf6de22aef22cf177ef4e02243a5d1c81bcd10bbd03d3ad52b09948",
       "shared": true
     },
     "tools/bt4_disc.py": {

@@ -220,7 +220,7 @@ class ModSettingsTests(unittest.TestCase):
 
 
 PLAYER_DEFAULTS = Path(settings.__file__).resolve().parents[2] / 'player-installer' / 'player-defaults.json'
-PAGES = ('Menus', 'Players and controllers', 'Controls', 'Movement', 'Cinematics', 'Fusion', 'Fighters', 'Giants', 'HUD',
+PAGES = ('Menus', 'Players and controllers', 'Controls', 'Movement', 'Cinematics', 'Battle rules', 'Fusion', 'Fighters', 'Giants', 'HUD',
          'Split-screen HUD', 'Spectating', 'Revival', 'Outnumbered', 'Beam struggles', 'Training',
          'Launch options (restart)',
          'Diagnostics')
@@ -259,7 +259,7 @@ class OrganisationTests(unittest.TestCase):
         self.assertEqual(len(settings.REVIVE_KEYS), 11)
         self.assertEqual(pages['HUD'], (*settings.DISPLAY_KEYS, 'lockoff_target_hud', 'lockon_target_marker', 'lockon_target_style',
                                         'lockon_threat_marks'))
-        self.assertEqual(pages['Fusion'][:3], (settings.COOP_FUSION_KEY, 'show_fusion_control_owner',
+        self.assertEqual(pages['Fusion'][:4], ('fusion_enabled', settings.COOP_FUSION_KEY, 'show_fusion_control_owner',
                                                'show_fusion_control_countdown'))
         self.assertIn(settings.EXCEPTIONS_GROUP, pages)
         # Paths the player README/LEEME cite: Menus -> Language / Idioma, Controls.

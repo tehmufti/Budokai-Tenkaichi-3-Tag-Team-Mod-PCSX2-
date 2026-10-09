@@ -1,0 +1,44 @@
+Natural and Fighter walking/running animation data
+==================================================
+
+The motion samples in tools/ground_motion_cmu.py are adapted from Carnegie
+Mellon University Graphics Lab motion capture, using Bruce Hahne's 2010
+MotionBuilder-friendly BVH conversion. These animation-data assets have
+their own terms below. They are not relicensed under the mod code's GPL-3.0
+license and are not CC0/public-domain assets.
+
+The data used in this project was obtained from mocap.cs.cmu.edu.
+The database was created with funding from NSF EIA-0196217.
+
+Original database and current reuse terms:
+https://mocap.cs.cmu.edu/
+
+CMU permits using the data in projects and including it in commercial
+products, but prohibits selling the motion data itself, including in a
+converted form. Please consult the original database for the complete
+terms. Bruce Hahne imposes no additional restrictions on his conversion;
+the accompanying CMU-READMEFIRST.txt preserves his original explanation
+and attribution. That historical file describes the terms as they were
+published in 2010; the database's current restriction on selling the motion
+data itself also applies to the adapted data supplied with this mod.
+
+BVH conversion:
+https://sites.google.com/a/cgspeed.com/cgspeed/motion-capture/cmu-bvh-conversion
+Distribution mirror:
+https://github.com/una-dinosauria/cmu-mocap
+
+Source clips:
+- 104_02.bvh: neutral male walk, frames 286-435.
+  SHA-256 c7b350504477fc77e890dad93f700af0c98228dd02e16a9f489b37a6fc32cf62
+- 02_03.bvh: run/jog, frames 48-140.
+  SHA-256 6f4d38b92b041221030de2ee1058903e0f7a8fa08f9c6c9efabf7df9a128011ac
+
+Modifications: retargeted to the game's biped hierarchy, looped and filtered,
+repaired knee/elbow bend planes, authored foot contact, adjusted pelvis
+height and weight transfer, restrained head movement, and adjusted torso
+and arm poses. Fighter adds a stronger lean and arm drive. Motion samples
+are normalized to leg length and encoded for the native animation player.
+No game mesh, texture, original full capture, or animation from another
+commercial game is distributed in these files.
+
+Attribution does not imply endorsement by CMU or Bruce Hahne.

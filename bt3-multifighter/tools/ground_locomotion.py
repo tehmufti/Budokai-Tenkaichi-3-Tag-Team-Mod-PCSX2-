@@ -1,4 +1,4 @@
-"""Walk and run on the ground (approved authored revision 3; Mod settings > Movement).
+"""Walk and run on the ground (Classic, Natural, Fighter; Mod settings > Movement).
 
 Natively a fighter that moves on the ground glides just above it (action 13: anims 2 start / 3 loop, the turned
 layer 4..7; action 14, the close-range movement around the target that also brakes a run, anims 8/9 and the
@@ -44,6 +44,8 @@ Hooks (USA addresses, every one through A()):
              the cycle length, and preserves the native rate word. Native/nonmovement animations take the original
              branch. Neither the bone evaluator nor the blend layers ever see a negative pre-step phase.
 Settings apply from the next match: an installed match only rewrites CONTROL's settings words (Fight Again).
+The selected motion style stays fixed for an installed match so rematches
+cannot invalidate decoded clip pointers; choose a new match to change it.
 """
 from native_map import A, ACTOR_HZ, ADAPTER, CRC, FLAG, FLAG_BITS, SERIAL, elf_path
 import math
@@ -67,11 +69,11 @@ MAGIC, VERSION = 0x47524E31, 3        # 'GRN1'
 ROW = 0x40
 CONTROL_SIZE = 0x100
 KEYS = ('ground_running', 'ground_walk_tilt_percent', 'ground_walk_speed_percent', 'ground_run_speed_percent',
-        'ground_size_speed')
+        'ground_size_speed', 'ground_motion_style')
 # CONTROL: identity +0..+12 (+12 enabled), settings +16..+59 (rewritten on an installed match), +60 version,
 # counters +64...
 C = dict(magic=0, manager=4, count=8, enabled=12, run13=16, walk13=20, tilt2=24, run2=28, walk2=32, hold=36,
-         run14=40, walk14=44, size_on=48, version=60)
+         run14=40, walk14=44, size_on=48, style=52, version=60)
 COUNTERS = dict(substitutions=64, native_for_eligible=68, base_restarts=72, landing_restarts=76, gait_switches=80,
                 speed_scalings=84, layer_invalidations=88, cadence_nudges=92, reconciles_skipped=96, skids=100,
                 brakes=104, speed_caps=108)
@@ -595,11 +597,11 @@ def hook_patches():
 
 # ------------------------------------------------------------------------------------------ data
 
-def layout_profiles():
+def layout_profiles(style='classic'):
     """Male/female address maps, with identical run/side/brake clips stored only once."""
     mappings, pieces, p, placed = {}, [], CLIPS, {}
     for profile in ('male', 'female'):
-        built = clips.build_set(profile=profile)
+        built = clips.build_set(profile=profile, style=style)
         where = mappings[profile] = {}
         for key in sorted(built):
             if built[key] in placed:
@@ -634,12 +636,12 @@ def legs():
     return ground_legs.table(BT4)
 
 
-def consts_bytes():
+def consts_bytes(style='classic'):
     # Four full walk/run sets, then the same walking motion resampled onto the native close-range timeline.
     # Its travel per complete cycle is identical; per-unit foot speed scales by the shorter duration.
     floop = [float(clips.LOOP_FRAMES[g]) for g in clips.SETS] + [float(clips.FRAMES[(clips.WALK, 8)])]
-    s = [clips.STANCE_SPEED[g] for g in clips.SETS]
-    s.append(clips.STANCE_SPEED[clips.WALK]*clips.LOOP_FRAMES[clips.WALK]/floop[CADENCE_CLOSE])
+    s = [clips.style_stance_speed(g, style) for g in clips.SETS]
+    s.append(clips.style_stance_speed(clips.WALK, style)*clips.LOOP_FRAMES[clips.WALK]/floop[CADENCE_CLOSE])
     cap = [MAX_STEPS/ACTOR_HZ*speed*frames/2 for speed, frames in zip(s, floop)]
     return struct.pack('<15f8fIf', *s, *cap, *floop, ground_legs.REFERENCE, SIZE_LO, SIZE_HI, ground_legs.SMALL, RAMP,
                        RAMP_START, SKID_START, R_DEFAULT, len(legs()), R_MAX)
@@ -655,8 +657,17 @@ def config_bytes(settings):
     run2 = (tilt + HYSTERESIS)**2 if tilt else 0.0
     walk2 = max(tilt - HYSTERESIS, 0.0)**2 if tilt else 0.0
     run, walk = s['ground_run_speed_percent']/100.0, s['ground_walk_speed_percent']/100.0
-    return struct.pack('<I5fI2fI2I', int(bool(s['ground_running'])), run*RUN_BASE, walk*WALK_BASE, tilt*tilt, run2,
-                       walk2, HOLD, run, walk, int(bool(s['ground_size_speed'])), 0, 0)
+    style = s.get('ground_motion_style', 'classic')
+    run_base, walk_base = RUN_BASE, WALK_BASE
+    if style != 'classic':
+        # New clips have shorter strides than Classic. At the default slider
+        # values use their approved cadence, rather than making those shorter
+        # strides shuffle 2-3 times faster to preserve Classic's velocity.
+        run_base = ground_motion.source_speed('run', style)/(ACTOR_HZ*4.074)
+        walk_base = ground_motion.source_speed('walk', style)/(ACTOR_HZ*4.074*.40)
+    return struct.pack('<I5fI2fI2I', int(bool(s['ground_running'])), run*run_base, walk*walk_base, tilt*tilt, run2,
+                       walk2, HOLD, run, walk, int(bool(s['ground_size_speed'])),
+                       ground_motion.STYLES.index(s.get('ground_motion_style', 'classic')), 0)
 
 
 def control_bytes(manager, count, settings):
@@ -710,18 +721,28 @@ def _build(ram, s, source):
     read = native()
     disc_check(read)
     code = programs()
-    where, female, pieces = layout_profiles()
+    requested_style = s.get('ground_motion_style', 'classic')
+    style = requested_style
+    if installed(ram):
+        # A decoded clip can still point into this layout. New style choices
+        # apply at fresh preparation, never by moving the clips on a rematch.
+        index = u(CONTROL+C['style'])
+        if index >= len(ground_motion.STYLES):
+            raise ValueError('Unknown installed ground motion style')
+        style = ground_motion.STYLES[index]
+    active_settings = dict(s, ground_motion_style=style)
+    where, female, pieces = layout_profiles(style)
     directory, frames = table_bytes(where)
     female_directory, _ = table_bytes(female)
-    data = [(DIRECTORY, directory), (FTABLE, frames), (CONSTS, consts_bytes()), (LEGS, legs_bytes()),
+    data = [(DIRECTORY, directory), (FTABLE, frames), (CONSTS, consts_bytes(style)), (LEGS, legs_bytes()),
             (FEMALE_DIRECTORY, female_directory), (FEMALE_BITS, female_bits())] + \
-            ground_root_motion.data_blocks([clips.build_set(profile='male'), clips.build_set(profile='female')])
+            ground_root_motion.data_blocks([clips.build_set(profile=p, style=style) for p in ('male', 'female')])
     if installed(ram):
         if (u(CONTROL+4), u(CONTROL+8), u(CONTROL+C['version'])) != (manager, count, VERSION):
             raise ValueError('Ground running install belongs to another match')
         for p, d in code + hook_patches() + pieces + data:
             if ram[p:p+len(d)] != d: raise ValueError(f'Changed ground running program {p:08X}')
-        patches = [(CONTROL+12, config_bytes(s))]
+        patches = [(CONTROL+12, config_bytes(active_settings))]
     else:
         if any(ram[BASE:END]): raise ValueError('Ground running reservation occupied')
         for site, d in hook_patches():
@@ -733,14 +754,15 @@ def _build(ram, s, source):
         if shared:
             raise ValueError(f'Ground running cannot replace shared animations {shared}: this disc decodes them '
                              'through another model (24D178)')
-        patches = code + [(CONTROL, control_bytes(manager, count, s)), (ACTORS, bytes(ROW*12))] + data + pieces + \
+        patches = code + [(CONTROL, control_bytes(manager, count, active_settings)), (ACTORS, bytes(ROW*12))] + data + pieces + \
             hook_patches()
     spans = sorted((p, p+len(d)) for p, d in patches)
     if any(e > q for (_, e), (q, _) in zip(spans, spans[1:])): raise ValueError('Ground running patches overlap')
     blocks = [dict(address=p, expected_hex=ram[p:p+len(d)].hex(), data_hex=d.hex())
               for p, d in patches if ram[p:p+len(d)] != d]
     return dict(serial=SERIAL, crc=CRC, source=str(source), control=CONTROL, blocks=blocks,
-                enabled=bool(s['ground_running']), clips=clips.CLIP_SET_SHA256,
+                enabled=bool(s['ground_running']), clips=clips.digest(clips.build_set(style=style)),
+                motion_style=style, requested_motion_style=requested_style,
                 telemetry={k: CONTROL+v for k, v in COUNTERS.items()},
                 notes=['Walk and run on the ground: approved retargeted clips for actions 13/14 on solid ground, gait from '
                        'the stick tilt, speed scaled by the setting and the fighter\'s size, feet planted.'])
