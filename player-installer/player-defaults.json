@@ -101,7 +101,7 @@
   "lockon_target_style": "arrow",
   "lockon_attacker_switch": "tap_during_warning",
   "lockon_threat_marks": "marks_and_warning",
-  "beam_clash_camera": "clash",
+  "beam_clash_camera": "keep",
   "beam_struggle_length": "native",
   "beam_struggle_push_ahead": 0,
   "beam_struggle_cpu_power_percent": 100,
