@@ -8,7 +8,24 @@
     "retry": true,
     "character_select": false
   },
-  "cpu_profiles": {},
+  "cpu_profiles": {
+    "frieza-cpu": {
+      "name": "frieza CPU",
+      "transform_chance": 100
+    },
+    "krillin-cpu": {
+      "name": "krillin CPU",
+      "transform_chance": 100
+    },
+    "vegeta-cpu": {
+      "name": "vegeta CPU",
+      "transform_chance": 100
+    },
+    "piccolo-cpu": {
+      "name": "piccolo CPU",
+      "transform_chance": 100
+    }
+  },
   "id": "namek-piccolo-arrives",
   "title": "Namek - Piccolo Arrives",
   "description": "Kid Gohan, Krillin and Vegeta (Namek armor) hold off an untouchable second-form Frieza for 40 seconds. Piccolo (End) lands between them, Gohan and the others withdraw while the camera is on Frieza, and you take over Piccolo for a fair one-on-one. Defeat Frieza to win; losing Gohan before Piccolo arrives, or Piccolo afterwards, fails. No transformations. This adaptation ends before Frieza reveals his third form.",
@@ -16,7 +33,7 @@
     "id": 2,
     "name": "Planet Namek"
   },
-  "defeat_grace_seconds": 60,
+  "defeat_grace_seconds": 60.0,
   "source": {
     "kind": "authored-show-adaptation",
     "gameplay_tested": false
@@ -41,17 +58,18 @@
       "slot": 1,
       "character": 92,
       "costume": 0,
-      "hp": 150000,
-      "difficulty": 3,
       "reserve": false,
+      "hp": 150000,
+      "difficulty": 4,
       "transformations": {
         "enabled": false
       },
       "stats": {
-        "damage": 1.6,
-        "defense": 6,
+        "damage": 2.2,
+        "defense": 6.0,
         "cannot_be_defeated": true
-      }
+      },
+      "cpu_profile": "frieza-cpu"
     },
     {
       "id": "krillin",
@@ -59,16 +77,17 @@
       "slot": 2,
       "character": 25,
       "costume": 2,
-      "hp": 30000,
-      "difficulty": 2,
       "reserve": false,
+      "hp": 30000,
+      "difficulty": 1,
       "transformations": {
         "enabled": false
       },
       "stats": {
         "damage": 0.7,
         "defense": 1.2
-      }
+      },
+      "cpu_profile": "krillin-cpu"
     },
     {
       "id": "vegeta",
@@ -76,16 +95,17 @@
       "slot": 3,
       "character": 29,
       "costume": 2,
-      "hp": 40000,
-      "difficulty": 3,
       "reserve": false,
+      "hp": 40000,
+      "difficulty": 2,
       "transformations": {
         "enabled": false
       },
       "stats": {
         "damage": 0.85,
         "defense": 1.3
-      }
+      },
+      "cpu_profile": "vegeta-cpu"
     },
     {
       "id": "piccolo",
@@ -93,16 +113,17 @@
       "slot": 4,
       "character": 23,
       "costume": 0,
+      "reserve": true,
       "hp": 45000,
       "difficulty": 3,
-      "reserve": true,
       "transformations": {
         "enabled": false
       },
       "stats": {
         "damage": 1.3,
         "defense": 1.2
-      }
+      },
+      "cpu_profile": "piccolo-cpu"
     }
   ],
   "events": [
@@ -156,7 +177,7 @@
       "id": "piccolo-lands",
       "when": {
         "type": "time",
-        "seconds": 40
+        "seconds": 120.0
       },
       "actions": [
         {
@@ -201,37 +222,40 @@
         {
           "type": "cinematic",
           "fighter": "piccolo",
-          "seconds": 3.2,
-          "speed": 1,
           "camera": {
             "eye": [
               13.5,
-              -14,
+              -14.0,
               21.1
             ],
             "target": [
-              0,
-              -10,
-              0
+              0.0,
+              -10.0,
+              0.0
             ],
             "end_eye": [
               10.1,
-              -11,
+              -11.0,
               12.8
             ],
             "end_target": [
-              0,
-              -10,
-              0
-            ],
-            "easing": "smooth"
+              0.0,
+              -10.0,
+              0.0
+            ]
+          },
+          "seconds": 5.1,
+          "speed": 1.0,
+          "reset_positions": true,
+          "animation": {
+            "character": 1,
+            "clip": 384
           },
           "voice": {
             "character": 23,
             "line": 0,
             "volume": 100
-          },
-          "reset_positions": true
+          }
         }
       ],
       "timeout_seconds": 60,
@@ -402,5 +426,6 @@
         ]
       }
     ]
-  }
+  },
+  "music": null
 }

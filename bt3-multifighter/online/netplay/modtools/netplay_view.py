@@ -87,7 +87,7 @@ Guest rules: 16-byte stack frames, no k0/k1, native addresses through A(); the E
 """
 import struct
 
-from native_map import A, CRC, SERIAL, PAL
+from native_map import A, CRC, SERIAL
 from prototype import Assembler
 import netplay_core as nc
 
@@ -521,7 +521,7 @@ def burst_code():
     a.addiu(29, 29, -0x10); _sd(a, 31, 0)
     _gate(a, 'release', 8, 9, 10)
     a.sw(0, 4, 32); a.sw(0, 4, 36)                                # alpha and fade 0: drawn invisible, timer runs
-    a.i(0x31, 0 if PAL else 1, 4, 64)                          # the native timer register ($f0 PAL / $f1 NTSC)
+    a.i(0x31, 1, 4, 64)                                           # lwc1 $f1, 64(a0): what 2455A4 loads when kept
     _bump(a, 8, 'hidden', scratch=9)
     a.addiu(2, 0, 1); a.jump('out')
     a.label('release'); a.call(n.release); a.move(2, 0)
@@ -667,13 +667,13 @@ def blocks(ram, views=1):
     manager = u32(ram, A(0x2FEBD4))
     for side in range(2):
         cam = manager + SIDE_CAMERA + SIDE_STRIDE * side
-        if u32(ram, cam + 640) != 0 or words(ram, cam + 512, 4) != [0, 511, 0, 511 if __import__('native_map').PAL else 447]:
+        if u32(ram, cam + 640) != 0 or words(ram, cam + 512, 4) != [0, 511, 0, 447]:
             raise ValueError(f'side camera {side} is not on the full-screen template')
     if words(ram, n.select_site, 2) != [j(cinema.CODE), 0] or u32(ram, cinema.CONTROL) != cinema.MAGIC:
         raise ValueError('the camera selection hook is not cinematic_policy\'s selector')
     if u32(ram, n.render_site) != jal(n.render):
         raise ValueError('the single-view render call is not native')
-    if words(ram, n.burst_call - 8, 6) != [0x54400005, 0xC6000000 if PAL else 0xC6010000, jal(n.release), 0x0220202D, 0x1000001F if PAL else 0x10000023, 0x2652FFFF]:
+    if words(ram, n.burst_call - 8, 6) != [0x54400005, 0xC6010000, jal(n.release), 0x0220202D, 0x10000023, 0x2652FFFF]:
         raise ValueError('the light-burst release site is not native')
     if words(ram, n.viewer_site - 4, 4) != [0x24020001, jal(n.viewed), 0, 0x8E230000]:
         raise ValueError('207FB0\'s viewed-side tie-break is not native')
@@ -721,8 +721,10 @@ def blocks(ram, views=1):
             patched |= PATCH_BITS['marker']
     out = programs(cinema.CODE, camera, marker) + out
     out += [(n.select_site, struct.pack('<I', j(SEL))), (n.render_site, struct.pack('<I', jal(SWAP))),
-            (n.burst_call, struct.pack('<I', jal(BURST))), (n.burst_branch, struct.pack('<I', 0x5040001F if PAL else 0x50400023)),
+            (n.burst_call, struct.pack('<I', jal(BURST))), (n.burst_branch, struct.pack('<I', 0x50400023)),
             (n.viewer_site, struct.pack('<I', jal(VIEWER)))]
+    import netplay_hud
+    out.extend(netplay_hud.blocks(ram))
     out.append((CONTROL, control(views, patched)))
     ordered = sorted(out)
     assert all(p + len(b) <= q for (p, b), (q, _) in zip(ordered, ordered[1:])), 'overlapping view blocks'

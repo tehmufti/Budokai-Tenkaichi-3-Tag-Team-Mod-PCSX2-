@@ -2,8 +2,10 @@
 from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLineEdit,QPushButton,
-    QLabel,QListWidget,QFileDialog,QDialogButtonBox,QSplitter)
+    QLabel,QListWidget,QFileDialog,QDialogButtonBox,QSplitter,QComboBox)
 from model_viewer import ModelViewport
+from character_names import character_table, character_name
+from workbench_layout import fit_window
 
 
 def preview_bank(data):
@@ -54,7 +56,7 @@ class AnimationPicker(QDialog):
     def __init__(self,body,costume,donor,clip=0,parent=None):
         super().__init__(parent);self.setWindowTitle('Preview donor animation on scenario fighter');self.resize(1000,720)
         self.body,self.costume,self.donor,self.clip=body,costume,donor,clip
-        self.loader=None;self.bank=None
+        self.loader=None;self.bank=None;self._request=None;self._closing=False
         layout=QVBoxLayout(self);row=QHBoxLayout();layout.addLayout(row)
         import game_profile
         initial=game_profile.iso_path() or ''
@@ -65,25 +67,52 @@ class AnimationPicker(QDialog):
         self.iso=QLineEdit(str(initial));row.addWidget(self.iso,1)
         browse=QPushButton('Choose ISO');browse.clicked.connect(self.browse);row.addWidget(browse)
         load=QPushButton('Load preview');load.clicked.connect(self.load);row.addWidget(load)
-        self.status=QLabel('The recipient model plays the donor skeleton. Drag to orbit; scroll to zoom.');layout.addWidget(self.status)
+        row=QHBoxLayout();layout.addLayout(row)
+        recipient=QLabel('Preview fighter: '+character_name(body));recipient.setWordWrap(True);row.addWidget(recipient,1)
+        row.addWidget(QLabel('Animation donor'))
+        self.donor_box=QComboBox()
+        self.donor_box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.donor_box.setMinimumContentsLength(20)
+        for cid in sorted(set(character_table())|{donor}):self.donor_box.addItem(f'{cid} — {character_name(cid)}',cid)
+        self.donor_box.setCurrentIndex(self.donor_box.findData(donor));row.addWidget(self.donor_box,1)
+        self.status=QLabel('The recipient model plays the donor skeleton. Drag to orbit; scroll to zoom.');self.status.setWordWrap(True);layout.addWidget(self.status)
         split=QSplitter();layout.addWidget(split,1);self.list=QListWidget();split.addWidget(self.list)
-        self.viewport=ModelViewport();split.addWidget(self.viewport);split.setSizes([260,740])
+        self.viewport=ModelViewport();self.viewport.setMinimumSize(240,200);split.addWidget(self.viewport);split.setSizes([260,740])
+        split.setChildrenCollapsible(False)
         self.list.currentRowChanged.connect(self.select)
         self.buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept);self.buttons.rejected.connect(self.reject)
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(False);layout.addWidget(self.buttons)
+        self.donor_box.currentIndexChanged.connect(self.load)
+        self.iso.textChanged.connect(self.load)
+        fit_window(self,1000,720)
         if initial:self.load()
     def browse(self):
         path,_=QFileDialog.getOpenFileName(self,'Game ISO',self.iso.text(),'ISO (*.iso)')
-        if path:self.iso.setText(path);self.load()
-    def load(self):
-        if self.loader and self.loader.isRunning():return
-        if not Path(self.iso.text()).is_file():self.status.setText('Choose the game ISO first.');return
+        if path:self.iso.setText(path)
+    def load(self,*_):
+        if self._closing:return
+        self.donor=self.donor_box.currentData()
+        self._request=(self.iso.text(),self.body,self.costume,self.donor)
+        self.bank=None;self.list.clear();self.viewport.playing=False
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
+        self.status.setToolTip('')
+        if not Path(self.iso.text()).is_file():self.status.setText('Choose the game ISO first.');return
         self.status.setText('Loading model and donor animation bank…')
-        self.loader=Loader(self.iso.text(),self.body,self.costume,self.donor,self)
-        self.loader.loaded.connect(self.loaded);self.loader.failed.connect(self.status.setText);self.loader.start()
-    def loaded(self,asset,bank):
+        if self.loader is not None:return
+        worker=Loader(*self._request,self);self.loader=worker
+        worker.loaded.connect(lambda asset,bank:self.loaded(asset,bank,worker))
+        worker.failed.connect(lambda message:self.load_failed(message,worker))
+        worker.finished.connect(lambda:self.load_finished(worker));worker.start()
+    def load_failed(self,message,worker):
+        if not self._closing and worker.args==self._request:self.status.setText(message)
+    def load_finished(self,worker):
+        if self.loader is worker:self.loader=None
+        if not self._closing and worker.args!=self._request:self.load()
+        worker.deleteLater()
+    def loaded(self,asset,bank,worker):
+        # A quick second donor selection must never accept the first donor's bank.
+        if self._closing or worker.args!=self._request:return
         self.bank=bank;self.viewport.set_asset(asset);self.list.clear()
         for c in bank.clips:
             label=' — Generic intro' if c.animation_id==384 else ''
@@ -91,13 +120,14 @@ class AnimationPicker(QDialog):
         index=next((i for i,c in enumerate(bank.clips) if c.animation_id==self.clip),0)
         self.list.setCurrentRow(index);self.buttons.button(QDialogButtonBox.Ok).setEnabled(bool(bank.clips))
         self.status.setText('Select a clip, inspect it, then choose OK to use it. No game actions or effects run in this preview.')
-        if self.loader and self.loader.unsupported:
-            self.status.setText(self.status.text()+' Unsupported clips: '+', '.join(str(i) for i,_ in self.loader.unsupported))
-            self.status.setToolTip('\n'.join(f'{i}: {message}' for i,message in self.loader.unsupported))
+        if worker.unsupported:
+            self.status.setText(self.status.text()+' Unsupported clips: '+', '.join(str(i) for i,_ in worker.unsupported))
+            self.status.setToolTip('\n'.join(f'{i}: {message}' for i,message in worker.unsupported))
     def select(self,index):
         if self.bank and 0<=index<len(self.bank.clips):
             clip=self.bank.clips[index];self.clip=clip.animation_id;self.viewport.set_clip(clip);self.viewport.playing=True
     def done(self,result):
+        self._closing=True
         if self.loader and self.loader.isRunning():
             self.status.setText('Finishing the asset read before closing…');self.loader.wait()
         self.viewport.playing=False;super().done(result)

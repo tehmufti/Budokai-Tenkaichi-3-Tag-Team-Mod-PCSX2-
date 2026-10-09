@@ -7,9 +7,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QCheckBox, QFormLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox, QDialog,
-    QDialogButtonBox, QPlainTextEdit, QInputDialog, QListWidget, QTabWidget, QScrollArea)
+    QDialogButtonBox, QPlainTextEdit, QInputDialog, QListWidget, QTabWidget, QScrollArea,
+    QToolBar, QSizePolicy)
 import story_missions as missions
 from character_names import character_table, character_name
+from workbench_layout import scroll_panel, scroll_dialog, fit_window
 
 
 def button(text, fn):
@@ -22,6 +24,9 @@ def spin(low,high,value):
 
 def combo(items, value=None):
     w=QComboBox()
+    w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+    w.setMinimumContentsLength(16)
+    w.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
     for label,data in items:w.addItem(label,data)
     if value is not None:w.setCurrentIndex(max(0,w.findData(value)))
     return w
@@ -74,6 +79,7 @@ class ActionDialog(QDialog):
     def __init__(self,document,kind,parent=None,action=None):
         super().__init__(parent);self.document=document;self.kind=kind;self.setWindowTitle(kind.title())
         outer=QVBoxLayout(self);body=QWidget();layout=QFormLayout(body)
+        layout.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.scroll=QScrollArea();self.scroll.setWidgetResizable(True);self.scroll.setWidget(body);outer.addWidget(self.scroll,1)
         self.fighter=combo([(f['id']+' — '+character_name(f['character']),f['id']) for f in document['fighters']])
         self.form=characters();self.health=QDoubleSpinBox();self.health.setRange(1,100);self.health.setValue(100);self.health.setSuffix('%')
@@ -97,10 +103,10 @@ class ActionDialog(QDialog):
             self.voice_character=characters();self.voice_line=spin(0,99,0);self.volume=spin(0,100,100)
             if kind=='cinematic':
                 self.animated=QCheckBox('Play an animation (off = camera-only shot)');self.animated.setChecked(True);layout.addRow(self.animated)
-                self.reset_positions=QCheckBox('Reset living fighters to the stage formation before this shot')
+                self.reset_positions=QCheckBox('Reset living fighters to the stage formation')
                 self.reset_positions.setToolTip('Waits for bound attacks and reloads; resets position, facing and motion together. Fallen and retired fighters stay untouched.')
                 layout.addRow(self.reset_positions)
-                self.donor=characters();self.clip=spin(0,413,0);self.speed=QDoubleSpinBox();self.speed.setRange(.1,3);self.speed.setValue(1)
+                self.donor=characters();self.clip=spin(0,413,384);self.speed=QDoubleSpinBox();self.speed.setRange(.1,3);self.speed.setValue(1)
                 self.seconds.setRange(.1,30)
                 self.voice_enabled=QCheckBox('Play a voice line with this shot')
                 layout.addRow('Animation donor',self.donor);layout.addRow('Animation ID',self.clip)
@@ -110,7 +116,8 @@ class ActionDialog(QDialog):
                 self.end_eye=QLineEdit();self.end_look=QLineEdit()
                 for title,w in [('Camera XYZ offset',self.eye),('Look-at XYZ offset',self.look),('End camera offset (optional)',self.end_eye),('End look-at offset (optional)',self.end_look)]:layout.addRow(title,w)
                 self.easing=combo([('Smooth start and stop','smooth'),('Linear','linear'),('Ease in','ease_in'),('Ease out','ease_out')]);layout.addRow('Camera pan',self.easing)
-                self.animated.toggled.connect(self.donor.setEnabled);self.animated.toggled.connect(self.clip.setEnabled)
+                hint=QLabel('Choosing a donor, changing the animation ID, or accepting a preview enables animation playback.')
+                hint.setWordWrap(True);layout.addRow(hint)
                 layout.addRow(self.voice_enabled)
             layout.addRow('Voice character',self.voice_character);layout.addRow('Voice line ID',self.voice_line);layout.addRow('Voice volume',self.volume)
             layout.addRow(button('Preview / choose voice line…',self.preview_voice))
@@ -118,7 +125,10 @@ class ActionDialog(QDialog):
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);buttons.accepted.connect(self.checked_accept);buttons.rejected.connect(self.reject);outer.addWidget(buttons)
         self.resize(640,520)
         if action:self.load_action(action)
-        if kind=='cinematic':self.resize(680,740)
+        if kind=='cinematic':
+            self.donor.currentIndexChanged.connect(lambda _:self.animated.setChecked(True))
+            self.clip.valueChanged.connect(lambda _:self.animated.setChecked(True))
+        fit_window(self,680 if kind=='cinematic' else 640,740 if kind=='cinematic' else 520)
     def load_action(self,action):
         def choose(w,v):w.setCurrentIndex(w.findData(v))
         if 'fighter' in action:choose(self.fighter,action['fighter'])
@@ -135,6 +145,9 @@ class ActionDialog(QDialog):
                 self.reset_positions.setChecked(action.get('reset_positions',False))
                 anim=action.get('animation');self.animated.setChecked(bool(anim))
                 if anim:choose(self.donor,anim['character']);self.clip.setValue(anim['clip'])
+                else:
+                    fighter=next(f for f in self.document['fighters'] if f['id']==self.fighter.currentData())
+                    choose(self.donor,fighter['character']);self.clip.setValue(384)
                 self.speed.setValue(action.get('speed',1))
                 self.voice_enabled.setChecked(bool(voice));camera=action.get('camera',dict(eye=[0,-16,55],target=[0,-9,0]))
                 for key,w in [('eye',self.eye),('target',self.look),('end_eye',self.end_eye),('end_target',self.end_look)]:
@@ -155,7 +168,9 @@ class ActionDialog(QDialog):
         f=next(f for f in self.document['fighters'] if f['id']==self.fighter.currentData())
         dialog=AnimationPicker(f['character'],f.get('costume',0),self.donor.currentData(),self.clip.value(),self)
         if dialog.exec()==QDialog.Accepted:
+            self.donor.setCurrentIndex(self.donor.findData(dialog.donor))
             self.clip.setValue(dialog.clip)
+            self.animated.setChecked(True)
             if dialog.bank:
                 self.seconds.setValue(min(30,dialog.bank.clip(dialog.clip).duration_seconds/self.speed.value()))
 
@@ -218,6 +233,7 @@ class FighterDialog(QDialog):
         self.resize(680,620)
         info=QLabel('100% accepts ordinary native AI transformation attempts. It does not force constant transformations. Scripted forms use events.');info.setWordWrap(True);outer.addWidget(info)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);buttons.accepted.connect(self.checked_accept);buttons.rejected.connect(self.reject);outer.addWidget(buttons)
+        scroll_dialog(self)
     def checked_accept(self):
         try:
             f,_,_=self.value();missions.identifier(f['id'],'Fighter ID')
@@ -341,6 +357,8 @@ class EventDialog(QDialog):
         self.update_fields()
         self.condition_summary.setText(condition_label(event['when']) if event else 'Combine conditions for branching, health gates and delayed scenes.')
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);buttons.accepted.connect(self.checked_accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
+        self.actions.setMinimumHeight(160)
+        scroll_dialog(self)
     def add_action(self,kind):
         try:
             actions=json.loads(self.actions.toPlainText())
@@ -457,6 +475,7 @@ class RulesDialog(QDialog):
         row=QHBoxLayout();layout.addLayout(row);row.addWidget(button('Add finishing rule',self.add_finisher));row.addWidget(button('Remove selected',self.remove_finisher))
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);layout.addWidget(buttons)
         buttons.accepted.connect(self.checked_accept);buttons.rejected.connect(self.reject);self.refresh()
+        self.table.setMinimumHeight(140);scroll_dialog(self)
     def refresh(self):
         for key,label in self.labels.items():label.setText(condition_label(self.conditions[key]) if self.conditions[key] else 'None — normal team defeat applies.')
         self.table.setRowCount(len(self.rules))
@@ -491,12 +510,15 @@ class RulesDialog(QDialog):
 class StoryEditor(QWidget):
     def __init__(self,parent=None):
         super().__init__(parent);self.document=missions.default_mission();self.path=None
-        layout=QVBoxLayout(self);row=QHBoxLayout();layout.addLayout(row)
+        outer=QVBoxLayout(self);outer.setContentsMargins(0,0,0,0)
+        body=QWidget();layout=QVBoxLayout(body)
+        self.scroll=scroll_panel(body);outer.addWidget(self.scroll)
+        row=QToolBar();layout.addWidget(row)
         for title,fn in [('New',self.new),('Open',self.open),('Save',self.save),('Save as',lambda:self.save(True)),
                          ('Import Mission 100 from ISO',self.import100),('Validate',self.validate),
                          ('Test this mission',self.test_mission),
                          ('Use for next battle',self.arm),('Cancel next battle',self.disarm)]:
-            item=button(title,fn);row.addWidget(item)
+            item=row.addAction(title);item.triggered.connect(lambda _=False,fn=fn:fn())
             if title=='Test this mission':
                 item.setToolTip('Save (when this mission has a file) and validate it, then start the game straight into it: '
                                 'the Modded Scenarios launch runs by itself once the main menu appears.')
@@ -506,31 +528,35 @@ class StoryEditor(QWidget):
         self.description=QPlainTextEdit();self.description.setPlaceholderText('Battle description, objectives and author notes')
         self.description.setMaximumHeight(75);layout.addWidget(self.description)
         row=QHBoxLayout();layout.addLayout(row)
-        self.library=QComboBox();self.library.setMinimumWidth(420)
+        self.library=combo([])
         row.addWidget(QLabel('Saved missions'));row.addWidget(self.library,1)
         row.addWidget(button('Load selected preset',self.load_preset));row.addWidget(button('Refresh library',self.refresh_library))
         row=QHBoxLayout();layout.addLayout(row)
         self.stage=spin(-1,65535,-1);self.stage.setSpecialValueText('Any selected arena')
         self.stage_name=QLineEdit();self.stage_name.setPlaceholderText('Arena name (optional)')
-        row.addWidget(QLabel('Arena ID'));row.addWidget(self.stage);row.addWidget(self.stage_name)
+        row.addWidget(QLabel('Arena ID'));row.addWidget(self.stage);row.addWidget(self.stage_name,1)
+        row=QHBoxLayout();layout.addLayout(row)
         self.music=spin(-1,65535,-1);self.music.setSpecialValueText('Random');row.addWidget(QLabel('Music ID'));row.addWidget(self.music)
         self.grace=QDoubleSpinBox();self.grace.setRange(1,300);self.grace.setSuffix(' s')
         self.grace.setToolTip('Maximum wait for a pending reinforcement or second wind after a whole side is defeated.')
-        row.addWidget(QLabel('Reinforcement grace'));row.addWidget(self.grace)
+        row.addWidget(QLabel('Reinforcement grace'));row.addWidget(self.grace);row.addStretch()
         info=QLabel('Portable mission files • Play saved missions from Modded Scenarios. Definitions contain no emulator save state. Append Cinematic and Voice actions to any event to author a scene.');info.setWordWrap(True);layout.addWidget(info)
         self.fighters=QTableWidget(0,7);self.fighters.setHorizontalHeaderLabels(['ID','Team','Slot','Character','Costume','Arrival','CPU chance'])
+        self.fighters.setMinimumHeight(185)
         self.fighters.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch);self.fighters.setSelectionBehavior(QTableWidget.SelectRows);self.fighters.setEditTriggers(QTableWidget.NoEditTriggers)
         self.fighters.doubleClicked.connect(lambda *_:self.edit_fighter());layout.addWidget(self.fighters)
-        row=QHBoxLayout();layout.addLayout(row)
-        for title,fn in [('Add fighter',self.add_fighter),('Edit fighter',self.edit_fighter),('Remove fighter',self.remove_fighter),('Copy CPU settings…',self.copy_cpu)]:row.addWidget(button(title,fn))
+        row=QToolBar();layout.addWidget(row)
+        for title,fn in [('Add fighter',self.add_fighter),('Edit fighter',self.edit_fighter),('Remove fighter',self.remove_fighter),('Copy CPU settings…',self.copy_cpu)]:
+            item=row.addAction(title);item.triggered.connect(lambda _=False,fn=fn:fn())
         self.events=QTableWidget(0,3);self.events.setHorizontalHeaderLabels(['Event','When','Actions']);self.events.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.events.setSelectionBehavior(QTableWidget.SelectRows);self.events.setEditTriggers(QTableWidget.NoEditTriggers);self.events.doubleClicked.connect(lambda *_:self.edit_event())
         from story_graph import EventGraph
         self.graph=EventGraph(self);self.graph.selected.connect(lambda i,k:self.events.selectRow(i));self.graph.activated.connect(self.edit_node)
         self.event_tabs=QTabWidget();self.event_tabs.addTab(self.graph,'Event flow');self.event_tabs.addTab(self.events,'Event list');layout.addWidget(self.event_tabs,1)
-        row=QHBoxLayout();layout.addLayout(row)
-        for title,fn in [('Add event',self.add_event),('Add follow-up',self.followup_event),('Edit event',self.edit_event),('Remove event',self.remove_event),('Make enemy waves',self.waves)]:row.addWidget(button(title,fn))
-        row.addWidget(button('Win / failure rules and menus…',self.rules))
+        self.event_tabs.setMinimumHeight(245)
+        row=QToolBar();layout.addWidget(row)
+        for title,fn in [('Add event',self.add_event),('Add follow-up',self.followup_event),('Edit event',self.edit_event),('Remove event',self.remove_event),('Make enemy waves',self.waves),('Win / failure rules and menus…',self.rules)]:
+            item=row.addAction(title);item.triggered.connect(lambda _=False,fn=fn:fn())
         self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
         self.live_status=QLabel('Enable Runtime → Follow trainer for live event status.');self.live_status.setWordWrap(True);layout.addWidget(self.live_status)
         self.refresh();self.refresh_library()

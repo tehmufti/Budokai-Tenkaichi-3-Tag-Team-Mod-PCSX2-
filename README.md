@@ -7,8 +7,11 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 9 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.9).
-Windows and Linux x86-64 downloads are available. Supply your own compatible
+Download the **Version 10 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.10).
+Windows and Linux x86-64 downloads are available. Existing installations can use the
+separate **Updater** download: extract it, run Update, and choose the installed mod folder.
+Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
+Keep everyone in an online room on the same release. Supply your own compatible
 game disc image, PS2 BIOS and PCSX2 installation; none is included here.
 The release includes English and Spanish mod interfaces.
 
@@ -16,7 +19,7 @@ This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
 
-Version 9 builds reusable neutral selection caches locally and transfers compact
+Version 10 builds reusable neutral selection caches locally and transfers compact
 checked checkpoints to shorten fresh online starts. It also prepares settled
 lobby selections in the background. See the [startup measurements and limits](release_tools/online-startup/VALIDATION.md).
 
@@ -58,10 +61,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 9 Windows ZIP can be used instead of downloading it:
+An existing Version 10 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.9.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.10.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -75,15 +78,14 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Development source versus Version 9
+## Development source versus Version 10
 
-This repository starts from the current development source. The scenario
-builder, presets and associated runtime edits are included for development;
-they have not been merged into the Version 9 player installer. The downloadable
-Version 9 Windows and Linux installers retain Version 7's tested game hooks
-and add the reviewed online startup improvements.
-Building the current source creates a development payload, not those identical
-Version 9 binaries. Change the version before distributing a modified build.
+The repository includes development work beyond the released runtime. Version 10
+retains Version 9's reviewed game hooks and adds the per-client online HUD, three
+curated scenario presets and the reviewed Workbench improvements. The optional
+updater uses the exact full-installer payload. Building the development source
+does not necessarily recreate those identical binaries; change the version
+before distributing a modified build.
 
 ## License
 

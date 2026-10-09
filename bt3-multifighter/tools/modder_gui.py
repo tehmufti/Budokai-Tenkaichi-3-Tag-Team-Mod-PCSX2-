@@ -25,6 +25,7 @@ import mod_settings
 import trainer_bridge as bridge
 from character_names import character_table, character_name
 from model_viewer import ModelViewport
+from workbench_layout import scroll_panel, fit_window
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT/'analysis'/'model-viewer'
@@ -121,6 +122,7 @@ class Workbench(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_runtime)
         self.timer.start(750)
+        fit_window(self,1440,900)
 
     def error(self, message):
         self.statusBar().showMessage(str(message))
@@ -194,7 +196,7 @@ class Workbench(QMainWindow):
         view_layout.addWidget(self.scrub)
         split = QSplitter(); split.addWidget(controls); split.addWidget(display); split.setStretchFactor(1, 1)
         outer.addWidget(split, 1)
-        self.tabs.addTab(page, 'Model / animation')
+        self.tabs.addTab(scroll_panel(page), 'Model / animation')
 
     def view_option(self, name, value):
         setattr(self.viewport, name, value); self.viewport.update()
@@ -346,6 +348,7 @@ class Workbench(QMainWindow):
         self.runtime_status = QLabel('Monitoring off. Asset browsing and settings do not need the emulator.')
         self.runtime_status.setWordWrap(True); layout.addWidget(self.runtime_status)
         self.fighters = QTableWidget(0, 10)
+        self.fighters.setMinimumHeight(180)
         self.fighters.setHorizontalHeaderLabels(['Slot', 'Team', 'Fighter', 'HP', 'Ki', 'Stocks', 'Action', 'Target', 'Actor', 'Model'])
         self.fighters.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.fighters.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
@@ -364,7 +367,7 @@ class Workbench(QMainWindow):
         layout.addWidget(self.gauge_note)
         self.runtime_details = QPlainTextEdit(); self.runtime_details.setReadOnly(True); self.runtime_details.setMaximumHeight(165)
         layout.addWidget(self.runtime_details)
-        self.tabs.addTab(page, 'Live trainer')
+        self.tabs.addTab(scroll_panel(page), 'Live trainer')
 
     def follow_changed(self, enabled):
         if not enabled:
@@ -483,7 +486,7 @@ class Workbench(QMainWindow):
         layout.addLayout(line(button('Save changed preferences', self.save_settings),
             button('Controller rebind / per-character rules…', lambda: open_path(ROOT/'Mod settings.cmd')),
             button('Open settings file', lambda: open_path(mod_settings.SETTINGS_PATH))))
-        self.tabs.addTab(page, 'Mod settings')
+        self.tabs.addTab(scroll_panel(page), 'Mod settings')
 
     def save_settings(self):
         patch = {}
@@ -521,7 +524,7 @@ class Workbench(QMainWindow):
         self.tool_description.setWordWrap(True); layout.addWidget(self.tool_description)
         self.tools_list.currentTextChanged.connect(lambda name: self.tool_description.setText(self.tool_descriptions[name][1][:700]) if name else None)
         self.tools_list.itemDoubleClicked.connect(lambda item: self.open_source(item.text()))
-        self.tabs.addTab(page, 'Logs / tools')
+        self.tabs.addTab(scroll_panel(page), 'Logs / tools')
         self.refresh_log()
 
     def open_source(self, name):

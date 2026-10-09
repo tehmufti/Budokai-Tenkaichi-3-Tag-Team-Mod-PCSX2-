@@ -1,3 +1,11 @@
+## Version 10
+
+- Online clients display the health, ki, stocks and portrait of their own fighter and current target.
+- Separate Windows and Linux updaters upgrade an existing installation with a recoverable backup, preserving settings, saves and custom scenarios.
+- Workbench Custom Scenarios adapts to smaller windows and allows editing animation donors.
+- New installs include the revised three example scenarios; updates preserve existing authored scenario files.
+- The experimental custom Potara editor remains local and is not included.
+
 ## Version 9 - scenario and CPU-only introduction updates
 
 - CPU-only online matches relay the host dialogue and resource completion gates; entrances no longer wait for the silent timeout.
