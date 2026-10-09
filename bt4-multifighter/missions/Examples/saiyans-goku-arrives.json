@@ -42,13 +42,13 @@
       "character": 80,
       "costume": 0,
       "hp": 90000,
-      "difficulty": 3,
+      "difficulty": 4,
       "reserve": false,
       "transformations": {
         "enabled": false
       },
       "stats": {
-        "damage": 1.3,
+        "damage": 1.5,
         "defense": 3,
         "cannot_be_defeated": true
       }
@@ -75,15 +75,15 @@
       "slot": 2,
       "character": 29,
       "costume": 0,
-      "hp": 42000,
-      "difficulty": 3,
+      "hp": 60000,
+      "difficulty": 4,
       "reserve": true,
       "transformations": {
         "enabled": false
       },
       "stats": {
-        "damage": 1.1,
-        "defense": 1.1
+        "damage": 1.35,
+        "defense": 1.2
       }
     },
     {
@@ -485,13 +485,13 @@
           "type": "set_stats",
           "fighter": "nappa",
           "stats": {
-            "max_hp": 36000,
+            "max_hp": 45000,
             "health_percent": 100,
-            "damage": 0.95,
-            "defense": 1.0,
+            "damage": 1.15,
+            "defense": 1.1,
             "invulnerable": false,
             "cannot_be_defeated": false,
-            "difficulty": 2
+            "difficulty": 4
           }
         },
         {

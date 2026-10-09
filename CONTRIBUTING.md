@@ -46,6 +46,19 @@ the same player payload. Outputs go to ignored `releases/`.
 The European/Japanese generators read disc files locally; native executables
 and decrypted game files must never be committed.
 
+## Build an updater
+
+After verifying a full installer, run:
+
+```sh
+python release_tools/package_player_updater.py "/path/to/Tag Team Mod 0.1.0-beta.10.zip"
+python release_tools/package_player_updater.py "/path/to/Tag Team Mod 0.1.0-beta.10 linux-x86_64.tar.gz"
+```
+
+The updater builder verifies the installer manifest, keeps its exact payload, and
+omits the dependency wheels. Test update and rollback on a separate installation
+before publishing. Dependency-lock changes require the full installer.
+
 ## Online
 
 The online implementation has its own pinned guest modules. Edits must preserve

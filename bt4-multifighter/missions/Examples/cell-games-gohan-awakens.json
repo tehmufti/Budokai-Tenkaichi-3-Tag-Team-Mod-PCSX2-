@@ -55,13 +55,13 @@
       "character": 107,
       "costume": 0,
       "hp": 100000,
-      "difficulty": 3,
+      "difficulty": 4,
       "reserve": false,
       "transformations": {
         "enabled": false
       },
       "stats": {
-        "damage": 1.2,
+        "damage": 1.45,
         "defense": 2.5,
         "cannot_be_defeated": true
       }
@@ -426,13 +426,13 @@
           "type": "set_stats",
           "fighter": "cell",
           "stats": {
-            "max_hp": 65000,
+            "max_hp": 85000,
             "health_percent": 100,
-            "damage": 1.1,
-            "defense": 1.1,
+            "damage": 1.4,
+            "defense": 1.2,
             "invulnerable": false,
             "cannot_be_defeated": false,
-            "difficulty": 3
+            "difficulty": 4
           }
         },
         {

@@ -89,7 +89,7 @@ class CuratedBattleTests(unittest.TestCase):
     def test_namek_reinforcements_do_not_stall_when_cpu_ally_is_dead(self):
         d=self.document(NAMES[0]);c=scene_machine(d)
         self.complete(c,d,'frieza-line');c.w(c.actors[2]+0x9E4,0);c.w(c.actors[2]+0x948,216)
-        self.clock(c,40);self.complete(c,d,'piccolo-lands')
+        self.clock_to_entrance(c,d);self.complete(c,d,'piccolo-lands')
         self.complete(c,d,'frieza-sizes-up');self.complete(c,d,'allies-withdraw');self.complete(c,d,'duel')
         self.assertEqual(c.u(c.actors[2]+0x9E4),0)
         self.assertEqual(c.u(c.actors[6]+0x1278),0)
@@ -102,11 +102,16 @@ class CuratedBattleTests(unittest.TestCase):
             advance(c)
         self.assertEqual(c.u(offset),2,f'{event} failed or stalled at action {c.u(offset+4)}')
     def clock(self,c,seconds):c.w(story.CONTROL+12,max(c.u(story.CONTROL+12),round(seconds*story.ACTOR_HZ)))
+    def clock_to_entrance(self,c,d):
+        # Local examples are editable; honor the authored survival duration.
+        event=next(e for e in d['events'] if e['id']=='piccolo-lands')
+        self.assertEqual(event['when']['type'],'time')
+        self.clock(c,event['when']['seconds'])
     def test_namek_handoff_rebalance_exits_and_win(self):
         d=self.document(NAMES[0]);c=scene_machine(d)
         self.complete(c,d,'frieza-line')
         self.assertEqual(c.u(story.core.POINTERS+24),c.actors[6]);self.assertEqual(c.u(story.part.CONSUMED)&64,64)
-        self.clock(c,40);self.complete(c,d,'piccolo-lands')
+        self.clock_to_entrance(c,d);self.complete(c,d,'piccolo-lands')
         self.complete(c,d,'frieza-sizes-up');self.complete(c,d,'allies-withdraw');self.complete(c,d,'duel')
         import spectator_switch as spec,spectator_takeover as takeover
         self.assertEqual(c.u(spec.CONTROL+takeover.F['owned']),6)
@@ -126,7 +131,7 @@ class CuratedBattleTests(unittest.TestCase):
         c.w(c.actors[1]+0x9E4,0);c.w(c.actors[1]+0x948,216)
         self.complete(c,d,'vegeta-steps-in');self.complete(c,d,'goku-faces-vegeta');self.complete(c,d,'nappa-leaves')
         self.complete(c,d,'final-round')
-        self.assertEqual(c.u(c.actors[3]+0x9E4),42000)
+        self.assertEqual(c.u(c.actors[3]+0x9E4),60000)
         self.assertEqual(c.u(c.models[1]+8),0);self.assertEqual(c.u(story.CONTROL+96),0)
         c.w(c.actors[3]+0x9E4,0);advance(c);self.assertEqual(c.u(story.CONTROL+96),1)
     def test_cell_scripted_death_awakening_and_ultimate_requirement(self):
@@ -137,7 +142,7 @@ class CuratedBattleTests(unittest.TestCase):
         self.clock(c,c.u(story.CONTROL+12)/story.ACTOR_HZ+2)
         self.complete(c,d,'gohan-breaks');self.complete(c,d,'android16-leaves')
         self.complete(c,d,'awakening');self.assertEqual(c.u(c.models[0]+12),16)
-        self.assertEqual(c.u(c.actors[0]+0x9E4),50000);self.assertEqual(c.u(c.actors[1]+0x9E4),65000)
+        self.assertEqual(c.u(c.actors[0]+0x9E4),50000);self.assertEqual(c.u(c.actors[1]+0x9E4),85000)
         self.assertEqual(c.u(rules.STATS+8),0);self.assertEqual(c.u(c.models[2]+8),0)
         self.assertEqual(d['finish_rules'][0]['form'],16)
         c.w(c.actors[1]+0x9E4,0);advance(c);self.assertEqual(c.u(story.CONTROL+96),1)
@@ -170,7 +175,7 @@ class CuratedBattleTests(unittest.TestCase):
     def test_cpu_only_scenario_keeps_entrant_under_cpu_control(self):
         import spectator_switch as spec,spectator_takeover as takeover
         d=self.document(NAMES[0]);c=scene_machine(d);c.w(spec.CONTROL+takeover.F['human_ports'],0)
-        self.complete(c,d,'frieza-line');self.clock(c,40)
+        self.complete(c,d,'frieza-line');self.clock_to_entrance(c,d)
         self.complete(c,d,'piccolo-lands');self.complete(c,d,'allies-withdraw')
         self.assertEqual(c.u(c.actors[6]+0x1278),1);self.assertEqual(c.u(c.models[0]+8),0)
     def test_exact_three_examples_and_no_states_or_code_in_definitions(self):
