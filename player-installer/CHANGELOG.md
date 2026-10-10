@@ -1,3 +1,9 @@
+## Version 11.1
+
+- Fixed vanish/counter exchanges choosing an old opponent after switching targets. Responses now stay with the fighter that actually triggered them.
+- Fixed melee clashes continuing against defeated or removed fighters, and contact with another fighter causing a clash with the wrong opponent.
+- Includes the fixes for BT3 and BT4, online play, Windows/Linux installers and updaters.
+
 ## Version 11
 
 - Movement settings add Natural and Fighter walking/running styles alongside Classic. Walking/running remains off by default.

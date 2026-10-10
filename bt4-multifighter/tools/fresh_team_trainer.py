@@ -417,6 +417,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     builders.append(lambda r: spectator_feedback.build_memory(r, source=source, settings=preferences))
     builders.append(lambda r: corpse_safety.build_memory(r, settings=preferences, source=source))
     builders.append(lambda r: dash_contact_guard.build_memory(r, source=source))
+    import vanish_pair_guard
+    builders.append(lambda r: vanish_pair_guard.build_memory(r, source=source))
     builders.append(lambda r: display_settings.build_memory(r, settings=preferences, source=source))
     builders.append(lambda r: teammate_revive.build_memory(r, settings=preferences, source=source))
     # Outnumbered help chains the kill-feed damage slot and the per-update call; preset Off adds nothing.

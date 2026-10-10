@@ -319,8 +319,8 @@
       "shared": true
     },
     "tools/dash_clash.py": {
-      "bt3": "c270b29516452ed3583683f51faf66fd625bea49d94373a769bc17798a05807d",
-      "bt4": "c270b29516452ed3583683f51faf66fd625bea49d94373a769bc17798a05807d",
+      "bt3": "9ed7ced9f4025f3f3928891fe661cec7c36791945e47f7166fb1b04df865a9e0",
+      "bt4": "9ed7ced9f4025f3f3928891fe661cec7c36791945e47f7166fb1b04df865a9e0",
       "shared": true
     },
     "tools/dash_contact_guard.py": {
@@ -569,8 +569,8 @@
       "shared": true
     },
     "tools/fresh_team_trainer.py": {
-      "bt3": "1620aa8498d4192c7c090a3fe9fdaf232f8b351d7ddfd0a8f461e12117df9039",
-      "bt4": "07f62f1d74a16878ac58d2781ccc4acc4c6068ca685130686affa0437e680e05",
+      "bt3": "d28ac7d8812ed73608590cf2e6c725e5c55692eebaa20964fde4f407e3987782",
+      "bt4": "c0ee9b36f9ce1aeadc4433f31fba1bc0ce74ead24e45587a73bde4c55019658f",
       "shared": false
     },
     "tools/fusion_audio_restore.py": {
@@ -889,8 +889,8 @@
       "shared": true
     },
     "tools/multi_contact.py": {
-      "bt3": "4285e57a1870c3d0d639f6a370f7e914096ebc73f60286865054cf39f9cc0f22",
-      "bt4": "4285e57a1870c3d0d639f6a370f7e914096ebc73f60286865054cf39f9cc0f22",
+      "bt3": "36dfecae8d43955bfd1af5fde47baed7fd89291012f087fc10f0533acc948870",
+      "bt4": "36dfecae8d43955bfd1af5fde47baed7fd89291012f087fc10f0533acc948870",
       "shared": true
     },
     "tools/multifighter_audio_effects.py": {
@@ -1174,8 +1174,8 @@
       "shared": true
     },
     "tools/special_pause.py": {
-      "bt3": "efd15972e0d574da6375003fbae93b712077d8f59a95f450cc434c220c3a7272",
-      "bt4": "efd15972e0d574da6375003fbae93b712077d8f59a95f450cc434c220c3a7272",
+      "bt3": "f0b3e0742b2d0137e0b48ff2aeb00f9a7891fd6d791cbf03a8a3220a1e1fc12a",
+      "bt4": "f0b3e0742b2d0137e0b48ff2aeb00f9a7891fd6d791cbf03a8a3220a1e1fc12a",
       "shared": true
     },
     "tools/special_projectile_pool_guard.py": {
@@ -1402,6 +1402,11 @@
       "bt3": "b61097ec2aae2ae6ebdbab68564dd9bc679c2ff9eda58cb639eafb7406e4d9c4",
       "bt4": "d21c00fca50e5a021065d9862a4a9fa2a87afed55d75785f0bf2b8103d06e0fb",
       "shared": false
+    },
+    "tools/vanish_pair_guard.py": {
+      "bt3": "ce4de39c2ebdf6415053964cc79340fe1904548b09669a8fb9ff21fa5f66b666",
+      "bt4": "ce4de39c2ebdf6415053964cc79340fe1904548b09669a8fb9ff21fa5f66b666",
+      "shared": true
     },
     "tools/vendor/fonts/LICENSE": {
       "bt3": "93fed46019c38bbe566b479d22148e2e8a1e85ada614accb0211c37b2c61c19b",

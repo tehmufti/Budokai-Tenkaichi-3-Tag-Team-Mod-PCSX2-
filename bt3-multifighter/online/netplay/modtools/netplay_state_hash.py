@@ -75,6 +75,7 @@ def descriptors(profile='lean'):
     import guest_loading_screen as cover
     import ground_locomotion as ground
     import tournament_ringout as ringout
+    import vanish_pair_guard as vanish
     impure, battle, manager = A(0x2E9808), A(0x2FEB38), A(0x2FEB14)
     cinematic_camera, camera_manager, scene = A(0x2FEBCC), A(0x2FEBD4), A(0x331DC8)
     rows = []
@@ -134,6 +135,8 @@ def descriptors(profile='lean'):
     add(DIRECT, 6, cinematic.CONTROL, 0, 24, 'cinematic policy record (shared stop, latches)')
     add(DIRECT, 6, ground.CONTROL, 0, 16, 'ground movement identity/settings/style/version (no telemetry)')
     add(DIRECT, 6, ringout.CONTROL, 0, 6, 'tournament identity, enabled flag and permanent elimination mask')
+    add(DIRECT, 6, vanish.CONTROL, 0, 2, 'counter-pair guard identity and deterministic update clock')
+    add(DIRECT, 6, vanish.ROWS, 0, 12 * vanish.STRIDE // 4, 'counter-pair opponent, actor/model identity and response age')
     if full:
         add(DIRECT, 6, ground.ACTORS, 0, 12 * ground.ROW // 4, 'ground movement per-fighter gait and phase state')
         add(DIRECT, 6, ringout.CONTROL + ringout.F['pointers'], 0, 12, 'tournament captured fighter pointers')
