@@ -1,3 +1,13 @@
+## Version 11.2
+
+Version 11.2 adds Potaras to online matches and fixes the flickering online menus.
+
+- Equip Potaras from your game's item list using the button next to each fighter. The host can equip CPUs too, and your loadouts carry into rematches.
+- Smaller online windows wrap and scroll instead of cutting off text or buttons.
+- Ping and loading updates no longer make the menus flicker or interrupt what you're typing or selecting.
+
+Use the full Windows ZIP or Linux archive for a new installation, or the matching **Updater** for an existing one. Your settings and saves stay in place. Everyone in an online room needs Version 11.2.
+
 ## Version 11.1
 
 - Fixed vanish/counter exchanges choosing an old opponent after switching targets. Responses now stay with the fighter that actually triggered them.

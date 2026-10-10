@@ -51,8 +51,8 @@ and decrypted game files must never be committed.
 After verifying a full installer, run:
 
 ```sh
-python release_tools/package_player_updater.py "/path/to/Tag Team Mod 0.1.0-beta.11.1.zip"
-python release_tools/package_player_updater.py "/path/to/Tag Team Mod 0.1.0-beta.11.1 linux-x86_64.tar.gz"
+python release_tools/package_player_updater.py "/path/to/Tag Team Mod 0.1.0-beta.11.2.zip"
+python release_tools/package_player_updater.py "/path/to/Tag Team Mod 0.1.0-beta.11.2 linux-x86_64.tar.gz"
 ```
 
 The updater builder verifies the installer manifest, keeps its exact payload, and

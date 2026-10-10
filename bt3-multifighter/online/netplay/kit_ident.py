@@ -36,7 +36,7 @@ from pathlib import Path
 import kit_paths
 from kit_codes import KitError
 
-KIT_VERSION = '2.2.0'
+KIT_VERSION = '2.3.0'
 # 3 (kit 1.2.0): the guest's window draws its own player's close-up effects (netplay_view VIEWER) and there is no
 # split screen any more (no --split, no 'split' in the HELLO request): an older kit is refused at the preamble.
 # 4 (kit 1.3.0): the online lobby (LOBBY/PICK/CHAT, PREPARE..PREPARED, votes, rematch, END_FIGHT, resync, reconnect)
@@ -45,7 +45,8 @@ KIT_VERSION = '2.2.0'
 # saved matches), Retry / Return to lobby votes, netplay_core layout 3 (intros in lockstep, four slots, neutral
 # pads after the decision) and UDP netproto version 3 (the host is the hub of a star): every older kit is refused.
 # 6 (kit 2.1): any fighter can be a player (ten input slots, netplay_core layout 4 seats, netproto version 4).
-PROTOCOL = 7
+# 8: disc-owned Potara loadouts in the lobby, preparation and readback.
+PROTOCOL = 8
 SAVESTATE_VERSION = 0x9A590000
 # PCSX2 builds the cross-machine tests ran (all identical): key = the build digest of pcsx2_identity (Windows: the
 # tree digest of pcsx2-qt.exe + DLLs + GameIndex.yaml + patches.zip; Linux: the AppImage's SHA-256).

@@ -127,12 +127,16 @@ def words(ram, static=False):
     for s in range(2):
         base = s * SIDE
         members = []
+        equipment, parameters = [], []
         k = _u(scene, base + 0xC0)
         for j in range(min(k, 5)):
             m = base + 0xC4 + MEMBER * j
             members.append([_u(scene, m), _u(scene, m + 4), _u(scene, m + 8), _u(scene, m + 12)])
+            equipment.append(scene[m + 20:m + 36].hex())
+            parameters.append(scene[m + 36:m + 88].hex())
         q = int.from_bytes(scene[base + 0x2D0:base + 0x2D0 + AVAILABLE_BYTES], 'little')
-        sides.append(dict(count=k, members=members, transform=_u(scene, base + 0x2BC),
+        sides.append(dict(count=k, members=members, equipment=equipment, parameters=parameters,
+                          transform=_u(scene, base + 0x2BC),
                           available=f'{q:x}'))
     out = dict(mode=_u(mode, MODE - POINTERS), count=count,
                scene=dict(time=_u(scene, 0x10), referee=_u(scene, 0x14), destructible=_u(scene, 0x18),
@@ -209,6 +213,10 @@ def problems(w, spec, fixup_code=None, level='full'):
                 got, want = got[:3], want[:3]                     # a leader's level code is the native's
             if got != want:
                 out.append(f'team {s + 1} fighter {j + 1}: character/colour/items/CPU level {got} (expected {want})')
+            import kit_potara
+            equipment = side.get('equipment')
+            if equipment is None or j >= len(equipment) or equipment[j] != kit_potara.native(f.get('potaras', [])).hex():
+                out.append(f'team {s + 1} fighter {j + 1}: Potara equipment differs from the lobby')
         if int(side['available'], 16) & AVAILABLE != AVAILABLE:
             out.append(f'team {s + 1}: not every transformation is available ({side["available"]})')
     models = w['models']

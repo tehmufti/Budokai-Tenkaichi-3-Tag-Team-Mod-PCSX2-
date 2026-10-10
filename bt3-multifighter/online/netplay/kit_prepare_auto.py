@@ -49,6 +49,7 @@ from native_map import A, GP, GPO
 import kit_prepare
 
 import kit_spec
+import kit_potara
 import kit_win
 from kit_codes import KitError
 
@@ -775,8 +776,10 @@ class PrepCopy:
                 rec = side + 0x30 * r
                 if r < len(fighters):
                     c.write(rec + 0x14, struct.pack('<3i', 0, fighters[r]['costume'], fighters[r]['character']))
+                    c.write(rec + 0x20, kit_potara.native(fighters[r].get('potaras', [])))
                 else:
                     c.write(rec + 0x14, struct.pack('<3i', 0, 0, -1))
+                    c.write(rec + 0x20, bytes(16))
             c.write(side + 0x134, struct.pack('<I', len(fighters)))
         c.write(obj + 0x98C, struct.pack('<I', spec['stage']))
         table = u32(c, obj + BGM_TABLE)
@@ -797,6 +800,11 @@ class PrepCopy:
         if back != want or u32(c, obj + 0x98C) != spec['stage'] or u32(c, obj + BGM_CURSOR) != cursor:
             raise KitError('TTM-NET-31', what=f'The team screen did not take the lobby\'s teams (read back {back}).',
                            what_es=f'La pantalla de equipos no aceptó los equipos de la sala (leído: {back}).')
+        for s, team in enumerate(spec['teams']):
+            for r, fighter in enumerate(team):
+                if c.read(obj + SIDES[s] + 0x30*r + 0x20, 16) != kit_potara.native(fighter.get('potaras', [])):
+                    raise KitError('TTM-NET-31', what='The native selector did not accept the Potara loadout.',
+                                   what_es='El selector nativo no aceptó los Pótaras equipados.')
         return obj
 
     def confirm(self, spec, cancel_ok=True):
@@ -932,12 +940,15 @@ class PrepCopy:
             stage = (u32(c, SCENE + 0x1C), u32(c, SCENE + 0x28))
             got_time = u32(c, SCENE + 0x10)
             got_bgm = u32(c, SCENE + 0x0C)
+            equipment = [[c.read(SCENE + 0x270*s + 0xC4 + 100*j + 20, 16).hex()
+                          for j in range(len(team))] for s, team in enumerate(spec['teams'])]
         finally:
             c.close()
         want = [[[f['character'], f['costume'], 0] for f in team] for team in spec['teams']]
+        want_equipment = [[kit_potara.native(f.get('potaras', [])).hex() for f in team] for team in spec['teams']]
         self.event('confirmed', after=after, counts=counts, members=members, stage=stage, time=got_time, bgm=got_bgm)
         if members != want or stage != (spec['stage'], spec['stage']) or got_time != time_word or \
-                got_bgm != spec['bgm']:
+                got_bgm != spec['bgm'] or equipment != want_equipment:
             raise KitError('TTM-NET-31', what=f'The host\'s game started another match than the lobby\'s (teams '
                                               f'{members}, stage {stage}, time index {got_time}, music {got_bgm}).',
                            what_es=f'El juego del anfitrión empezó otro combate distinto al de la sala (equipos '
