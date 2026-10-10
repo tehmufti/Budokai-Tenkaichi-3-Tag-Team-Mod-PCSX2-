@@ -28,7 +28,7 @@ KNOWN_BUILDS = tuple(f'0.1.0-beta.{n}' for n in range(35, 43))      # kit 2.0: b
 # The public series restarted at Version 7. Candidates still have to pass the
 # guest-code fingerprint checks; a version number never certifies their code.
 FIRST_CANDIDATE = 7
-BUILD = re.compile(r'0\.1\.0-beta\.(\d+)')
+BUILD = re.compile(r'0\.1\.0-beta\.(\d+)(?:\.(\d+))?')
 KEY = re.compile('[0-9a-f]{16}')
 
 

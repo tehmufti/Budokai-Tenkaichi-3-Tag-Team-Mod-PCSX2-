@@ -9,6 +9,14 @@ import update_player as u
 
 
 class UpdateTests(unittest.TestCase):
+    def test_patch_release_version_ordering(self):
+        order=('0.1.0-beta.10','0.1.0-beta.11','0.1.0-beta.11.1','0.1.0-beta.11.2','0.1.0-beta.11.10','0.1.0-beta.12')
+        for previous,next_version in zip(order,order[1:]):
+            self.assertLess(u.version_key(previous),u.version_key(next_version))
+        self.assertEqual(u.version_key('0.1.0-beta.11'),u.version_key('0.1.0-beta.11.0'))
+        for value in ('','0.1.0-beta.11.1.2','0.1.0-beta.11.x','0.1.0-beta.11.1-extra'):
+            with self.subTest(value=value),self.assertRaises(ValueError):u.version_key(value)
+
     def test_journal_restores_overwrite_new_and_deleted_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'old.py').write_bytes(b'old');(root/'retired.py').write_bytes(b'retired')

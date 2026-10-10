@@ -225,6 +225,12 @@ def source_files(root,work,setup,adapter,installer):
     return result
 
 
+def version_key(value):
+    match=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-beta\.(\d+)(?:\.(\d+))?',str(value or ''))
+    require(match is not None,'Unrecognized release version: '+str(value))
+    return tuple(int(part or 0) for part in match.groups())
+
+
 def update(root,setup=HERE):
     root=Path(root).absolute();setup=Path(setup).resolve()
     require(root.is_dir() and not linked(root),'Choose the existing Tag Team Mod installation folder.')
@@ -236,9 +242,7 @@ def update(root,setup=HERE):
         receipt=read_json(root/'installed-files.json');release=read_json(setup/'release.json')
         adapter=receipt.get('adapter');require(adapter in ADAPTERS,'This installation has an unsupported adapter.')
         require(receipt.get('schema')==1 and isinstance(receipt.get('files'),dict),'Invalid installation receipt.')
-        def version(s):
-            match=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-beta\.(\d+)',s)
-            require(match is not None,'Unrecognized release version: '+str(s));return tuple(map(int,match.groups()))
+        def version(s):return version_key(s)
         require(version(receipt['version'])<version(release['version']),'This installation is already this version or newer.')
         lockname='requirements-player.lock' if os.name=='nt' else 'requirements-player-linux.lock'
         require((root/'requirements-player.lock').read_bytes()==(setup/lockname).read_bytes(),

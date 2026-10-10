@@ -424,13 +424,19 @@ def originals():
                 (p,NATIVE(p,4)) for p,_,_ in CALL_HOOKS]
 
 
+def installed_pieces(ram):
+    """Canonical contact program plus an exact optional counter-pair layer."""
+    import vanish_pair_guard
+    return list((dict(pieces()) | dict(vanish_pair_guard.overlay(ram))).items())
+
+
 def validate(ram,manager,count):
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     if (u(CONTROL),u(CONTROL+4),u(CONTROL+8))!=(MAGIC,manager,count):
         raise ValueError('Changed multi-contact captured identity')
     for i in range(count):
         if u(CONTROL+0x100+4*i)!=u(core.POINTERS+4*i):raise ValueError('Changed multi-contact actor table')
-    for p,b in pieces():
+    for p,b in installed_pieces(ram):
         if ram[p:p+len(b)]!=b:raise ValueError(f'Changed multi-contact payload {p:08X}')
     for p,_,_ in CALL_HOOKS:
         if ram[p+4:p+8]!=NATIVE(p+4,4):raise ValueError(f'Changed multi-contact delay {p:08X}')

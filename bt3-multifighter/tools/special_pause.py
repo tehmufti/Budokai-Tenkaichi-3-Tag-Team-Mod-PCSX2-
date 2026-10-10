@@ -243,7 +243,7 @@ def beam_chain_dependencies(ram, manager, count):
     import multi_contact
     actual_ram=ram
     ram=multi_contact.base_view(ram,manager,count)
-    multi_pieces=multi_contact.pieces() if ram is not actual_ram else []
+    multi_pieces=multi_contact.installed_pieces(actual_ram) if ram is not actual_ram else []
     native=elf_reader(elf_path(ROOT))[2]
     dash_pieces=[]
     beam_ram=ram

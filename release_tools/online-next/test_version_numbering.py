@@ -14,11 +14,11 @@ from kit_codes import KitError
 
 class ReleaseNumbering(unittest.TestCase):
     def test_renumbered_and_future_releases_remain_candidates(self):
-        for version in ('0.1.0-beta.7', '0.1.0-beta.8', '0.1.0-beta.46'):
+        for version in ('0.1.0-beta.7', '0.1.0-beta.8', '0.1.0-beta.11.1', '0.1.0-beta.46'):
             with self.subTest(version=version):
                 self.assertEqual(kit_install.build_status(version), 'candidate')
         self.assertEqual(kit_install.build_status('0.1.0-beta.35'), 'known')
-        for version in (None, '', '0.1.0-beta.6', '0.1.0-beta.bad', '0.1.0-beta.7-extra'):
+        for version in (None, '', '0.1.0-beta.6', '0.1.0-beta.bad', '0.1.0-beta.7-extra', '0.1.0-beta.11.1.2', '0.1.0-beta.11.x'):
             with self.subTest(version=version):
                 self.assertEqual(kit_install.build_status(version), 'refused')
 
