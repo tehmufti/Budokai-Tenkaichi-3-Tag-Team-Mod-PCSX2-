@@ -7,6 +7,7 @@ commands. Commands:
   find NAME           fighters (id, name, colours)       stages     stage ids and names        show | help
   claim T [I]         play fighter I (1-based, default 1) of team T   spectate   give your slot up (watch)
   fighter T I C:K     team T fighter I (1-based) is character C, colour K (1-based): your own (host: any)
+  potaras T I IDs     equip comma-separated Potara IDs (or none) on that fighter
   ready | unready | chat TEXT | leave | leavematch (leave the running fight, stay in the room)
   host only:  start | cancel | end | mode teams|ffa | sizes A B | stage N|random | music N|random | random
               lock T I | unlock T I (nobody may claim that fighter) | kick NAME (remove a member from the room)
@@ -77,6 +78,15 @@ def command(text, state):
         team, index, who = rest.split()
         c, k = parse_fighter(who)
         return 'fighter', dict(team=int(team) - 1, index=int(index) - 1, character=c, costume=k)
+    if word == 'potaras':
+        team, index, items = rest.split()
+        t, i = int(team)-1, int(index)-1
+        if t not in (0,1) or i < 0:
+            raise ValueError('No such fighter')
+        fighter = match['teams'][t][i]
+        loadout = [] if items.lower() == 'none' else [int(n) for n in items.split(',')]
+        return 'fighter', dict(team=t, index=i, character=fighter['character'],
+                              costume=fighter['costume'], potaras=loadout)
     if word == 'ready':
         return 'ready', dict(ready=True)
     if word == 'unready':

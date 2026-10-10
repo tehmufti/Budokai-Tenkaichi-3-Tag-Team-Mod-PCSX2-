@@ -60,6 +60,136 @@ def elide(text, width=64):
     return text if len(text) <= width else text[:22] + ' … ' + text[-(width - 25):]
 
 
+def configure_changed(widget, **options):
+    """Do not redraw an unchanged control on every session status packet."""
+    changed = {key: value for key, value in options.items() if str(widget.cget(key)) != str(value)}
+    if changed:
+        widget.configure(**changed)
+
+
+def wrap_label(label):
+    """Use the space the layout gave a label, rather than a fixed design width."""
+    label.configure(width=1, justify='left', anchor='w', wraplength=px(400))
+    def resize(event):
+        width = max(20, event.width - 4)
+        if label.winfo_pixels(label.cget('wraplength')) != width:
+            label.configure(wraplength=width)
+    label.bind('<Configure>', resize, add='+')
+    return label
+
+
+class Flow(tk.Frame):
+    """Buttons keep their full labels and move to another row when necessary."""
+    def __init__(self, parent, **options):
+        super().__init__(parent, **options)
+        self.widgets, self.job, self.positions = [], None, None
+        self.bind('<Configure>', lambda _: self.schedule())
+        self.bind('<Destroy>', self.cancel, add='+')
+
+    def set_widgets(self, widgets):
+        widgets = list(widgets)
+        if widgets == self.widgets:
+            if self.positions is None or any((w.winfo_reqwidth(), w.winfo_reqheight()) != (width, height)
+                                             for w, _, _, width, height in self.positions):
+                self.schedule()
+            return
+        for widget in self.widgets:
+            if widget not in widgets:
+                widget.place_forget()
+        self.widgets = widgets
+        self.schedule()
+
+    def add(self, widget):
+        self.set_widgets(self.widgets + [widget])
+        return widget
+
+    def cancel(self, event):
+        if event.widget is self and self.job:
+            self.after_cancel(self.job)
+            self.job = None
+
+    def schedule(self):
+        if not self.job:
+            self.job = self.after_idle(self.arrange)
+
+    def arrange(self):
+        self.job = None
+        if not self.winfo_exists():
+            return
+        width = max(1, self.winfo_width())
+        x, y, row_height, positions = 0, 0, 0, []
+        for widget in self.widgets:
+            if isinstance(widget, (tk.Button, tk.Label)):
+                padding = 2 * sum(widget.winfo_pixels(widget.cget(key))
+                                  for key in ('padx', 'borderwidth', 'highlightthickness'))
+                wrap = max(20, width - 2 * px(3) - padding - 4)
+                if widget.winfo_pixels(widget.cget('wraplength')) != wrap:
+                    widget.configure(wraplength=wrap)
+                if widget.winfo_reqwidth() + 2 * px(3) > width:
+                    widget.configure(width=0)
+            w, h = widget.winfo_reqwidth(), widget.winfo_reqheight()
+            needed = w + 2 * px(3)
+            if x and x + needed > width:
+                x, y, row_height = 0, y + row_height + px(4), 0
+            positions.append((widget, x + px(3), y + px(2), w, h))
+            x, row_height = x + needed, max(row_height, h)
+        if positions != self.positions:
+            self.positions = positions
+            for widget, x, y, w, h in positions:
+                widget.place(x=x, y=y, width=w, height=h)
+        height = y + row_height + px(4) if self.widgets else 0
+        if int(self.cget('height')) != height:
+            self.configure(height=height)
+
+
+class ScrollPanel(tk.Frame):
+    """Width follows the window; overflowing height stays reachable by scrolling."""
+    def __init__(self, parent, bg=BG, height=400, **options):
+        super().__init__(parent, bg=bg, **options)
+        self.auto_height, self.job, self.size = False, None, None
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, width=1, height=px(height))
+        self.bar = ttk.Scrollbar(self, orient='vertical', command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.bar.set)
+        self.canvas.pack(side='left', fill='both', expand=True)
+        self.content = tk.Frame(self.canvas, bg=bg)
+        self.window = self.canvas.create_window(0, 0, window=self.content, anchor='nw')
+        self.canvas.bind('<Configure>', lambda _: self.schedule())
+        self.content.bind('<Configure>', lambda _: self.schedule())
+        self.bind('<Destroy>', self.cancel, add='+')
+
+    def cancel(self, event):
+        if event.widget is self and self.job:
+            self.after_cancel(self.job)
+            self.job = None
+
+    def schedule(self):
+        if not self.job and self.winfo_exists():
+            self.job = self.after_idle(self.arrange)
+
+    def arrange(self):
+        self.job = None
+        if not self.winfo_exists():
+            return
+        width = max(1, self.canvas.winfo_width())
+        requested = self.content.winfo_reqheight()
+        height = max(self.canvas.winfo_height(), requested)
+        if self.auto_height:
+            if self.canvas.winfo_pixels(self.canvas.cget('height')) != requested:
+                self.canvas.configure(height=requested)
+            if self.bar.winfo_manager():
+                self.bar.pack_forget()
+        elif requested > self.canvas.winfo_height() + 1:
+            if not self.bar.winfo_manager():
+                self.bar.pack(side='right', fill='y')
+        else:
+            if self.bar.winfo_manager():
+                self.bar.pack_forget()
+        if self.size != (width, height):
+            self.size = width, height
+            self.canvas.itemconfigure(self.window, width=width, height=height)
+            self.canvas.configure(scrollregion=(0, 0, width, height))
+
+
 # ---- PNG helpers (our own captures: 8-bit RGBA, filter 0) -----------------------------------------------------------------
 def png_decode(data):
     """(width, height, rgba bytes) of a PNG this module (or kit_win.capture_png) wrote."""
@@ -142,8 +272,14 @@ class App:
                                                out=self.shots / 'script.json' if self.shots else None,
                                                ui=self.ui_step) if steps else None
         self.bot = kit_lobby_console.AutoBot(args, self.send) if (args.auto_ready or args.auto_vote) else None
-        self.body = tk.Frame(self.root, bg=BG)
-        self.body.pack(fill='both', expand=True)
+        self.viewport = ScrollPanel(self.root)
+        self.viewport.pack(fill='both', expand=True)
+        self.body = self.viewport.content
+        self.lobby_layout = None
+        self.root.bind('<Configure>', self.resize, add='+')
+        self.root.bind_all('<MouseWheel>', self.scroll, add='+')
+        self.root.bind_all('<Button-4>', self.scroll, add='+')
+        self.root.bind_all('<Button-5>', self.scroll, add='+')
         self.root.after(30, self.pump)
         self.root.after(500, self.poll_pads)
         self.send('files')
@@ -170,7 +306,32 @@ class App:
             self.root.geometry(self.args.ui_geometry)
         else:
             self.root.geometry(f'{int(w * fit)}x{int(h * fit)}+{px(10)}+{px(10)}')
-        self.root.minsize(px(980), px(600))
+        self.root.minsize(min(px(640), sw - 40), min(px(360), sh - 80))
+
+    def resize(self, event):
+        self.viewport.schedule()
+        if self.screen == 'lobby' and getattr(self, 'lobby_mid', None) is not None:
+            if event.widget in (self.root, self.body, self.lobby_mid):
+                self.arrange_lobby()
+            for panel in self.lobby_panels:
+                panel.schedule()
+
+    def scroll(self, event):
+        units = -1 if getattr(event, 'num', None) == 4 or getattr(event, 'delta', 0) > 0 else 1
+        widget = event.widget
+        while widget is not None:
+            if isinstance(widget, ScrollPanel):
+                first, last = widget.canvas.yview()
+                if (units < 0 and first > 0.001) or (units > 0 and last < 0.999):
+                    widget.canvas.yview_scroll(units * 3, 'units')
+                    return 'break'
+            # The portrait picker has its own scrolling canvas.
+            elif isinstance(widget, tk.Canvas) and widget.cget('yscrollcommand'):
+                first, last = widget.yview()
+                if (units < 0 and first > 0.001) or (units > 0 and last < 0.999):
+                    widget.yview_scroll(units * 3, 'units')
+                    return 'break'
+            widget = getattr(widget, 'master', None)
 
     def style(self):
         s = ttk.Style(self.root)
@@ -284,8 +445,11 @@ class App:
         self.show_error()
 
     def clear(self):
+        self.close_dialog()
+        self.lobby_layout = None
         for w in self.body.winfo_children():
             w.destroy()
+        self.viewport.canvas.yview_moveto(0)
 
     def tick_screen(self):
         if self.screen == 'results':
@@ -296,7 +460,7 @@ class App:
         key = (rel, zoom)
         if key not in self.images and self.catalog:
             try:
-                im = tk.PhotoImage(data=(Path(self.catalog.c['dir']) / rel).read_bytes())
+                im = tk.PhotoImage(master=self.root, data=(Path(self.catalog.c['dir']) / rel).read_bytes())
                 self.images[key] = im.zoom(zoom, zoom) if zoom > 1 else im
             except (OSError, tk.TclError):
                 self.images[key] = None
@@ -307,7 +471,7 @@ class App:
         key = (rel, 'small')
         if key not in self.images and self.catalog:
             try:
-                im = tk.PhotoImage(data=(Path(self.catalog.c['dir']) / rel).read_bytes())
+                im = tk.PhotoImage(master=self.root, data=(Path(self.catalog.c['dir']) / rel).read_bytes())
                 self.images[key] = im.subsample(2, 2) if PZ == 1 else im
             except (OSError, tk.TclError):
                 self.images[key] = None
@@ -316,12 +480,14 @@ class App:
     def header(self, parent, title, line=None):
         head = tk.Frame(parent, bg=BG)
         head.pack(fill='x', padx=16, pady=(12, 4))
-        tk.Label(head, text=title, bg=BG, fg=GOLD, font=font(16, True)).pack(side='left')
-        self.head_line = tk.Label(head, text=line or '', bg=BG, fg=DIM, font=font(10))
-        self.head_line.pack(side='left', padx=12)
-        tk.Label(head, text=self.T('kit', version=self.state.get('kit', '')), bg=BG, fg=DIM,
+        top = tk.Frame(head, bg=BG)
+        top.pack(fill='x')
+        tk.Label(top, text=title, bg=BG, fg=GOLD, font=font(16, True)).pack(side='left')
+        self.head_line = wrap_label(tk.Label(head, text=line or '', bg=BG, fg=DIM, font=font(10)))
+        self.head_line.pack(fill='x', pady=(2, 0))
+        tk.Label(top, text=self.T('kit', version=self.state.get('kit', '')), bg=BG, fg=DIM,
                  font=font(8)).pack(side='right')
-        return head
+        return top
 
     def button(self, parent, text, command, color=CARD, fg=INK, big=False, state='normal', width=None):
         b = tk.Button(parent, text=text, command=command, bg=color, fg=fg, activebackground=GOLD,
@@ -366,27 +532,23 @@ class App:
         head = self.header(self.body, self.T('s1.title'))
         tk.Button(head, text=self.T('lang.other'), command=self.toggle_lang, bg=CARD, fg=INK, relief='flat',
                   font=font(9, True), cursor='hand2').pack(side='right', padx=(0, 12))
-        tk.Label(self.body, text=self.T('s1.subtitle'), bg=BG, fg=DIM, font=font(10)).pack(anchor='w', padx=18)
+        wrap_label(tk.Label(self.body, text=self.T('s1.subtitle'), bg=BG, fg=DIM,
+                            font=font(10))).pack(fill='x', padx=18)
         main = tk.Frame(self.body, bg=PANEL, highlightbackground=GOLD, highlightthickness=2)
         main.pack(fill='x', padx=16, pady=6)
         row = tk.Frame(main, bg=PANEL)
         row.pack(fill='x', padx=14, pady=(12, 6))
-        tk.Label(row, text=self.T('s1.name'), bg=PANEL, fg=INK, font=font(10, True)).pack(side='left')
+        wrap_label(tk.Label(row, text=self.T('s1.name'), bg=PANEL, fg=INK,
+                            font=font(10, True))).pack(fill='x')
         self.name_var = tk.StringVar(value=profile.get('name') or '')
-        ttk.Entry(row, textvariable=self.name_var, width=20, font=font(11)).pack(side='left', padx=8)
-        tk.Label(row, text=self.T('s1.name_hint'), bg=PANEL, fg=DIM, font=font(9)).pack(side='left')
-        actions = tk.Frame(main, bg=PANEL)
+        ttk.Entry(row, textvariable=self.name_var, width=20, font=font(11)).pack(fill='x', pady=4)
+        wrap_label(tk.Label(row, text=self.T('s1.name_hint'), bg=PANEL, fg=DIM,
+                            font=font(9))).pack(fill='x')
+        actions = Flow(main, bg=PANEL)
         actions.pack(fill='x', padx=14, pady=8)
-        host = tk.Frame(actions, bg=PANEL)
-        host.pack(side='left', fill='y', padx=(0, 30))
-        self.host_button = self.button(host, self.T('s1.host'), self.do_host, color=GOLD, fg='#101010', big=True)
-        self.host_button.pack(anchor='w')
-        join = tk.Frame(actions, bg=PANEL)
-        join.pack(side='left', fill='y')
-        jrow = tk.Frame(join, bg=PANEL)
-        jrow.pack(anchor='w')
-        self.join_button = self.button(jrow, self.T('s1.join'), self.do_join, color=BLUE, big=True)
-        self.join_button.pack(side='left')
+        self.host_button = actions.add(self.button(actions, self.T('s1.host'), self.do_host, color=GOLD,
+                                                   fg='#101010', big=True))
+        self.join_button = actions.add(self.button(actions, self.T('s1.join'), self.do_join, color=BLUE, big=True))
         recent = []
         try:
             recent = json.loads((kit_paths.DATA / 'recent-hosts.json').read_text(encoding='utf-8'))
@@ -418,8 +580,8 @@ class App:
         pads = tk.Frame(main, bg=PANEL)
         pads.pack(fill='x', padx=14, pady=(4, 10))
         tk.Label(pads, text=self.T('s1.controllers'), bg=PANEL, fg=INK, font=font(10, True)).pack(side='left')
-        self.pads_label = tk.Label(pads, text='', bg=PANEL, fg=DIM, font=font(10))
-        self.pads_label.pack(side='left', padx=8)
+        self.pads_label = wrap_label(tk.Label(pads, text='', bg=PANEL, fg=DIM, font=font(10)))
+        self.pads_label.pack(fill='x', padx=8)
         self.pads_text = None
         adv = tk.Frame(self.body, bg=BG)
         adv.pack(fill='x', padx=16)
@@ -427,23 +589,26 @@ class App:
                   bg=BG, fg=DIM, relief='flat', font=font(10, True), cursor='hand2').pack(anchor='w')
         if self.advanced_open:
             self.draw_advanced(adv)
-        self.start_status = tk.Label(self.body, text='', bg=BG, fg=DIM, font=font(10), wraplength=px(1150),
-                                     justify='left')
-        self.start_status.pack(anchor='w', padx=18, pady=6)
+        self.start_status = wrap_label(tk.Label(self.body, text='', bg=BG, fg=DIM, font=font(10)))
+        self.start_status.pack(fill='x', padx=18, pady=6)
 
     def draw_files(self):
         box = getattr(self, 'files_box', None)
         if box is None or not box.winfo_exists():
             return
+        sig = (str(box), json.dumps([self.files, self.lang], sort_keys=True))
+        if sig == getattr(self, 'files_sig', None):
+            return
+        self.files_sig = sig
         for w in box.winfo_children():
             w.destroy()
         f = self.files or {}
         if f.get('integrated'):                             # kit 2.1: everything comes from the installation
-            tk.Label(box, text=self.T('s1.integrated'), bg=PANEL, fg=GREEN, font=font(10, True), wraplength=px(1000),
-                     justify='left').pack(anchor='w')
+            wrap_label(tk.Label(box, text=self.T('s1.integrated'), bg=PANEL, fg=GREEN,
+                                font=font(10, True))).pack(fill='x')
             for key, field in (('s1.iso', 'iso'), ('s1.bios', 'bios')):
-                tk.Label(box, text=f'    {self.T(key)} {elide(f.get(field)) if f.get(field) else self.T("s1.not_chosen")}',
-                         bg=PANEL, fg=INK, font=font(9), anchor='w').pack(fill='x')
+                wrap_label(tk.Label(box, text=f'    {self.T(key)} {elide(f.get(field)) if f.get(field) else self.T("s1.not_chosen")}',
+                                    bg=PANEL, fg=INK, font=font(9))).pack(fill='x')
             return
         if not f.get('iso') or not f.get('bios'):
             tk.Label(box, text=self.T('s1.first_run'), bg=PANEL, fg=GOLD, font=font(10, True)).pack(anchor='w')
@@ -525,36 +690,38 @@ class App:
         cfg = self.state.get('settings') or {}
         box = tk.Frame(parent, bg=PANEL)
         box.pack(fill='x', pady=4)
+        box.columnconfigure(0, weight=1)
+        box.columnconfigure(1, weight=1)
         self.adv = {}
         rows = [('adv.port', 'port', str(cfg.get('port') or 47400)), ('adv.delay', 'delay', str(cfg.get('delay') or ''))]
         for i, (key, field, value) in enumerate(rows):
-            tk.Label(box, text=self.T(key), bg=PANEL, fg=INK, font=font(9)).grid(row=0, column=i * 2, sticky='w',
-                                                                                padx=10, pady=3)
+            wrap_label(tk.Label(box, text=self.T(key), bg=PANEL, fg=INK, font=font(9))).grid(
+                row=i, column=0, sticky='ew', padx=10, pady=3)
             var = tk.StringVar(value=value)
-            ttk.Entry(box, textvariable=var, width=22).grid(row=0, column=i * 2 + 1, sticky='w', padx=4)
+            ttk.Entry(box, textvariable=var, width=1).grid(row=i, column=1, sticky='ew', padx=4)
             self.adv[field] = var
-        tk.Label(box, text=self.T('adv.renderer'), bg=PANEL, fg=INK, font=font(9)).grid(row=1, column=0, sticky='w',
-                                                                                       padx=10, pady=3)
+        wrap_label(tk.Label(box, text=self.T('adv.renderer'), bg=PANEL, fg=INK,
+                            font=font(9))).grid(row=2, column=0, sticky='ew', padx=10, pady=3)
         self.adv['renderer'] = tk.StringVar(value=cfg.get('renderer') or 'default')
-        ttk.Combobox(box, textvariable=self.adv['renderer'], state='readonly', width=20,
+        ttk.Combobox(box, textvariable=self.adv['renderer'], state='readonly', width=1,
                      values=['default', 'auto', 'd3d11', 'd3d12', 'vulkan', 'opengl', 'software']).grid(
-            row=1, column=1, sticky='w', padx=4)
-        tk.Label(box, text=self.T('adv.pad'), bg=PANEL, fg=INK, font=font(9)).grid(row=1, column=2, sticky='w',
-                                                                                  padx=10)
+            row=2, column=1, sticky='ew', padx=4)
+        wrap_label(tk.Label(box, text=self.T('adv.pad'), bg=PANEL, fg=INK,
+                            font=font(9))).grid(row=3, column=0, sticky='ew', padx=10)
         pads = ['SDL-0', 'SDL-1', 'keyboard']
         self.pad_names = {self.T('adv.pad.' + p): p for p in pads}
         self.adv['pad'] = tk.StringVar(value=self.T('adv.pad.' + (cfg.get('pad') or 'SDL-0')))
-        ttk.Combobox(box, textvariable=self.adv['pad'], state='readonly', width=20,
-                     values=list(self.pad_names)).grid(row=1, column=3, sticky='w', padx=4)
+        ttk.Combobox(box, textvariable=self.adv['pad'], state='readonly', width=1,
+                     values=list(self.pad_names)).grid(row=3, column=1, sticky='ew', padx=4)
         self.adv['fullscreen'] = tk.BooleanVar(value=bool(cfg.get('fullscreen')))
         ttk.Checkbutton(box, text=self.T('adv.fullscreen'), variable=self.adv['fullscreen']).grid(
-            row=2, column=0, columnspan=2, sticky='w', padx=10, pady=3)
-        tk.Label(box, text=self.T('adv.local'), bg=PANEL, fg=DIM, font=font(8)).grid(row=3, column=0, columnspan=4,
-                                                                                    sticky='w', padx=10)
+            row=4, column=0, columnspan=2, sticky='w', padx=10, pady=3)
+        wrap_label(tk.Label(box, text=self.T('adv.local'), bg=PANEL, fg=DIM,
+                            font=font(8))).grid(row=5, column=0, columnspan=2, sticky='ew', padx=10)
         if not SERVER_BROWSER_VISIBLE:
-            tk.Label(box, text=self.T('browser.password'), bg=PANEL, fg=INK, font=font(9)).grid(
-                row=4, column=0, sticky='w', padx=10, pady=3)
-            ttk.Entry(box, textvariable=self.password_var, show='*', width=22).grid(row=4, column=1, sticky='w', padx=4)
+            wrap_label(tk.Label(box, text=self.T('browser.password'), bg=PANEL, fg=INK,
+                                font=font(9))).grid(row=6, column=0, sticky='ew', padx=10, pady=3)
+            ttk.Entry(box, textvariable=self.password_var, show='*', width=1).grid(row=6, column=1, sticky='ew', padx=4)
 
     def save_start_fields(self):
         fields = {}
@@ -737,58 +904,87 @@ class App:
         self.header(self.body, self.T('s2.title'))
         self.check_box = tk.Frame(self.body, bg=PANEL)
         self.check_box.pack(fill='x', padx=16, pady=10)
-        self.check_note = tk.Label(self.body, text='', bg=BG, fg=DIM, font=font(10))
-        self.check_note.pack(anchor='w', padx=18)
+        self.check_note = wrap_label(tk.Label(self.body, text='', bg=BG, fg=DIM, font=font(10)))
+        self.check_note.pack(fill='x', padx=18)
 
     def update_check(self):
-        for w in self.check_box.winfo_children():
-            w.destroy()
-        for item in self.state.get('checks') or []:
+        checks = self.state.get('checks') or []
+        sig = (str(self.check_box), self.lang, tuple(item['key'] for item in checks))
+        if sig != getattr(self, 'check_sig', None):
+            self.check_sig = sig
+            for w in self.check_box.winfo_children():
+                w.destroy()
+            self.check_rows = []
+            for item in checks:
+                row = tk.Frame(self.check_box, bg=PANEL)
+                row.pack(fill='x', padx=12, pady=3)
+                title = wrap_label(tk.Label(row, bg=PANEL, font=font(10, True)))
+                title.pack(fill='x')
+                note = wrap_label(tk.Label(row, bg=PANEL, fg=DIM, font=font(9)))
+                note.pack(fill='x')
+                self.check_rows.append((title, note))
+        for item, (title, note) in zip(checks, self.check_rows):
             ok = item.get('ok')
             mark, color = ('✓', GREEN) if ok else ('…', GOLD) if ok is None else ('✗', RED)
-            row = tk.Frame(self.check_box, bg=PANEL)
-            row.pack(fill='x', padx=12, pady=3)
-            tk.Label(row, text=mark, bg=PANEL, fg=color, font=font(12, True), width=2).pack(side='left')
-            tk.Label(row, text=self.T('check.' + item['key']), bg=PANEL, fg=INK, font=font(10, True), width=26,
-                     anchor='w').pack(side='left')
-            tk.Label(row, text=item.get('note') or '', bg=PANEL, fg=DIM, font=font(9), anchor='w').pack(side='left')
+            configure_changed(title, text=mark + ' ' + self.T('check.' + item['key']), fg=color)
+            configure_changed(note, text=item.get('note') or '')
         settings = self.state.get('settings') or {}
         if self.state.get('role') == 'guest' and settings.get('host_address'):
-            self.check_note.configure(text=self.T('s2.connecting', address=settings['host_address']))
+            configure_changed(self.check_note, text=self.T('s2.connecting', address=settings['host_address']))
         else:
-            self.check_note.configure(text=self.logs[-1] if self.logs else '')
+            configure_changed(self.check_note, text=self.logs[-1] if self.logs else '')
 
     # ---- S3 the room ------------------------------------------------------------------------------------------------------
     def build_lobby(self):
         self.clear()
         self.header(self.body, self.T('room.title'))
         self.build_bottom(self.body)
-        self.notice_label = tk.Label(self.body, text='', bg=BG, fg=GOLD, font=font(10, True), anchor='w',
-                                     wraplength=px(1150), justify='left')
+        self.notice_label = wrap_label(tk.Label(self.body, text='', bg=BG, fg=GOLD, font=font(10, True)))
         self.notice_label.pack(side='bottom', fill='x', padx=18, pady=(4, 0))
         mid = tk.Frame(self.body, bg=BG)
         mid.pack(fill='both', expand=True, padx=16)
-        mid.columnconfigure(0, weight=2, uniform='c')
-        mid.columnconfigure(1, weight=5, uniform='c')
-        mid.columnconfigure(2, weight=3, uniform='c')
-        mid.rowconfigure(0, weight=1)
-        self.people = tk.Frame(mid, bg=PANEL, highlightbackground=BLUE, highlightthickness=2)
-        self.people.grid(row=0, column=0, sticky='nsew', padx=(0, 6))
-        self.teams = tk.Frame(mid, bg=PANEL, highlightbackground=GOLD, highlightthickness=2)
-        self.teams.grid(row=0, column=1, sticky='nsew', padx=6)
-        self.rules_box = tk.Frame(mid, bg=PANEL, highlightbackground=RED, highlightthickness=2)
-        self.rules_box.grid(row=0, column=2, sticky='nsew', padx=(6, 0))
+        self.lobby_mid = mid
+        self.lobby_panels = [ScrollPanel(mid, bg=PANEL, height=430, highlightbackground=color, highlightthickness=2)
+                             for color in (BLUE, GOLD, RED)]
+        self.people, self.teams, self.rules_box = [panel.content for panel in self.lobby_panels]
+        self.arrange_lobby()
         self.sigs = {}
+
+    def arrange_lobby(self):
+        wide = self.body.winfo_width() >= px(1130)
+        if wide == self.lobby_layout:
+            return
+        self.lobby_layout = wide
+        mid = self.lobby_mid
+        for i in range(3):
+            mid.columnconfigure(i, weight=0, minsize=0, uniform='')
+            mid.rowconfigure(i, weight=0)
+        for panel in self.lobby_panels:
+            panel.grid_forget()
+            panel.auto_height = not wide
+            if wide:
+                panel.canvas.configure(height=px(430))
+            panel.canvas.yview_moveto(0)
+            panel.schedule()
+        if wide:
+            for i, (panel, weight) in enumerate(zip(self.lobby_panels, (18, 54, 28))):
+                mid.columnconfigure(i, weight=weight, uniform='lobby')
+                panel.grid(row=0, column=i, sticky='nsew', padx=4)
+            mid.rowconfigure(0, weight=1)
+        else:
+            mid.columnconfigure(0, weight=1)
+            # Keep the fighters first when the side panels no longer fit.
+            for row, index in enumerate((1, 0, 2)):
+                self.lobby_panels[index].grid(row=row, column=0, sticky='ew', padx=4, pady=4)
 
     def build_bottom(self, parent):
         foot = tk.Frame(parent, bg=BG)
         foot.pack(side='bottom', fill='x', padx=16, pady=8)
-        right = tk.Frame(foot, bg=BG)
-        right.pack(side='right', padx=(16, 0))
-        self.start_hint = tk.Label(right, text='', bg=BG, fg=DIM, font=font(9), wraplength=px(420), justify='right')
-        self.start_hint.pack(anchor='e')
-        buttons = tk.Frame(right, bg=BG)
-        buttons.pack(anchor='e')
+        self.start_hint = wrap_label(tk.Label(foot, text='', bg=BG, fg=DIM, font=font(9)))
+        self.start_hint.pack(fill='x')
+        buttons = Flow(foot, bg=BG)
+        buttons.pack(fill='x', pady=(2, 6))
+        self.lobby_buttons = buttons
         self.ready_button = self.button(buttons, self.T('room.ready_btn'), self.toggle_ready, color=GOLD,
                                         fg='#101010', big=True, width=14)
         self.start_button = self.button(buttons, self.T('room.start'), lambda: self.send('start'), color=GREEN,
@@ -797,9 +993,8 @@ class App:
         self.leave_button = self.button(buttons, self.T('room.close') if self.is_host() else self.T('room.leave'),
                                         self.leave, big=True)
         self.back_hub_button = self.button(buttons, self.T('room.back_hub'), lambda: self.send('back_to_hub'))
-        self.leave_button.pack(side='right', padx=4)
         chat = tk.Frame(foot, bg=BG)
-        chat.pack(side='left', fill='both', expand=True)
+        chat.pack(fill='x')
         self.chat_text = tk.Text(chat, height=3, width=30, bg=PANEL, fg=INK, relief='flat', font=font(9),
                                  wrap='word', state='disabled')
         self.chat_text.pack(fill='x')
@@ -823,6 +1018,10 @@ class App:
         box = getattr(self, 'chat_text', None)
         if box is None or not box.winfo_exists():
             return
+        sig = (str(box), json.dumps(self.chat_rows[-30:], sort_keys=True))
+        if sig == getattr(self, 'chat_sig', None):
+            return
+        self.chat_sig = sig
         box.configure(state='normal')
         box.delete('1.0', 'end')
         for row in self.chat_rows[-30:]:
@@ -833,7 +1032,7 @@ class App:
     def update_lobby(self):
         st, lob = self.state, self.lobby()
         if not lob:
-            self.head_line.configure(text=self.T('lobby.waiting_lobby'))
+            configure_changed(self.head_line, text=self.T('lobby.waiting_lobby'))
             return
         if self.is_host():
             jw = st.get('joinwith') or {}
@@ -846,13 +1045,19 @@ class App:
                 (f' · {host.get("rtt_ms")} ms' if host.get('rtt_ms') is not None else '')
             if d:
                 line += f' · {self.T("adv.delay").split(" (")[0]} {d}'
-        self.head_line.configure(text=line)
-        parts = dict(people=json.dumps([lob.get('members'), self.lang]),
-                     teams=json.dumps([self.match().get('teams'), self.match().get('mode'), lob.get('members'),
-                                       lob.get('phase'), self.lang]),
-                     rules=json.dumps([{k: v for k, v in self.match().items() if k not in ('teams',)},
-                                       lob.get('warm'), lob.get('phase'), self.lang, st.get('services'),
-                                       (lob.get('room') or {}).get('drop_load_failures')]))
+        configure_changed(self.head_line, text=line)
+        members, match = self.members(), self.match()
+        identity = [self.me(), self.is_host(), self.lang]
+        # Ping, Ready and preparation telemetry update existing labels. They must
+        # not destroy entries, comboboxes, portraits or an open equipment picker.
+        parts = dict(people=json.dumps([sorted(members), identity]),
+                     teams=json.dumps([match.get('teams'), match.get('mode'), match.get('type'),
+                                       [(i, m['name']) for i, m in sorted(members.items())],
+                                       lob.get('phase'), identity, self.catalog.c.get('dir') if self.catalog else None]),
+                     rules=json.dumps([{k: match.get(k) for k in ('stage', 'bgm', 'native', 'services', 'gameplay')},
+                                       lob.get('phase'), identity, st.get('services'),
+                                       (lob.get('room') or {}).get('drop_load_failures'),
+                                       self.catalog.c.get('dir') if self.catalog else None]))
         if parts['people'] != self.sigs.get('people'):
             self.sigs['people'] = parts['people']
             self.draw_people()
@@ -862,6 +1067,8 @@ class App:
         if parts['rules'] != self.sigs.get('rules'):
             self.sigs['rules'] = parts['rules']
             self.draw_rules()
+        self.update_people()
+        configure_changed(self.warm_label, text=self.warm_text(lob.get('warm') or {}))
         self.update_buttons()
         self.show_notice()
 
@@ -874,47 +1081,59 @@ class App:
             else ''
         if self.lobby().get('phase') == 'fight' and self.state.get('phase') == 'lobby':
             text = self.T('room.in_match')
-        label.configure(text=text)
+        configure_changed(label, text=text)
 
     def draw_people(self):
+        old_name = getattr(self, 'self_name', None)
+        draft = self.rename_var.get() if getattr(self, 'rename_var', None) is not None else None
         for w in self.people.winfo_children():
             w.destroy()
         tk.Label(self.people, text=self.T('room.members'), bg=PANEL, fg=GOLD, font=font(11, True)).pack(
             anchor='w', padx=10, pady=(8, 4))
-        match = self.match()
+        self.member_labels = {}
         for ident, m in sorted(self.members().items()):
             box = tk.Frame(self.people, bg=CARD)
             box.pack(fill='x', padx=8, pady=2)
-            tags = []
-            if ident == 1:
-                tags.append(self.T('room.host_tag'))
-            if ident == self.me():
-                tags.append(self.T('room.you_tag'))
-            name = m['name'] + (f' ({", ".join(tags)})' if tags else '')
-            tk.Label(box, text=name, bg=CARD, fg=GOLD if ident == self.me() else INK, font=font(10, True),
-                     anchor='w').pack(fill='x', padx=6, pady=(3, 0))
-            at = kit_lobby_console.slot_of(match, ident)
-            role = self.T('room.playing_fighter', team=at[0] + 1, index=at[1] + 1) if at else self.T('room.watching')
-            extra = []
-            if at and m.get('ready'):
-                extra.append(self.T('room.ready'))
-            if m.get('rtt_ms') is not None:
-                extra.append(f'{m["rtt_ms"]} ms')
+            name = wrap_label(tk.Label(box, bg=CARD, fg=GOLD if ident == self.me() else INK, font=font(10, True)))
+            name.pack(fill='x', padx=6, pady=(3, 0))
             line = tk.Frame(box, bg=CARD)
             line.pack(fill='x', padx=6, pady=(0, 3))
-            tk.Label(line, text=role + ('  ·  ' + '  ·  '.join(extra) if extra else ''), bg=CARD,
-                     fg=GREEN if at and m.get('ready') else DIM, font=font(9), anchor='w').pack(side='left')
+            status = wrap_label(tk.Label(line, bg=CARD, fg=DIM, font=font(9)))
+            status.pack(fill='x')
+            self.member_labels[ident] = name, status
             if self.is_host() and ident != 1:
                 tk.Button(line, text=self.T('room.kick'), bg=CARD, fg=RED, relief='flat', font=font(8, True),
-                          cursor='hand2', command=lambda i=ident: self.send('kick', member=i)).pack(side='right')
+                          cursor='hand2', command=lambda i=ident: self.send('kick', member=i)).pack(anchor='e')
         row = tk.Frame(self.people, bg=PANEL)
         row.pack(fill='x', padx=8, pady=(10, 4))
         tk.Label(row, text=self.T('room.your_name'), bg=PANEL, fg=DIM, font=font(8)).pack(anchor='w')
-        self.rename_var = tk.StringVar(value=self.name_of(self.me()))
+        self.self_name = self.name_of(self.me())
+        self.rename_var = tk.StringVar(value=draft if draft is not None and old_name == self.self_name else self.self_name)
         entry = ttk.Entry(row, textvariable=self.rename_var, width=16)
-        entry.pack(side='left', pady=2)
+        self.rename_entry = entry
+        entry.pack(fill='x', pady=2)
         entry.bind('<Return>', lambda e: self.rename())
-        self.button(row, self.T('room.rename'), self.rename).pack(side='left', padx=4)
+        self.button(row, self.T('room.rename'), self.rename).pack(anchor='w', pady=2)
+
+    def update_people(self):
+        for ident, m in self.members().items():
+            name, status = self.member_labels[ident]
+            tags = ([self.T('room.host_tag')] if ident == 1 else [])
+            if ident == self.me():
+                tags.append(self.T('room.you_tag'))
+            configure_changed(name, text=m['name'] + (f' ({", ".join(tags)})' if tags else ''))
+            at = kit_lobby_console.slot_of(self.match(), ident)
+            role = self.T('room.playing_fighter', team=at[0] + 1, index=at[1] + 1) if at else self.T('room.watching')
+            extra = [self.T('room.ready')] if at and m.get('ready') else []
+            if m.get('rtt_ms') is not None:
+                extra.append(f'{m["rtt_ms"]} ms')
+            configure_changed(status, text=role + ('  ·  ' + '  ·  '.join(extra) if extra else ''),
+                              fg=GREEN if at and m.get('ready') else DIM)
+        current = self.name_of(self.me())
+        if self.self_name != current:
+            if self.rename_var.get() == self.self_name:
+                self.rename_var.set(current)
+            self.self_name = current
 
     def rename(self):
         name = self.rename_var.get().strip()[:16]
@@ -926,21 +1145,21 @@ class App:
             w.destroy()
         match = self.match()
         host = self.is_host() and self.lobby().get('phase') == 'lobby'
-        start = tk.Frame(self.teams, bg=PANEL)
+        start = Flow(self.teams, bg=PANEL)
         start.pack(fill='x', padx=10, pady=(8, 0))
-        tk.Label(start, text=self.T('room.start_in'), bg=PANEL, fg=INK, font=font(10, True)).pack(side='left')
+        start.add(tk.Label(start, text=self.T('room.start_in'), bg=PANEL, fg=INK, font=font(10, True)))
         for value, label in (('versus', self.T('room.start_menu')), ('hub', self.T('room.start_hub'))):
             chosen = match.get('type', 'versus') == value
-            tk.Button(start, text=label, bg=GOLD if chosen else CARD, fg='#101010' if chosen else INK, relief='flat',
+            start.add(tk.Button(start, text=label, bg=GOLD if chosen else CARD, fg='#101010' if chosen else INK, relief='flat',
                       font=font(9, True), state='normal' if host else 'disabled', cursor='hand2',
                       command=lambda v=value: self.send('start_in', value=v),
-                      disabledforeground=INK if chosen else DIM).pack(side='left', padx=3)
+                      disabledforeground=INK if chosen else DIM))
         if match.get('type') == 'hub':
-            tk.Label(self.teams, text=self.T('room.hub_why'), bg=PANEL, fg=DIM, font=font(8), wraplength=px(560),
-                     justify='left').pack(anchor='w', padx=10)
-        top = tk.Frame(self.teams, bg=PANEL)
+            wrap_label(tk.Label(self.teams, text=self.T('room.hub_why'), bg=PANEL, fg=DIM,
+                                font=font(8))).pack(fill='x', padx=10)
+        top = Flow(self.teams, bg=PANEL)
         top.pack(fill='x', padx=10, pady=(4, 2))
-        tk.Label(top, text=self.T('room.mode'), bg=PANEL, fg=INK, font=font(10, True)).pack(side='left')
+        top.add(tk.Label(top, text=self.T('room.mode'), bg=PANEL, fg=INK, font=font(10, True)))
         modes = [('teams', self.T('room.mode.teams')), ('ffa', self.T('room.mode.ffa'))]
         for value, label in modes:
             chosen = match.get('mode') == value
@@ -948,20 +1167,20 @@ class App:
                           font=font(9, True), state='normal' if host and match.get('type') != 'hub' else 'disabled',
                           cursor='hand2',
                           command=lambda v=value: self.send('mode', mode=v), disabledforeground=INK if chosen else DIM)
-            b.pack(side='left', padx=3)
+            top.add(b)
         three = tk.Label(top, text=self.T('room.mode.three'), bg=PANEL, fg='#5b6b84', font=font(9, True))
-        three.pack(side='left', padx=6)
-        tk.Label(self.teams, text=self.T('room.mode.three_why'), bg=PANEL, fg=DIM, font=font(8), wraplength=px(560),
-                 justify='left').pack(anchor='w', padx=10)
+        top.add(three)
+        wrap_label(tk.Label(self.teams, text=self.T('room.mode.three_why'), bg=PANEL, fg=DIM,
+                            font=font(8))).pack(fill='x', padx=10)
         cols = tk.Frame(self.teams, bg=PANEL)
         cols.pack(fill='both', expand=True, padx=6, pady=4)
         teams = match.get('teams') or []
         total = sum(len(team) for team in teams)
         members = self.members()
+        columns = []
         for t_, team in enumerate(teams):
             col = tk.Frame(cols, bg=PANEL)
-            col.grid(row=0, column=t_, sticky='nsew', padx=4)
-            cols.columnconfigure(t_, weight=1, uniform='t')
+            columns.append(col)
             head = tk.Frame(col, bg=PANEL)
             head.pack(fill='x')
             title = self.T('room.team' if match.get('mode') == 'teams' else 'room.column', n=t_ + 1)
@@ -976,69 +1195,94 @@ class App:
                               command=lambda n=new: self.send('sizes', sizes=n)).pack(side='right', padx=1)
             for i, f in enumerate(team):
                 self.fighter_row(col, t_, i, f, members, host)
-        foot = tk.Frame(self.teams, bg=PANEL)
+        layout = [None]
+        def arrange_teams(width):
+            side_by_side = width >= px(620)
+            if layout[0] == side_by_side:
+                return
+            layout[0] = side_by_side
+            for i, col in enumerate(columns):
+                col.grid_forget()
+                cols.columnconfigure(i, weight=1 if side_by_side or i == 0 else 0,
+                                     uniform='teams' if side_by_side else '')
+                col.grid(row=0 if side_by_side else i, column=i if side_by_side else 0,
+                         sticky='nsew', padx=4, pady=2)
+        cols.bind('<Configure>', lambda event: arrange_teams(event.width))
+        # Give the first layout something to size before its Configure event.
+        arrange_teams(self.teams.winfo_width())
+        foot = Flow(self.teams, bg=PANEL)
         foot.pack(fill='x', padx=10, pady=(2, 8))
-        tk.Label(foot, text=self.T('room.total', n=total), bg=PANEL, fg=DIM, font=font(9)).pack(side='left')
+        foot.add(tk.Label(foot, text=self.T('room.total', n=total), bg=PANEL, fg=DIM, font=font(9)))
         if host:
-            self.button(foot, self.T('room.random_cpu'), lambda: self.send('random')).pack(side='right')
+            foot.add(self.button(foot, self.T('room.random_cpu'), lambda: self.send('random')))
         humans = sum(1 for team in teams for f in team if f.get('owner') is not None)
-        tk.Label(self.teams, text=self.T('room.slot_hint21', n=humans), bg=PANEL, fg=DIM,
-                 font=font(8), wraplength=px(560), justify='left').pack(anchor='w', padx=10, pady=(0, 8))
+        wrap_label(tk.Label(self.teams, text=self.T('room.slot_hint21', n=humans), bg=PANEL, fg=DIM,
+                            font=font(8))).pack(fill='x', padx=10, pady=(0, 8))
 
     def fighter_row(self, parent, team, index, f, members, host):
         row = tk.Frame(parent, bg=CARD, cursor='hand2')
         row.pack(fill='x', pady=2)
         owner = f.get('owner')
         mine = owner is not None and owner == self.me()
+        info = tk.Frame(row, bg=CARD)
+        info.pack(fill='x', padx=2, pady=2)
         img = self.small(self.catalog.chars[f['character']]['portrait']) if self.catalog and \
             f['character'] in self.catalog.chars else None
-        pic = tk.Label(row, image=img, bg=GOLD if mine else CARD)
+        pic = tk.Label(info, image=img, bg=GOLD if mine else CARD)
         pic.pack(side='left', padx=2, pady=2)
-        text = tk.Frame(row, bg=CARD)
+        text = tk.Frame(info, bg=CARD)
         text.pack(side='left', fill='x', expand=True, padx=4)
         name = self.catalog.name(f['character']) if self.catalog else str(f['character'])
-        tk.Label(text, text=name, bg=CARD, fg=INK, font=font(9, True), anchor='w').pack(fill='x')
+        wrap_label(tk.Label(text, text=name, bg=CARD, fg=INK, font=font(9, True))).pack(fill='x')
         who = members.get(owner, {}).get('name') if owner is not None else None
         locked = bool(f.get('locked'))
         state = (self.T('room.human', name=who) if who else
                  self.T('room.cpu_locked') if locked else self.T('room.cpu'))
         sub = f'{self.T("lobby.colour")} {f["costume"] + 1} · ' + state
-        tk.Label(text, text=sub, bg=CARD, fg=GOLD if mine else (GREEN if who else DIM), font=font(8),
-                 anchor='w').pack(fill='x')
+        items = f.get('potaras', [])
+        if items:
+            sub += ' · ' + self.T('potara.count', n=len(items))
+        wrap_label(tk.Label(text, text=sub, bg=CARD, fg=GOLD if mine else (GREEN if who else DIM),
+                            font=font(8))).pack(fill='x')
         editable = (host or mine) and self.lobby().get('phase') == 'lobby'
         if editable:
-            for w in (row, pic):
+            for w in (row, pic, text, *text.winfo_children()):
                 w.bind('<Button-1>', lambda e, t_=team, i=index: self.open_picker(t_, i))
+        actions = Flow(row, bg=CARD)
+        actions.pack(fill='x', padx=2, pady=(0, 2))
+        actions.add(self.button(actions, self.T('potara.title'),
+                               lambda t_=team, i=index: self.open_potara_picker(t_, i)))
         lobby_open = self.lobby().get('phase') == 'lobby'
         if host and lobby_open:
-            tk.Button(row, text=self.T('room.unlock' if locked else 'room.lock'), bg=CARD, fg=DIM, relief='flat',
+            actions.add(tk.Button(actions, text=self.T('room.unlock' if locked else 'room.lock'), bg=CARD, fg=DIM, relief='flat',
                       font=font(8), cursor='hand2',
                       command=lambda t_=team, i=index, l_=not locked: self.send('lock', team=t_, index=i,
-                                                                                locked=l_)).pack(side='right', padx=2)
+                                                                                locked=l_)))
         if owner is None and not locked and lobby_open:
-            self.button(row, self.T('room.claim'), lambda t_=team, i=index: self.send('claim', team=t_, index=i)).pack(
-                side='right', padx=4)
+            actions.add(self.button(actions, self.T('room.claim'),
+                                    lambda t_=team, i=index: self.send('claim', team=t_, index=i)))
 
     def draw_rules(self):
         for w in self.rules_box.winfo_children():
             w.destroy()
         match = self.match()
         host = self.is_host() and self.lobby().get('phase') == 'lobby'
-        tk.Label(self.rules_box, text=self.T('room.rules'), bg=PANEL, fg=GOLD, font=font(11, True)).pack(
-            anchor='w', padx=10, pady=(8, 4))
+        wrap_label(tk.Label(self.rules_box, text=self.T('room.rules'), bg=PANEL, fg=GOLD,
+                            font=font(11, True))).pack(fill='x', padx=10, pady=(8, 4))
         grid = tk.Frame(self.rules_box, bg=PANEL)
         grid.pack(fill='x', padx=10)
+        grid.columnconfigure(0, weight=1)
         r = 0
-        tk.Label(grid, text=self.T('rule.stage'), bg=PANEL, fg=INK, font=font(9, True)).grid(row=r, column=0,
-                                                                                            sticky='w', pady=2)
+        wrap_label(tk.Label(grid, text=self.T('rule.stage'), bg=PANEL, fg=INK,
+                            font=font(9, True))).grid(row=0, column=0, sticky='ew', pady=2)
         stage = match.get('stage')
         stage_name = self.T('rule.random') if stage == 'random' else (self.catalog.stage_name(stage) if self.catalog
                                                                       else str(stage))
         srow = tk.Frame(grid, bg=PANEL)
-        srow.grid(row=r, column=1, sticky='w')
-        tk.Label(srow, text=stage_name, bg=PANEL, fg=INK, font=font(9)).pack(side='left')
+        srow.grid(row=1, column=0, sticky='ew')
+        wrap_label(tk.Label(srow, text=stage_name, bg=PANEL, fg=INK, font=font(9))).pack(fill='x')
         if host:
-            self.button(srow, self.T('rule.choose_stage'), self.open_stage_picker).pack(side='left', padx=4)
+            self.button(srow, self.T('rule.choose_stage'), self.open_stage_picker).pack(anchor='w', pady=2)
         r += 1
         tracks = [self.T('rule.random')] + [self.T('room.track', n=n + 1) for n in range(24)]
         bgm = match.get('bgm')
@@ -1066,16 +1310,16 @@ class App:
         drop = (self.lobby().get('room') or {}).get('drop_load_failures') is True
         self.rule_combo(grid, r, 'room.load_policy', policies, policies[int(drop)], host,
                         lambda v: self.send('load_policy', drop=v == policies[1]))
-        tk.Label(self.rules_box, text=self.T('room.load_policy_note'), bg=PANEL, fg=DIM, font=font(8),
-                 wraplength=px(330), justify='left').pack(anchor='w', padx=10, pady=(4, 0))
-        row = tk.Frame(self.rules_box, bg=PANEL)
+        wrap_label(tk.Label(self.rules_box, text=self.T('room.load_policy_note'), bg=PANEL, fg=DIM,
+                            font=font(8))).pack(fill='x', padx=10, pady=(4, 0))
+        row = Flow(self.rules_box, bg=PANEL)
         row.pack(fill='x', padx=10, pady=(8, 2))
         self.rules_button = self.button(row, self.T('room.rules_show'), self.open_rules)
-        self.rules_button.pack(side='left')
+        row.add(self.rules_button)
         self.display_button = self.button(row, self.T('room.display'), self.open_display)
-        self.display_button.pack(side='left', padx=6)
-        tk.Label(self.rules_box, text=self.T('room.rules_note'), bg=PANEL, fg=DIM, font=font(8), wraplength=px(330),
-                 justify='left').pack(anchor='w', padx=10, pady=(4, 0))
+        row.add(self.display_button)
+        wrap_label(tk.Label(self.rules_box, text=self.T('room.rules_note'), bg=PANEL, fg=DIM,
+                            font=font(8))).pack(fill='x', padx=10, pady=(4, 0))
         allowed = self.state.get('services') or []
         services = match.get('services') or {}
         for k in ('cpu_transform', 'fusion_timer', 'body_change'):
@@ -1090,23 +1334,19 @@ class App:
         locked = [self.T('room.service.' + k) for k in ('cpu_transform', 'fusion_timer', 'body_change')
                   if k not in allowed]
         if locked:
-            tk.Label(self.rules_box, text=self.T('room.services', list=', '.join(locked)), bg=PANEL, fg=DIM,
-                     font=font(8), wraplength=px(330), justify='left').pack(anchor='w', padx=10, pady=(4, 0))
+            wrap_label(tk.Label(self.rules_box, text=self.T('room.services', list=', '.join(locked)), bg=PANEL, fg=DIM,
+                                font=font(8))).pack(fill='x', padx=10, pady=(4, 0))
         values = kit_settings.gameplay_expand(match.get('gameplay'))
         camera = ' · '.join(f'{kit_settings.label(k, self.lang)}: {kit_settings.value_text(k, values[k], self.lang)}'
                             for k in kit_settings.CAMERA if k in values and k in kit_settings.FIELDS)
         tk.Label(self.rules_box, text=self.T('room.camera'), bg=PANEL, fg=GOLD, font=font(9, True)).pack(
             anchor='w', padx=10, pady=(6, 0))
-        self.camera_label = tk.Label(self.rules_box, text=camera, bg=PANEL, fg=INK, font=font(8), wraplength=px(330),
-                                     justify='left')
-        self.camera_label.pack(anchor='w', padx=10)
-        tk.Label(self.rules_box, text=self.T('lobby.controls_title') + ': ' + controls_card(values, self.lang), bg=PANEL,
-                 fg=INK, font=font(8), wraplength=px(330), justify='left').pack(anchor='w', padx=10, pady=(6, 0))
-        warm = self.lobby().get('warm') or {}
-        line = self.warm_text(warm)
-        if line:
-            tk.Label(self.rules_box, text=line, bg=PANEL, fg=DIM, font=font(8), wraplength=px(330),
-                     justify='left').pack(anchor='w', padx=10, pady=(6, 8))
+        self.camera_label = wrap_label(tk.Label(self.rules_box, text=camera, bg=PANEL, fg=INK, font=font(8)))
+        self.camera_label.pack(fill='x', padx=10)
+        wrap_label(tk.Label(self.rules_box, text=self.T('lobby.controls_title') + ': ' + controls_card(values, self.lang),
+                            bg=PANEL, fg=INK, font=font(8))).pack(fill='x', padx=10, pady=(6, 0))
+        self.warm_label = wrap_label(tk.Label(self.rules_box, bg=PANEL, fg=DIM, font=font(8)))
+        self.warm_label.pack(fill='x', padx=10, pady=(6, 8))
 
     def warm_text(self, warm):
         why = t(warm['why_key'], self.lang, detail=warm.get('why') or '') if warm.get('why_key') else \
@@ -1118,10 +1358,11 @@ class App:
             warm.get('state'), '')
 
     def rule_combo(self, grid, r, key, values, current, editable, on_change):
-        tk.Label(grid, text=self.T(key), bg=PANEL, fg=INK, font=font(9, True)).grid(row=r, column=0, sticky='w', pady=2)
-        box = ttk.Combobox(grid, values=values, width=16, state='readonly' if editable else 'disabled')
+        wrap_label(tk.Label(grid, text=self.T(key), bg=PANEL, fg=INK,
+                            font=font(9, True))).grid(row=r * 2, column=0, sticky='ew', pady=(4, 2))
+        box = ttk.Combobox(grid, values=values, width=1, state='readonly' if editable else 'disabled')
         box.set(current)
-        box.grid(row=r, column=1, sticky='w', padx=4)
+        box.grid(row=r * 2 + 1, column=0, sticky='ew')
         box.bind('<<ComboboxSelected>>', lambda e: on_change(box.get()))
         return box
 
@@ -1135,32 +1376,31 @@ class App:
         in_lobby = lob.get('phase') == 'lobby' and self.state.get('phase') == 'lobby'
         slot = self.my_slot()
         me = self.members().get(self.me()) or {}
-        for b in (self.ready_button, self.start_button, self.watch_button):
-            b.pack_forget()
+        buttons = []
         hint = ''
         if self.is_host():
             players = [k for k in self.members() if kit_lobby_console.slot_of(self.match(), k) is not None and k != 1]
             waiting = [self.name_of(k) for k in players if not self.members()[k].get('ready')]
             if slot is not None:
-                self.watch_button.pack(side='left', padx=4)
-            self.start_button.pack(side='left', padx=4)
-            self.start_button.configure(state='normal' if in_lobby and not waiting else 'disabled')
+                buttons.append(self.watch_button)
+            buttons.append(self.start_button)
+            configure_changed(self.start_button, state='normal' if in_lobby and not waiting else 'disabled')
             hint = self.T('room.start_wait', names=', '.join(waiting)) if waiting else self.T('room.start_hint')
         elif slot is not None:
-            self.watch_button.pack(side='left', padx=4)
-            self.ready_button.pack(side='left', padx=4)
+            buttons += [self.watch_button, self.ready_button]
             ready = bool(me.get('ready'))
-            self.ready_button.configure(text=self.T('room.unready_btn' if ready else 'room.ready_btn'),
+            configure_changed(self.ready_button, text=self.T('room.unready_btn' if ready else 'room.ready_btn'),
                                         bg=CARD if ready else GOLD, fg=INK if ready else '#101010',
                                         state='normal' if in_lobby else 'disabled')
         else:
             hint = self.T('room.watch_hint')
-        self.back_hub_button.pack_forget()
         if self.is_host() and in_lobby and lob.get('return_to_hub'):
-            self.back_hub_button.pack(side='left', padx=4)
+            buttons.append(self.back_hub_button)
+        buttons.append(self.leave_button)
+        self.lobby_buttons.set_widgets(buttons)
         if SERVER_BROWSER_VISIBLE and self.state.get('listing_warning'):
             hint += '\n' + self.T('browser.warning', reason=self.state['listing_warning'])
-        self.start_hint.configure(text=hint)
+        configure_changed(self.start_hint, text=hint)
 
     def toggle_ready(self):
         me = self.members().get(self.me()) or {}
@@ -1354,11 +1594,151 @@ class App:
             self.dialog = None
         self.button(buttons, self.T('ok'), ok, color=GOLD, fg='#101010').pack(side='left', padx=4)
         self.button(buttons, self.T('cancel'), win.destroy).pack(side='left', padx=4)
-        canvas.bind_all('<MouseWheel>', lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, 'units'))
+        canvas.bind('<MouseWheel>', lambda e: (canvas.yview_scroll(-1 if e.delta > 0 else 1, 'units'), 'break')[1])
         draw_chips()
         draw_forms()
         draw()
         self.picker = dict(win=win, pick=pick, ok=ok, chosen=chosen, search=search)
+
+    def open_potara_picker(self, team, index):
+        """A draft loadout; Cancel leaves the roster/readiness unchanged."""
+        if not self.catalog or not self.catalog.potaras:
+            return
+        self.close_dialog()
+        try:
+            current = self.match()['teams'][team][index]
+        except (IndexError, KeyError, TypeError):
+            return
+        import kit_potara
+        editable = (self.is_host() or current.get('owner') == self.me()) and self.lobby().get('phase') == 'lobby'
+        if kit_potara.problems(current.get('potaras', []), self.catalog):
+            return
+        win = tk.Toplevel(self.root, bg=BG)
+        self.dialog = win
+        win.title(self.T('potara.title') + ' · ' + self.catalog.name(current['character']))
+        win.transient(self.root)
+        win.geometry('+%d+%d' % (self.root.winfo_rootx()+30, self.root.winfo_rooty()+30))
+        win.minsize(px(600), px(390))
+        win.maxsize(self.root.winfo_screenwidth()-40, self.root.winfo_screenheight()-60)
+        outer = tk.Frame(win, bg=BG)
+        outer.pack(fill='both', expand=True, padx=12, pady=10)
+        wrap_label(tk.Label(outer, text=self.catalog.name(current['character']), bg=BG, fg=GOLD,
+                            font=font(12, True))).pack(fill='x')
+        wrap_label(tk.Label(outer, text=self.T('potara.note'), bg=BG, fg=DIM,
+                            font=font(9))).pack(fill='x', pady=(4,8))
+        search = tk.StringVar()
+        ttk.Entry(outer, textvariable=search).pack(fill='x', pady=(0,6))
+        body = tk.Frame(outer, bg=BG)
+        body.pack(fill='both', expand=True)
+        body.columnconfigure(0, weight=1)
+        body.columnconfigure(2, weight=1)
+        body.rowconfigure(0, weight=1)
+        available = tk.Listbox(body, bg=CARD, fg=INK, selectbackground=GOLD, selectforeground=BG,
+                              font=font(9), exportselection=False, width=32, height=14)
+        available.grid(row=0, column=0, sticky='nsew')
+        scroll = ttk.Scrollbar(body, orient='vertical', command=available.yview)
+        scroll.grid(row=0, column=1, sticky='ns', padx=(0,8))
+        available.configure(yscrollcommand=scroll.set)
+        horizontal = ttk.Scrollbar(body, orient='horizontal', command=available.xview)
+        horizontal.grid(row=1, column=0, sticky='ew')
+        available.configure(xscrollcommand=horizontal.set)
+        equipped = tk.Listbox(body, bg=CARD, fg=INK, selectbackground=GOLD, selectforeground=BG,
+                             font=font(9), exportselection=False, width=30, height=8)
+        equipped.grid(row=0, column=2, sticky='nsew')
+        horizontal = ttk.Scrollbar(body, orient='horizontal', command=equipped.xview)
+        horizontal.grid(row=1, column=2, sticky='ew')
+        equipped.configure(xscrollcommand=horizontal.set)
+        draft = list(current.get('potaras', []))
+        shown = []
+        count = wrap_label(tk.Label(outer, bg=BG, fg=GOLD, font=font(9, True)))
+        count.pack(fill='x', pady=6)
+        detail = wrap_label(tk.Label(outer, bg=BG, fg=DIM, font=font(9)))
+        detail.pack(fill='x')
+        notice = wrap_label(tk.Label(outer, bg=BG, fg='#ef9b86', font=font(9)))
+        notice.pack(fill='x')
+
+        def name(ident):
+            item = self.catalog.potaras[ident]
+            return f'{item["name"]}  ({item["cost"]})'
+
+        def refresh(*_):
+            available.delete(0, 'end')
+            shown[:] = [i for i,p in self.catalog.potaras.items() if search.get().casefold() in p['name'].casefold()]
+            for i in shown:
+                available.insert('end', name(i))
+            equipped.delete(0, 'end')
+            for i in draft:
+                equipped.insert('end', name(i))
+            count.configure(text=self.T('potara.budget', used=sum(self.catalog.potaras[i]['cost'] for i in draft),
+                                        n=len(draft)))
+
+        def preview(event):
+            listing = event.widget
+            selected = listing.curselection()
+            if not selected:
+                return
+            ident = (shown if listing is available else draft)[selected[0]]
+            item = self.catalog.potaras[ident]
+            changes = [self.T('potara.stat.'+key)+f' {value:+d}'
+                       for key,value in zip(('attack','defense','ki','super'), item['stats']) if value]
+            detail.configure(text=item['name'] + (' · ' + ', '.join(changes) if changes else ''))
+
+        def add(*_):
+            selected = available.curselection()
+            if not selected:
+                return
+            candidate = draft + [shown[selected[0]]]
+            errors = kit_potara.problems(candidate, self.catalog)
+            if errors:
+                notice.configure(text=self.T('potara.invalid'))
+                return
+            draft[:] = sorted(candidate)
+            notice.configure(text='')
+            refresh()
+
+        def remove(*_):
+            selected = equipped.curselection()
+            if selected:
+                draft.pop(selected[0])
+                notice.configure(text='')
+                refresh()
+
+        def ok():
+            # Re-read the current fighter. A remote roster change cannot be
+            # overwritten with this dialog's old character/costume.
+            if not editable:
+                return
+            try:
+                live = self.match()['teams'][team][index]
+            except (IndexError, KeyError, TypeError):
+                win.destroy()
+                return
+            if (live['character'], live['costume'], live.get('owner')) != \
+                    (current['character'], current['costume'], current.get('owner')):
+                notice.configure(text=self.T('potara.changed'))
+                return
+            self.send('fighter', team=team, index=index, character=live['character'],
+                      costume=live['costume'], potaras=list(draft))
+            win.destroy()
+            self.dialog = None
+
+        buttons = tk.Frame(outer, bg=BG)
+        buttons.pack(fill='x', pady=(8,0))
+        if editable:
+            self.button(buttons, self.T('potara.add'), add).pack(side='left')
+            self.button(buttons, self.T('potara.remove'), remove).pack(side='left', padx=4)
+            self.button(buttons, self.T('potara.clear'), lambda:(draft.clear(), notice.configure(text=''), refresh())).pack(side='left')
+            self.button(buttons, self.T('ok'), ok, color=GOLD, fg=BG).pack(side='right')
+        self.button(buttons, self.T('cancel'), win.destroy).pack(side='right', padx=4)
+        search.trace_add('write', refresh)
+        available.bind('<<ListboxSelect>>', preview)
+        equipped.bind('<<ListboxSelect>>', preview)
+        if editable:
+            available.bind('<Double-Button-1>', add)
+            equipped.bind('<Double-Button-1>', remove)
+        refresh()
+        self.potara_picker = dict(win=win, draft=draft, ok=ok, available=available, shown=shown,
+                                  equipped=equipped, add=add, remove=remove, search=search)
 
     def open_stage_picker(self):
         if not self.catalog:
@@ -1401,20 +1781,19 @@ class App:
         self.header(self.body, self.T('prep.title'))
         box = tk.Frame(self.body, bg=PANEL, highlightbackground=GOLD, highlightthickness=2)
         box.pack(fill='x', padx=16, pady=20)
-        self.prep_title = tk.Label(box, text='', bg=PANEL, fg=INK, font=font(12, True), wraplength=px(1100),
-                                   justify='left')
-        self.prep_title.pack(anchor='w', padx=14, pady=(12, 4))
-        self.prep_step = tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(11, True))
-        self.prep_step.pack(anchor='w', padx=14)
+        self.prep_title = wrap_label(tk.Label(box, text='', bg=PANEL, fg=INK, font=font(12, True)))
+        self.prep_title.pack(fill='x', padx=14, pady=(12, 4))
+        self.prep_step = wrap_label(tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(11, True)))
+        self.prep_step.pack(fill='x', padx=14)
         self.prep_bar = ttk.Progressbar(box, length=px(600), maximum=100)
-        self.prep_bar.pack(anchor='w', padx=14, pady=10)
-        self.prep_eta = tk.Label(box, text='', bg=PANEL, fg=DIM, font=font(10))
-        self.prep_eta.pack(anchor='w', padx=14, pady=(0, 10))
+        self.prep_bar.pack(fill='x', padx=14, pady=10)
+        self.prep_eta = wrap_label(tk.Label(box, text='', bg=PANEL, fg=DIM, font=font(10)))
+        self.prep_eta.pack(fill='x', padx=14, pady=(0, 10))
         self.prep_cancel = None
         if self.is_host():
             self.prep_cancel = self.button(box, self.T('prep.cancel'), self.cancel_prep, color=RED)
             self.prep_cancel.pack(anchor='w', padx=14, pady=(0, 12))
-        self.notice_label = tk.Label(self.body, text='', bg=BG, fg=GOLD, font=font(10, True), anchor='w')
+        self.notice_label = wrap_label(tk.Label(self.body, text='', bg=BG, fg=GOLD, font=font(10, True)))
         self.notice_label.pack(fill='x', padx=18)
         self.build_bottom_chat(self.body)
 
@@ -1442,19 +1821,19 @@ class App:
         prog = st.get('progress') or {}
         title = (st.get('match') or {}).get('title') or ''
         phase = st.get('phase')
-        self.prep_title.configure(text=title)
+        configure_changed(self.prep_title, text=title)
         step = prog.get('step') or ('prep.settings' if phase == 'preparing' else 'load.starting')
         text = self.T(step, mb=prog.get('mb', ''), name='')
         if step == 'load.waiting':
             text = self.T('load.waiting_players')
         if phase == 'preparing' and step.startswith('prep.'):
             text = self.T('prep.host_step', step=text)
-        self.prep_step.configure(text=text)
+        configure_changed(self.prep_step, text=text)
         eta = prog.get('eta_s')
-        self.prep_eta.configure(text=self.T('prep.eta', t=f'{int(eta) // 60}:{int(eta) % 60:02d}')
+        configure_changed(self.prep_eta, text=self.T('prep.eta', t=f'{int(eta) // 60}:{int(eta) % 60:02d}')
                                 if phase == 'preparing' and isinstance(eta, (int, float)) else '')
-        self.prep_bar['value'] = prog.get('pct') or 0
-        self.head_line.configure(text=self.T('send.title') if phase in ('sending', 'loading') else '')
+        configure_changed(self.prep_bar, value=prog.get('pct') or 0)
+        configure_changed(self.head_line, text=self.T('send.title') if phase in ('sending', 'loading') else '')
         self.show_notice()
 
     # ---- S8 fight ------------------------------------------------------------------------------------------------------
@@ -1464,29 +1843,29 @@ class App:
         box = tk.Frame(self.body, bg=PANEL, highlightbackground=GREEN, highlightthickness=2)
         box.pack(fill='x', padx=16, pady=16)
         title = (self.state.get('match') or {}).get('title') or ''
-        tk.Label(box, text=title, bg=PANEL, fg=INK, font=font(10, True), wraplength=px(1100), justify='left').pack(
-            anchor='w', padx=14, pady=(10, 0))
-        self.fight_role = tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(11, True))
-        self.fight_role.pack(anchor='w', padx=14, pady=(6, 0))
-        self.fight_status = tk.Label(box, text='', bg=PANEL, fg=GREEN, font=font(14, True))
-        self.fight_status.pack(anchor='w', padx=14, pady=(6, 4))
-        self.fight_banner = tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(12, True))
-        self.fight_banner.pack(anchor='w', padx=14)
-        tk.Label(box, text=self.T('fight.window_hint'), bg=PANEL, fg=DIM, font=font(9)).pack(anchor='w', padx=14,
-                                                                                            pady=(4, 12))
-        row = tk.Frame(self.body, bg=BG)
+        wrap_label(tk.Label(box, text=title, bg=PANEL, fg=INK,
+                            font=font(10, True))).pack(fill='x', padx=14, pady=(10, 0))
+        self.fight_role = wrap_label(tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(11, True)))
+        self.fight_role.pack(fill='x', padx=14, pady=(6, 0))
+        self.fight_status = wrap_label(tk.Label(box, text='', bg=PANEL, fg=GREEN, font=font(14, True)))
+        self.fight_status.pack(fill='x', padx=14, pady=(6, 4))
+        self.fight_banner = wrap_label(tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(12, True)))
+        self.fight_banner.pack(fill='x', padx=14)
+        wrap_label(tk.Label(box, text=self.T('fight.window_hint'), bg=PANEL, fg=DIM,
+                            font=font(9))).pack(fill='x', padx=14, pady=(4, 12))
+        row = Flow(self.body, bg=BG)
         row.pack(fill='x', padx=16)
+        self.fight_buttons = row
         if self.is_host():
             self.end_button = self.button(row, self.T('fight.end_host'), self.end_fight, color=RED, big=True)
         else:
             self.end_button = self.button(row, self.T('fight.leave_match'), self.leave_match, color=RED, big=True)
-        self.end_button.pack(side='left')
+        row.add(self.end_button)
         self.watch_buttons = []
         for side in (0, 1):
             b = self.button(row, self.T('fight.watch_team', team=side + 1), lambda s=side: self.send('watch', side=s))
             self.watch_buttons.append(b)
-        self.notice_label = tk.Label(self.body, text='', bg=BG, fg=GOLD, font=font(10, True), anchor='w',
-                                     wraplength=px(1150), justify='left')
+        self.notice_label = wrap_label(tk.Label(self.body, text='', bg=BG, fg=GOLD, font=font(10, True)))
         self.notice_label.pack(fill='x', padx=18, pady=6)
         self.hub_box = tk.Frame(self.body, bg=PANEL, highlightbackground=BLUE, highlightthickness=2)
         self.hub_sig = None
@@ -1499,20 +1878,16 @@ class App:
         if ms is None and self.is_host():
             values = [m.get('rtt_ms') for m in (st.get('members') or {}).values() if m.get('rtt_ms') is not None]
             ms = max(values) if values else '-'
-        self.fight_status.configure(text=self.T('fight.status', frame=frame if frame is not None else '-',
+        configure_changed(self.fight_status, text=self.T('fight.status', frame=frame if frame is not None else '-',
                                                 ms=ms if ms is not None else '-', d=st.get('delay') or '-'))
         slot = st.get('slot')
         if slot is not None:
-            self.fight_role.configure(text=self.T('fight.playing', team=slot + 1))
+            configure_changed(self.fight_role, text=self.T('fight.playing', team=slot + 1))
         else:
-            self.fight_role.configure(text=self.T('fight.watching', side=(st.get('watch') or 0) + 1))
-        for b in getattr(self, 'watch_buttons', []):
-            if slot is None and not b.winfo_ismapped():
-                b.pack(side='left', padx=(8, 0))
-            elif slot is not None and b.winfo_ismapped():
-                b.pack_forget()
+            configure_changed(self.fight_role, text=self.T('fight.watching', side=(st.get('watch') or 0) + 1))
+        self.fight_buttons.set_widgets([self.end_button] + (self.watch_buttons if slot is None else []))
         ov = self.state.get('overlay')
-        self.fight_banner.configure(text=self.overlay_text(ov) if ov else '')
+        configure_changed(self.fight_banner, text=self.overlay_text(ov) if ov else '')
         self.show_notice()
         self.draw_hub()
 
@@ -1522,8 +1897,14 @@ class App:
         if box is None or not box.winfo_exists():
             return
         hub = self.lobby().get('hub')
-        sig = json.dumps([hub, self.me(), self.lang])
+        rows = (hub or {}).get('rows') or []
+        sig = json.dumps([None if hub is None else {
+            'fighters': [(r['i'], r['name'], r.get('member')) for r in rows],
+            'duel': hub.get('duel'), 'open': hub.get('open'), 'challenges': hub.get('challenges'),
+            'names': [(i, m['name']) for i, m in sorted(self.members().items())]}, self.me(), self.lang])
         if sig == self.hub_sig:
+            if hub:
+                self.update_hub_scores(hub)
             return
         self.hub_sig = sig
         for w in box.winfo_children():
@@ -1542,15 +1923,24 @@ class App:
                      bg=PANEL, fg=RED, font=font(10, True)).pack(anchor='w', padx=10)
         grid = tk.Frame(box, bg=PANEL)
         grid.pack(fill='x', padx=10)
+        grid.columnconfigure(0, weight=1)
+        self.hub_score_labels = {}
         for r, row in enumerate(sorted(rows, key=lambda x: (-x['kills'], x['deaths'], x['i']))):
             mine = row.get('member') == self.me()
-            tag = ' · AWAY' if hub.get('parked', 0) >> row['i'] & 1 else (' · DOWN' if row.get('down') else '')
-            tk.Label(grid, text=f'{row["name"]}{tag}', bg=PANEL, fg=GOLD if mine else INK, font=font(9, mine),
-                     anchor='w', width=24).grid(row=r, column=0, sticky='w')
+            name = wrap_label(tk.Label(grid, bg=PANEL, fg=GOLD if mine else INK, font=font(9, mine)))
+            name.grid(row=r, column=0, sticky='ew')
+            labels = [name]
             for col, key in enumerate(('kills', 'deaths', 'wins'), 1):
-                tk.Label(grid, text=str(row[key]), bg=PANEL, fg=INK, font=font(9), width=5).grid(row=r, column=col)
-        for line in hub.get('feed') or []:
-            tk.Label(box, text=line, bg=PANEL, fg=DIM, font=font(8)).pack(anchor='w', padx=10)
+                label = tk.Label(grid, bg=PANEL, fg=INK, font=font(9), width=5)
+                label.grid(row=r, column=col)
+                labels.append(label)
+            self.hub_score_labels[row['i']] = labels
+        self.hub_feed_labels = []
+        for _ in range(3):
+            label = wrap_label(tk.Label(box, bg=PANEL, fg=DIM, font=font(8)))
+            label.pack(fill='x', padx=10)
+            self.hub_feed_labels.append(label)
+        self.update_hub_scores(hub)
         me_row = next((r for r in rows if r.get('member') == self.me()), None)
         if me_row is None:
             join = tk.Frame(box, bg=PANEL)                     # kit 2.1: a watcher may take a free fighter
@@ -1595,6 +1985,19 @@ class App:
             self.button(row, self.T('fight.hub_decline'), lambda b=ch['by']: self.send('hub_answer', challenger=b,
                                                                                       accept=False)).pack(side='left')
 
+    def update_hub_scores(self, hub):
+        for position, row in enumerate(sorted(hub.get('rows') or [], key=lambda x: (-x['kills'], x['deaths'], x['i']))):
+            labels = self.hub_score_labels[row['i']]
+            tag = ' · AWAY' if hub.get('parked', 0) >> row['i'] & 1 else (' · DOWN' if row.get('down') else '')
+            values = [row['name'] + tag] + [str(row[k]) for k in ('kills', 'deaths', 'wins')]
+            for label, text in zip(labels, values):
+                configure_changed(label, text=text)
+                if int(label.grid_info()['row']) != position:
+                    label.grid_configure(row=position)
+        feed = hub.get('feed') or []
+        for i, label in enumerate(self.hub_feed_labels):
+            configure_changed(label, text=feed[i] if i < len(feed) else '')
+
     def end_fight(self):
         if self.confirm(self.T('fight.end_confirm2')):
             self.send('end_fight')
@@ -1609,26 +2012,24 @@ class App:
         self.header(self.body, self.T('results.title'))
         box = tk.Frame(self.body, bg=PANEL, highlightbackground=GOLD, highlightthickness=2)
         box.pack(fill='x', padx=16, pady=16)
-        self.res_title = tk.Label(box, text='', bg=PANEL, fg=INK, font=font(10), wraplength=px(1100), justify='left')
-        self.res_title.pack(anchor='w', padx=14, pady=(10, 0))
-        self.res_winner = tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(20, True))
-        self.res_winner.pack(anchor='w', padx=14, pady=(6, 4))
-        self.res_sync = tk.Label(box, text='', bg=PANEL, fg=DIM, font=font(9))
-        self.res_sync.pack(anchor='w', padx=14)
-        self.res_vote = tk.Label(box, text='', bg=PANEL, fg=INK, font=font(12, True), wraplength=px(1100),
-                                 justify='left')
-        self.res_vote.pack(anchor='w', padx=14, pady=(12, 2))
-        self.res_agreed = tk.Label(box, text='', bg=PANEL, fg=GREEN, font=font(10))
-        self.res_agreed.pack(anchor='w', padx=14, pady=(0, 12))
-        row = tk.Frame(self.body, bg=BG)
+        self.res_title = wrap_label(tk.Label(box, text='', bg=PANEL, fg=INK, font=font(10)))
+        self.res_title.pack(fill='x', padx=14, pady=(10, 0))
+        self.res_winner = wrap_label(tk.Label(box, text='', bg=PANEL, fg=GOLD, font=font(20, True)))
+        self.res_winner.pack(fill='x', padx=14, pady=(6, 4))
+        self.res_sync = wrap_label(tk.Label(box, text='', bg=PANEL, fg=DIM, font=font(9)))
+        self.res_sync.pack(fill='x', padx=14)
+        self.res_vote = wrap_label(tk.Label(box, text='', bg=PANEL, fg=INK, font=font(12, True)))
+        self.res_vote.pack(fill='x', padx=14, pady=(12, 2))
+        self.res_agreed = wrap_label(tk.Label(box, text='', bg=PANEL, fg=GREEN, font=font(10)))
+        self.res_agreed.pack(fill='x', padx=14, pady=(0, 12))
+        row = Flow(self.body, bg=BG)
         row.pack(fill='x', padx=16)
         self.res_retry = self.button(row, self.T('results.retry'), lambda: self.send('vote', choice='retry'),
                                      color=GOLD, fg='#101010', big=True, width=14)
         self.res_back = self.button(row, self.T('results.to_lobby'), lambda: self.send('vote', choice='lobby'),
                                     big=True)
         if self.my_slot() is not None or (self.is_host() and not self.match_players()):
-            self.res_retry.pack(side='left', padx=(0, 8))
-            self.res_back.pack(side='left')
+            row.set_widgets([self.res_retry, self.res_back])
         self.build_bottom_chat(self.body)
 
     def match_players(self):
@@ -1638,7 +2039,7 @@ class App:
         if not getattr(self, 'res_vote', None) or not self.res_vote.winfo_exists():
             return
         res = self.state.get('results') or {}
-        self.res_title.configure(text=res.get('title') or (self.state.get('match') or {}).get('title') or '')
+        configure_changed(self.res_title, text=res.get('title') or (self.state.get('match') or {}).get('title') or '')
         winner, how = res.get('winner') or 0, res.get('how')
         if how == 'nocontest' or not winner:
             text = self.T('results.nocontest') if not res.get('nocontest') else \
@@ -1647,10 +2048,10 @@ class App:
             team = 1 if winner & 1 else 2
             text = self.T('results.winner_team', team=team) + ' ' + self.T('results.ko' if how == 'ko' else
                                                                           'results.time')
-        self.res_winner.configure(text=text)
+        configure_changed(self.res_winner, text=text)
         seconds = int(res.get('seconds') or 0)
         if res.get('compared') is not None:
-            self.res_sync.configure(text=self.T('results.sync', compared=res.get('compared'),
+            configure_changed(self.res_sync, text=self.T('results.sync', compared=res.get('compared'),
                                                 differing=res.get('differing'), resyncs=res.get('resyncs') or 0) +
                                     ' · ' + self.T('results.duration', m=seconds // 60, s=seconds % 60))
         vote = self.state.get('vote') or {}
@@ -1665,14 +2066,14 @@ class App:
             line = ''
         if self.my_slot() is None and not self.is_host():
             line = self.T('results.spectator') + ('  ' + line if line else '')
-        self.res_vote.configure(text=line)
+        configure_changed(self.res_vote, text=line)
         names = [self.name_of(k) for k in vote.get('agreed') or []]
-        self.res_agreed.configure(text=self.T('results.agreed_by', names=', '.join(names)) if names else '')
+        configure_changed(self.res_agreed, text=self.T('results.agreed_by', names=', '.join(names)) if names else '')
         agreed = self.me() in (vote.get('agreed') or [])
         state = 'disabled' if agreed or vote.get('decision') else 'normal'
         for b in (self.res_retry, self.res_back):
             if b.winfo_exists():
-                b.configure(state=state)
+                configure_changed(b, state=state)
 
     # ---- overlay -----------------------------------------------------------------------------------------------------------
     def overlay_text(self, ov):
@@ -1708,7 +2109,7 @@ class App:
                 kit_win.overlay_style(hwnd)
                 self.overlay_hwnd = hwnd
         else:
-            self.overlay_label.configure(text=text)
+            configure_changed(self.overlay_label, text=text)
         self.overlay.update_idletasks()
         w = self.overlay.winfo_reqwidth()
         if info and not info.get('minimised'):
@@ -1716,7 +2117,10 @@ class App:
             x, y = left + max(0, (right - left - w) // 2), top + px(40)
         else:
             x, y = self.root.winfo_rootx() + px(40), self.root.winfo_rooty() + px(40)
-        self.overlay.geometry(f'+{x}+{y}')
+        position = (x, y)
+        if getattr(self.overlay, '_position', None) != position:
+            self.overlay.geometry(f'+{x}+{y}')
+            self.overlay._position = position
 
     # ---- errors ----------------------------------------------------------------------------------------------------------
     def show_error(self):

@@ -45,7 +45,7 @@ DEFAULT_NATIVE = dict(time=240, com=2, referee=2, destructible=True)
 SCENE = A(0x331DC8)
 SIDE_STRIDE, MEMBER_STRIDE = 624, 100
 MODE, COUNT = 0xD8080, 0xD8084
-KIT = '2.2.0'
+KIT = '2.3.0'
 
 
 def canonical(spec):
@@ -69,8 +69,14 @@ def bgm_ok(value):
     return isinstance(value, int) and not isinstance(value, bool) and value in BGM_TRACKS
 
 
-def fighter(character, costume, slot=None):
-    return dict(character=int(character), costume=int(costume), slot=None if slot is None else int(slot))
+def fighter(character, costume, slot=None, potaras=None):
+    import kit_potara
+    items = [] if potaras is None else potaras
+    found = kit_potara.shape_problem(items)
+    if found:
+        raise ValueError(found)
+    return dict(character=int(character), costume=int(costume), slot=None if slot is None else int(slot),
+                potaras=sorted(items))
 
 
 def make(*, tables_sha256, mode='teams', teams, stage, bgm=DEFAULT_BGM, native=None, gameplay=None, services=None,
@@ -81,7 +87,7 @@ def make(*, tables_sha256, mode='teams', teams, stage, bgm=DEFAULT_BGM, native=N
     return dict(schema=SCHEMA, v=V, type=type, family=FAMILY, disc=DISC, tables_sha256=tables_sha256,
                 mod_build=mod_build, kit=kit, mode=mode,
                 teams=[[fighter(*m) if not isinstance(m, dict) else fighter(m['character'], m['costume'],
-                                                                              m.get('slot'))
+                                                                              m.get('slot'), m.get('potaras', []))
                         for m in team] for team in teams],
                 stage=stage, bgm=bgm, native=n, gameplay=dict(gameplay or {}),
                 services={k: bool((services or {}).get(k, False)) for k in SERVICES})
@@ -114,6 +120,7 @@ def engine_mode(spec):
 
 
 def fighter_problems(member, catalog, where):
+    import kit_potara
     out = []
     try:
         c, k = int(member['character']), int(member['costume'])
@@ -123,6 +130,7 @@ def fighter_problems(member, catalog, where):
         out.append(f'{where}: character {c} cannot be chosen')
     elif not 0 <= k < catalog.costumes(c):
         out.append(f'{where}: {catalog.name(c)} has colours 1..{catalog.costumes(c)} (got {k + 1})')
+    out += [f'{where}: {p}' for p in kit_potara.problems(member.get('potaras', []), catalog)]
     return out
 
 

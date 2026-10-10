@@ -1,4 +1,4 @@
-TAG TEAM MOD - EN LÍNEA 2.2 (protocolo 7)
+TAG TEAM MOD - EN LÍNEA 2.3 (protocolo 8)
 ==========================================
 
 Instala la misma versión de Tag Team Mod en cada PC y abre Play online.cmd
@@ -41,6 +41,12 @@ parche panorámico están desactivados en línea. Cambio de cuerpo y las fusione
 con límite de tiempo aún no son compatibles en línea. Las transformaciones de
 la CPU son opcionales; los cambios de recursos paran brevemente el combate
 en un fotograma acordado para que todos los PC cambien el modelo a la vez.
+
+POTARAS
+Usa el botón Potaras junto a un luchador para equipar objetos de tu disco. El
+anfitrión puede equipar a cualquiera, incluso a la CPU; los invitados pueden
+equipar a su propio luchador. Se aplica el límite de siete puntos y las
+categorías de equipo. Los objetos equipados se conservan en las revanchas.
 
 INICIO DEL COMBATE
 El instalador de Windows crea dos cachés de selección nativa verificadas con

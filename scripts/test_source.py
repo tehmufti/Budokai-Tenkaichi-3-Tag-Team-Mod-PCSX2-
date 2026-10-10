@@ -23,3 +23,5 @@ if __name__ == '__main__':
     run(['release_tools/version11-tests/run.py'])
 
     run(['release_tools/version11-1-tests/run.py'])
+
+    run(['-m','unittest','discover','-s','release_tools/version11-2-tests','-p','test_*.py'])

@@ -215,6 +215,8 @@ class ConfirmPulse(CopyFixture, unittest.TestCase):
         self.spec = dict(native=dict(time=0), teams=[[dict(character=1, costume=0)], [dict(character=2, costume=0)]],
                          stage=2, bgm=3)
         self.pine = SimpleNamespace(connect=Mock(), close=Mock(), write=Mock())
+        self.equipment = {}
+        self.pine.read = Mock(side_effect=lambda address,length: self.equipment.get(address,bytes(length)))
         self.copy.pine = Mock(return_value=self.pine)
         self.copy.write_spec = Mock(return_value=self.obj)
         self.inputs = []
@@ -275,6 +277,19 @@ class ConfirmPulse(CopyFixture, unittest.TestCase):
         self.copy.fast_loading=False
         self.confirm();self.assert_released()
         self.assertAlmostEqual(self.inputs[-1][4],.2)
+
+    def test_native_ack_rejects_equipment_from_an_old_match(self):
+        self.spec['teams'][0][0]['potaras'] = [2]
+        with self.assertRaisesRegex(auto.KitError, 'another match'):
+            self.confirm()
+        self.assert_released()
+
+    def test_native_ack_accepts_the_current_equipment(self):
+        import kit_potara
+        self.spec['teams'][0][0]['potaras'] = [2,124]
+        self.equipment[auto.SCENE + 0xC4 + 20] = kit_potara.native([2,124])
+        self.confirm()
+        self.assert_released()
 
     def test_no_native_ack_times_out_and_releases_without_scene_writes(self):
         self.ack_after=None

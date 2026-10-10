@@ -272,22 +272,26 @@ class Lobby:
         return all(self.members[k]['ready'] for k in self.players() if k != HOST)
 
     # ---- the match (the host edits; a player edits only its own fighter) ----------------------------------------------
-    def set_fighter(self, ident, team, index, character, costume, catalog):
+    def set_fighter(self, ident, team, index, character, costume, catalog, potaras=None):
         """Returns [problems]. The host may set any fighter; a player only the one it plays."""
+        if type(team) is not int or type(index) is not int or team not in (0, 1) or index < 0:
+            return ['no such fighter']
         try:
             f = self.match['teams'][team][index]
         except (IndexError, TypeError):
             return ['no such fighter']
         if ident != HOST and f.get('owner') != ident:
             return ['you can only choose your own fighter']
-        found = kit_spec.fighter_problems(dict(character=character, costume=costume), catalog,
+        items = f.get('potaras', []) if potaras is None else potaras
+        found = kit_spec.fighter_problems(dict(character=character, costume=costume, potaras=items), catalog,
                                           f'team {team + 1} fighter {index + 1}')
         if found:
             self.bump(dict(code='TTM-NET-29', key='notice.invalid_pick', args=dict(what='; '.join(found[:3]))))
             return found
-        if (f['character'], f['costume']) == (int(character), int(costume)):
+        if (f['character'], f['costume'], f.get('potaras', [])) == (int(character), int(costume), sorted(items)):
             return []
         f['character'], f['costume'] = int(character), int(costume)
+        f['potaras'] = sorted(items)
         if ident == HOST and f.get('owner') not in (None, HOST):
             self.clear_ready()
             self.bump(dict(code=None, key='notice.host_changed_fighter', args=dict(team=team + 1)))
@@ -455,8 +459,8 @@ class Lobby:
             return None
         teams = []
         for t, team in enumerate(m['teams']):
-            teams.append([(f['character'], f['costume'],
-                           kit_spec.slot_of(t, i) if f.get('owner') in self.members else None)
+            teams.append([dict(character=f['character'], costume=f['costume'], potaras=f.get('potaras', []),
+                               slot=kit_spec.slot_of(t, i) if f.get('owner') in self.members else None)
                           for i, f in enumerate(team)])
         return kit_spec.make(tables_sha256=tables_sha256, type=m.get('type', 'versus'), mode=m['mode'], teams=teams,
                              stage=m['stage'], bgm=m['bgm'],
@@ -512,6 +516,9 @@ def snapshot_problem(snap):
                 return 'owner'
             if f.get('locked') not in (None, True):
                 return 'locked'
+            import kit_potara
+            if kit_potara.shape_problem(f.get('potaras', [])):
+                return 'potaras'
     if kit_spec.layout_problems(match['mode'], [len(t) for t in teams]):
         return 'layout'
     if not (match.get('stage') == 'random' or match.get('stage') in kit_spec.STAGE_IDS):

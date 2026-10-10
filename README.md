@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 11.1 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.11.1).
+Download the **Version 11.2 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.11.2).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -19,7 +19,7 @@ This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
 
-Version 11.1 builds reusable neutral selection caches locally and transfers compact
+Version 11.2 builds reusable neutral selection caches locally and transfers compact
 checked checkpoints to shorten fresh online starts. It also prepares settled
 lobby selections in the background. See the [startup measurements and limits](release_tools/online-startup/VALIDATION.md).
 
@@ -61,10 +61,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 11.1 Windows ZIP can be used instead of downloading it:
+An existing Version 11.2 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.11.1.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.11.2.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -78,12 +78,12 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Development source versus Version 11.1
+## Development source versus Version 11.2
 
-The repository includes development work beyond the released runtime. Version 11.1
-fixes vanish and counter exchanges choosing a previous opponent, and melee
-clashes involving defeated fighters. It retains the movement styles, fusion
-controls, tournament rules, online HUD and Workbench improvements. The optional
+The repository includes development work beyond the released runtime. Version 11.2
+adds online Potara loadouts and fixes flickering online windows. Smaller
+windows wrap and scroll so their controls remain usable. It retains the earlier
+battle fixes, movement styles, fusion controls and tournament rules. The optional
 updater uses the exact full-installer payload. Building the development source
 does not necessarily recreate those identical binaries; change the version
 before distributing a modified build.

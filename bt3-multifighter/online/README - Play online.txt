@@ -1,4 +1,4 @@
-TAG TEAM MOD - ONLINE 2.2 (protocol 7)
+TAG TEAM MOD - ONLINE 2.3 (protocol 8)
 =======================================
 
 Install the same Tag Team Mod release on every PC, then run Play online.cmd
@@ -40,6 +40,11 @@ changes only cosmetic preferences on your PC. Expanded maps and widescreen are
 disabled online. Body Change and timed fusion are not supported online yet.
 CPU transformations are optional; extra resource changes briefly hold the match
 at an agreed frame so all PCs replace the model together.
+
+POTARAS
+Use Potaras next to a fighter to equip items from your disc. The host can equip
+any fighter, including CPUs; guests can equip their own claimed fighter. The
+seven-point budget and equipment categories apply. Loadouts carry into rematches.
 
 MATCH STARTUP
 Windows setup builds two reusable, checked native selection caches locally

@@ -7,6 +7,22 @@ mod-settings.json 'language', Windows' display language (Spanish = es), English.
 """
 
 TEXT = {
+    'potara.title': {'en': 'Potaras', 'es': 'Pótaras'},
+    'potara.count': {'en': '{n} Potaras', 'es': '{n} Pótaras'},
+    'potara.note': {'en': 'Equip up to seven points of Potaras, plus one CPU fighting style. Everyone sees the same equipment. Item names come from your game disc.',
+                    'es': 'Equipa hasta siete puntos de Pótaras y un estilo de combate de CPU. Todos ven el mismo equipo. Los nombres proceden del disco del juego.'},
+    'potara.budget': {'en': '{used}/7 points · {n}/8 items', 'es': '{used}/7 puntos · {n}/8 objetos'},
+    'potara.invalid': {'en': 'Use at most seven points and eight items, with no repeated item or category.',
+                       'es': 'Usa como máximo siete puntos y ocho objetos, sin repetir objetos ni categorías.'},
+    'potara.changed': {'en': 'This fighter changed while the editor was open. Close it and reopen their Potaras.',
+                       'es': 'Este luchador cambió mientras el editor estaba abierto. Ciérralo y vuelve a abrir sus Pótaras.'},
+    'potara.add': {'en': 'Equip', 'es': 'Equipar'},
+    'potara.remove': {'en': 'Remove', 'es': 'Quitar'},
+    'potara.clear': {'en': 'Clear all', 'es': 'Quitar todos'},
+    'potara.stat.attack': {'en': 'Attack', 'es': 'Ataque'},
+    'potara.stat.defense': {'en': 'Defense', 'es': 'Defensa'},
+    'potara.stat.ki': {'en': 'Ki power', 'es': 'Poder de ki'},
+    'potara.stat.super': {'en': 'Super', 'es': 'Súper'},
     'room.load_policy': {'en': 'If a player fails to load', 'es': 'Si un jugador no carga'},
     'room.load_cancel': {'en': 'Cancel the start', 'es': 'Cancelar el inicio'},
     'room.load_drop': {'en': 'Drop and continue', 'es': 'Expulsar y continuar'},

@@ -278,7 +278,7 @@ class HubMixin:
         def fighter(index):
             t, j = index % 2, index // 2
             f = spec['teams'][t][j]
-            return dict(character=f['character'], costume=f['costume'])
+            return dict(character=f['character'], costume=f['costume'], potaras=list(f.get('potaras', [])))
         self.send(type='TO_LOBBY', why='challenge')
         self.back_to_lobby()
         m = self.lobby.match

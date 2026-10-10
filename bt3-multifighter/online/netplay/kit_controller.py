@@ -1299,7 +1299,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
 
     def cmd_fighter(self, c):
         self.request('FIGHTER', team=c.get('team'), index=c.get('index'), character=c.get('character'),
-                     costume=c.get('costume'))
+                     costume=c.get('costume'), potaras=c.get('potaras'))
 
     def msg_FIGHTER(self, ident, m):
         if self.role != 'host' or not self.lobby or self.lobby.phase != 'lobby':
@@ -1308,7 +1308,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             team, index, character, costume = (int(m.get(k)) for k in ('team', 'index', 'character', 'costume'))
         except (TypeError, ValueError):
             return
-        self.lobby.set_fighter(ident, team, index, character, costume, self.local['view'])
+        self.lobby.set_fighter(ident, team, index, character, costume, self.local['view'], m.get('potaras'))
         self.broadcast()
 
     def cmd_ready(self, c):

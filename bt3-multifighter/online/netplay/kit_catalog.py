@@ -25,7 +25,7 @@ import kit_paths
 from kit_codes import KitError
 
 AFS1 = '/DATA/PZS3US1.AFS;1'
-SCHEMA, VERSION = 'ttm-online-catalog', 2
+SCHEMA, VERSION = 'ttm-online-catalog', 3
 FAMILY, DISC = 'bt3', 'bt3-usa'
 COUNT = 161
 
@@ -189,21 +189,24 @@ def read_tables(iso_path):
             return iso.read_at(AFS1, off, size)
         ui = package(unpack_bpe(package(read(450))[1]))
         menu = package(unpack_bpe(package(read(448))[1]))
+        params = read(3)  # global file 4 (AFS1 table indices are file ID minus one)
     finally:
         iso.close()
-    return table, ui, menu
+    return table, ui, menu, params
 
 
 def _build_usa(iso_path, out_root=None):
     """Build the catalog of `iso_path` into data/catalog/<tables_sha16>/; returns the catalog dict (with 'dir')."""
     t0 = time.perf_counter()
     try:
-        table, ui, menu = read_tables(iso_path)
+        table, ui, menu, params = read_tables(iso_path)
+        import kit_potara
+        potaras = kit_potara.inventory(params, ui[37], package)
         afs = lambda index: struct.unpack_from('<II', table, index * 8)
         names, forms, portraits, thumbs = package(ui[29]), package(ui[30]), package(ui[31]), package(menu[45])
         if (len(names), len(forms), len(portraits), len(thumbs)) != (168, 168, 165, 38):
             raise ValueError('unexpected UI tables (not the BT3 USA disc?)')
-        digest = hashlib.sha256(table + b''.join(names) + b''.join(forms)).hexdigest()
+        digest = hashlib.sha256(table + b''.join(names) + b''.join(forms) + potaras['sha256'].encode()).hexdigest()
         grid = data_file('bt3-usa-select-grid.json')
         stage_data = data_file('stages.json')
         selectable = set(grid['selectable_ids'])
@@ -235,7 +238,7 @@ def _build_usa(iso_path, out_root=None):
         (out / 'stages' / f'{stage_data["random_id"]:02d}.png').write_bytes(
             png(64, 64, texture64(thumbs[stage_data['random_id']])))
         catalog = dict(schema=SCHEMA, version=VERSION, family=FAMILY, disc=DISC, tables_sha256=digest,
-                       characters=characters, stages=stages, random_stage=stage_data['random_id'],
+                       characters=characters, stages=stages, potaras=potaras, random_stage=stage_data['random_id'],
                        random_thumb=f'stages/{stage_data["random_id"]:02d}.png',
                        grid=[dict(cell=c['cell'], row=c['row'], col=c['col'], base=c['base'],
                                   forms=[f for f in c['forms'] if f in selectable])
@@ -271,6 +274,8 @@ def build(iso_path, out_root=None):
                       for i in range(adapter.characters)]
             ui = package(unpack_bpe(package(disc.read(adapter.ui_text_file))[1]))
             names, forms, portraits = package(ui[29]), package(ui[30]), package(ui[31])
+            import kit_potara
+            potaras = kit_potara.inventory(table_raw, ui[37], package)
             # Original BT3 has a fixed grid; BT4's expanded roster is searchable as a list.
             grid = data_file('bt3-usa-select-grid.json') if adapter.kind == 'bt3-afs' else {'grid': [], 'selectable_ids': range(adapter.characters)}
             selectable = set(grid['selectable_ids']) - set(adapter.menu_only)
@@ -279,7 +284,8 @@ def build(iso_path, out_root=None):
                 english = english_names()
             else:
                 english = None
-            digest = hashlib.sha256(table_raw + b''.join(names) + b''.join(forms) + disc.elf).hexdigest()
+            digest = hashlib.sha256(table_raw + b''.join(names) + b''.join(forms) + disc.elf
+                                    + potaras['sha256'].encode()).hexdigest()
             out = Path(out_root or (kit_paths.DATA / 'catalog')) / digest[:16]
             (out / 'portraits').mkdir(parents=True, exist_ok=True)
             (out / 'stages').mkdir(parents=True, exist_ok=True)
@@ -302,7 +308,7 @@ def build(iso_path, out_root=None):
                 stages.append(dict(id=sid, name=name, thumb=f'stages/{sid:02d}.png', grid=None, tested=False))
             (out / 'stages/random.png').write_bytes(blank)
             catalog = dict(schema=SCHEMA, version=VERSION, family='bt4' if adapter.kind == 'bt4-indexed' else 'bt3',
-                           disc=adapter.name, tables_sha256=digest, characters=characters, stages=stages,
+                           disc=adapter.name, tables_sha256=digest, characters=characters, stages=stages, potaras=potaras,
                            random_stage=-1, random_thumb='stages/random.png', grid=grid['grid'],
                            stage_grid=list(range(adapter.stage_count)), seconds=round(time.perf_counter() - t0, 3))
     except (OSError, ValueError, KeyError, IndexError, struct.error) as error:
@@ -375,6 +381,7 @@ class View:
         self.c = catalog
         self.chars = {c['id']: c for c in catalog['characters']}
         self.stages = {s['id']: s for s in catalog['stages']}
+        self.potaras = {p['id']: p for p in catalog.get('potaras', {}).get('items', [])}
         self.selectable = sorted(c['id'] for c in catalog['characters'] if c.get('selectable'))
         self.tested = sorted(s['id'] for s in catalog['stages'] if s.get('tested'))
 
