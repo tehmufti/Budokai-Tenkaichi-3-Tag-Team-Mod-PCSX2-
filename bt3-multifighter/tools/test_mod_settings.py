@@ -220,7 +220,7 @@ class ModSettingsTests(unittest.TestCase):
 
 
 PLAYER_DEFAULTS = Path(settings.__file__).resolve().parents[2] / 'player-installer' / 'player-defaults.json'
-PAGES = ('Menus', 'Players and controllers', 'Controls', 'Movement', 'Cinematics', 'Battle rules', 'Fusion', 'Fighters', 'Giants', 'HUD',
+PAGES = ('Menus', 'Players and controllers', 'Controls', 'Movement', 'Cinematics', 'Battle rules', 'Tag-team rush', 'Fusion', 'Fighters', 'Giants', 'HUD',
          'Split-screen HUD', 'Spectating', 'Revival', 'Outnumbered', 'Beam struggles', 'Training',
          'Launch options (restart)',
          'Diagnostics')
@@ -275,6 +275,23 @@ class OrganisationTests(unittest.TestCase):
         choices['revive_ring_opacity'] = 0.5; choices[settings.CORPSE_SAFETY_KEY] = False
         got = settings.SettingsController(self.path).save('none', revival=choices)
         self.assertEqual({key: got[key] for key in choices}, choices)
+
+    def test_tag_rush_page_defaults_save_and_help_are_available_in_both_languages(self):
+        expected = {'tag_team_rush_enabled': True, 'tag_team_rush_damage': 15000,
+                    'tag_team_rush_charge_seconds': 25, 'tag_team_rush_training_full': False,
+                    'tag_team_rush_shared_camera': False}
+        self.assertEqual(dict(settings.GROUPS)['Tag-team rush'], tuple(expected))
+        self.assertEqual({key: settings.DEFAULTS[key] for key in expected}, expected)
+        choices = dict(expected, tag_team_rush_damage=18000, tag_team_rush_charge_seconds=40,
+                       tag_team_rush_training_full=True, tag_team_rush_shared_camera=True)
+        settings.save_settings(choices, self.path)
+        self.assertEqual({key: settings.load_settings(self.path)[key] for key in choices}, choices)
+        self.assertNotEqual(settings.tr('Tag-team rush', {'language': 'en'}),
+                            settings.tr('Tag-team rush', {'language': 'es'}))
+        english = settings.help_note('Tag-team rush', {'language': 'en'})
+        spanish = settings.help_note('Tag-team rush', {'language': 'es'})
+        self.assertTrue(english and spanish)
+        self.assertNotEqual(english, spanish)
 
     def test_battle_camera_zoom_is_the_last_cinematics_row(self):
         import feature_preferences as features

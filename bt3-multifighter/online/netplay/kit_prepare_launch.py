@@ -27,9 +27,11 @@ def file_stamp(path):
 
 def clean_environment():
     rejected = {'PYTHONPATH', 'PYTHONHOME', 'TAGTEAM_DISC', 'TAGTEAM_ADAPTER', 'REVIEW_TOOLS',
-                'TAGTEAM_PINE_SOCKET'}
+                'TAGTEAM_PINE_SOCKET', 'TAGTEAM_TAG_RUSH_PLAYTEST', 'TAGTEAM_TAG_RUSH_ROOT',
+                'TAGTEAM_TAG_RUSH_SETTINGS'}
     result = {key: value for key, value in os.environ.items() if key not in rejected}
-    result.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONNOUSERSITE='1', BT3_RUNTIME_PROFILE='runtime28')
+    result.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONNOUSERSITE='1', BT3_RUNTIME_PROFILE='runtime28',
+                  TAGTEAM_ONLINE_PREPARATION='1')
     return result
 
 

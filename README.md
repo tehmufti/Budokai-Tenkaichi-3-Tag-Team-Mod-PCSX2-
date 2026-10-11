@@ -19,9 +19,15 @@ This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
 
-Version 11.2 builds reusable neutral selection caches locally and transfers compact
-checked checkpoints to shorten fresh online starts. It also prepares settled
-lobby selections in the background. See the [startup measurements and limits](release_tools/online-startup/VALIDATION.md).
+The unreleased development source adds offline tag-team rush attacks for BT3
+USA and BT4. When both tag meters are full, press charge ki + Triangle + Left; a teammate targeting the same
+enemy can accept with the same input. The finish changes with the fighters,
+and damage is dealt throughout the attack. Adjust it in Mod Settings →
+Tag-team rush. Giants cannot use this attack, and it is not available online.
+
+Fusion settings also let you set separate health, damage and defense bonuses for
+Potara and non-Potara fusions. Both are off by default. They apply to fusions
+performed during the match; choosing a fused character keeps its normal stats.
 
 ## Source layout
 
@@ -78,15 +84,12 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Development source versus Version 11.2
+## Development source and downloads
 
-The repository includes development work beyond the released runtime. Version 11.2
-adds online Potara loadouts and fixes flickering online windows. Smaller
-windows wrap and scroll so their controls remain usable. It retains the earlier
-battle fixes, movement styles, fusion controls and tournament rules. The optional
-updater uses the exact full-installer payload. Building the development source
-does not necessarily recreate those identical binaries; change the version
-before distributing a modified build.
+The main branch includes upcoming tag-team attacks and other unreleased
+changes. The downloadable installers and updaters remain Version 11.2.
+Use the release tag for the exact source behind those downloads.
+Choose a new version before distributing a build from this branch.
 
 ## License
 

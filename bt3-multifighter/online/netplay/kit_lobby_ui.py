@@ -1424,56 +1424,63 @@ class App:
         self.close_dialog()
         host = self.is_host() and self.lobby().get('phase') == 'lobby'
         values = kit_settings.gameplay_expand(self.match().get('gameplay'))
-        win = tk.Toplevel(self.root, bg=BG)
-        self.dialog = win
-        win.title(self.T('room.rules_show'))
-        win.geometry('+%d+%d' % (self.root.winfo_rootx() + 20, self.root.winfo_rooty() + 20))
-        tk.Label(win, text=self.T('room.rules') + ('' if host else '  ' + self.T('lobby.set_by_host')), bg=BG,
-                 fg=INK, font=font(12, True)).pack(anchor='w', padx=12, pady=(10, 0))
-        tk.Label(win, text=self.T('room.rules_note'), bg=BG, fg=DIM, font=font(8), wraplength=px(900),
-                 justify='left').pack(anchor='w', padx=12)
-        tk.Label(win, text=self.T('room.camera') + ' - ' + self.T('room.camera_why'), bg=BG, fg=GOLD, font=font(8),
-                 wraplength=px(900), justify='left').pack(anchor='w', padx=12)
-        self.settings_grid(win, kit_settings.groups(), values, host, lambda k, v: self.send('rules', gameplay={k: v}))
-        tk.Label(win, text=self.T('lobby.forced'), bg=BG, fg=DIM, font=font(8), wraplength=px(900),
-                 justify='left').pack(anchor='w', padx=12)
-        self.button(win, self.T('close'), win.destroy, color=GOLD, fg='#101010').pack(anchor='e', padx=12, pady=8)
+        win, body = self.settings_window(self.T('room.rules_show'), self.T('room.rules') +
+                                         ('' if host else '  ' + self.T('lobby.set_by_host')))
+        wrap_label(tk.Label(body, text=self.T('room.rules_note'), bg=BG, fg=DIM, font=font(8))).pack(
+            fill='x', padx=4)
+        wrap_label(tk.Label(body, text=self.T('room.camera') + ' - ' + self.T('room.camera_why'),
+                            bg=BG, fg=GOLD, font=font(8))).pack(fill='x', padx=4)
+        self.settings_grid(body, kit_settings.groups(), values, host, lambda k, v: self.send('rules', gameplay={k: v}))
+        wrap_label(tk.Label(body, text=self.T('lobby.forced'), bg=BG, fg=DIM, font=font(8))).pack(fill='x', padx=4)
 
     def open_display(self):
         """This PC's own display settings (never sent: applied to this PC's copy of every match)."""
         self.close_dialog()
         values = kit_settings.default_local()
         values.update((self.state.get('profile') or {}).get('local') or {})
+        win, body = self.settings_window(self.T('room.display'), self.T('room.display'))
+        wrap_label(tk.Label(body, text=self.T('room.display_note'), bg=BG, fg=DIM, font=font(8))).pack(
+            fill='x', padx=4)
+        self.settings_grid(body, kit_settings.local_groups(), values, True,
+                           lambda k, v: self.send('local', values={k: v}))
+
+    def settings_window(self, title, heading):
+        """Keep Close visible and long settings pages inside the available screen."""
         win = tk.Toplevel(self.root, bg=BG)
         self.dialog = win
-        win.title(self.T('room.display'))
-        win.geometry('+%d+%d' % (self.root.winfo_rootx() + 60, self.root.winfo_rooty() + 40))
-        tk.Label(win, text=self.T('room.display'), bg=BG, fg=INK, font=font(12, True)).pack(anchor='w', padx=12,
-                                                                                            pady=(10, 0))
-        tk.Label(win, text=self.T('room.display_note'), bg=BG, fg=DIM, font=font(8), wraplength=px(700),
-                 justify='left').pack(anchor='w', padx=12)
-        self.settings_grid(win, kit_settings.local_groups(), values, True,
-                           lambda k, v: self.send('local', values={k: v}))
-        self.button(win, self.T('close'), win.destroy, color=GOLD, fg='#101010').pack(anchor='e', padx=12, pady=8)
+        win.title(title)
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        max_width, max_height = max(1, sw - px(40)), max(1, sh - px(80))
+        width, height = min(px(1200), max_width), min(px(720), max_height)
+        x = max(0, min(self.root.winfo_rootx() + px(20), sw - width - px(20)))
+        y = max(0, min(self.root.winfo_rooty() + px(20), sh - height - px(60)))
+        win.geometry(f'{width}x{height}+{x}+{y}')
+        win.minsize(min(px(360), max_width), min(px(260), max_height))
+        wrap_label(tk.Label(win, text=heading, bg=BG, fg=INK, font=font(12, True))).pack(
+            fill='x', padx=12, pady=(10, 0))
+        self.button(win, self.T('close'), win.destroy, color=GOLD, fg='#101010').pack(
+            side='bottom', anchor='e', padx=12, pady=8)
+        viewport = ScrollPanel(win, height=560)
+        viewport.pack(fill='both', expand=True, padx=8, pady=6)
+        win.settings_viewport = viewport
+        return win, viewport.content
 
     def settings_grid(self, win, groups, values, editable, on_change):
         cols = tk.Frame(win, bg=BG)
-        cols.pack(fill='both', padx=8, pady=6)
+        cols.pack(fill='both', pady=6)
         columns = [tk.Frame(cols, bg=BG) for _ in range(3)]
-        for i, c in enumerate(columns):
-            c.grid(row=0, column=i, sticky='n', padx=4)
-        heights = [0, 0, 0]
+        boxes = []
         self.setting_widgets = {}
         for group, keys in groups:
-            col = heights.index(min(heights))
-            heights[col] += len(keys) + 2
-            box = tk.Frame(columns[col], bg=PANEL)
-            box.pack(fill='x', pady=4)
-            tk.Label(box, text=kit_settings.group_label(group, self.lang), bg=PANEL, fg=GOLD, font=font(9, True)).grid(
-                row=0, column=0, columnspan=2, sticky='w', padx=6, pady=(4, 2))
+            box = tk.Frame(cols, bg=PANEL)
+            box.columnconfigure(0, weight=1)
+            boxes.append((box, len(keys) + 2))
+            wrap_label(tk.Label(box, text=kit_settings.group_label(group, self.lang), bg=PANEL,
+                                fg=GOLD, font=font(9, True))).grid(
+                row=0, column=0, columnspan=2, sticky='ew', padx=6, pady=(4, 2))
             for r, key in enumerate(keys, 1):
-                tk.Label(box, text=kit_settings.label(key, self.lang), bg=PANEL, fg=INK, font=font(8),
-                         wraplength=px(230), justify='left').grid(row=r, column=0, sticky='w', padx=6, pady=1)
+                wrap_label(tk.Label(box, text=kit_settings.label(key, self.lang), bg=PANEL, fg=INK,
+                                    font=font(8))).grid(row=r, column=0, sticky='ew', padx=6, pady=1)
                 kind, options = kit_settings.choices(key)
                 if kind in ('choice', 'button', 'bool'):
                     shown = [kit_settings.value_text(key, v, self.lang) for v in options]
@@ -1496,6 +1503,27 @@ class App:
                     widget.bind('<FocusOut>', lambda e, k=key, v=var: on_change(k, v.get()))
                 widget.grid(row=r, column=1, sticky='w', padx=6, pady=1)
                 self.setting_widgets[key] = widget
+        layout = [None]
+
+        def arrange(event):
+            count = max(1, min(3, event.width // max(1, px(430))))
+            if count == layout[0]:
+                return
+            layout[0] = count
+            heights, rows = [0] * count, [0] * count
+            for i, column in enumerate(columns):
+                cols.columnconfigure(i, weight=1 if i < count else 0, uniform='settings' if i < count else '')
+                if i < count:
+                    column.grid(row=0, column=i, sticky='new', padx=4)
+                    column.columnconfigure(0, weight=1)
+                else:
+                    column.grid_remove()
+            for box, weight in boxes:
+                col = heights.index(min(heights))
+                box.grid(in_=columns[col], row=rows[col], column=0, sticky='ew', pady=4)
+                heights[col] += weight
+                rows[col] += 1
+        cols.bind('<Configure>', arrange)
 
     # ---- the fighter picker -----------------------------------------------------------------------------------------------
     def open_picker(self, team, index):

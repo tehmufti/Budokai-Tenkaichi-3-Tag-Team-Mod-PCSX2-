@@ -267,8 +267,8 @@ Los registros técnicos y las herramientas de diagnóstico permanecen en inglés
 ## Ajustes
 
 **Modos del mod → Ajustes del mod** (con el mando) y **Mod settings.cmd**
-(editor de escritorio) ofrecen todos los ajustes con las mismas 18 categorías:
-Menús, Jugadores y mandos, Controles, Movimiento, Cinemáticas, Reglas de combate, Fusión,
+(editor de escritorio) ofrecen todos los ajustes con las mismas 19 categorías:
+Menús, Jugadores y mandos, Controles, Movimiento, Cinemáticas, Reglas de combate, Rush en equipo, Fusión,
 Luchadores, Gigantes, Interfaz, Interfaz dividida, Espectador, Reanimación,
 Inferioridad numérica, Forcejeos de rayos, Entrenamiento,
 Opciones de inicio (reiniciar), Diagnóstico. Ambos incluyen también las
@@ -279,7 +279,7 @@ predeterminados (conserva el idioma). Cada categoría tiene su ayuda. En
 la cámara del choque, la duración del forcejeo, la victoria anticipada por
 ventaja de pulsaciones, la fuerza de la CPU, los golpes a quien forcejea y el
 apoyo al rayo. **Cámara del choque de rayos**: Pasar al choque (la cámara
-original del forcejeo, por defecto) o Mantener las vistas (cada vista, dividida
+original del forcejeo) o Mantener las vistas (por defecto; cada vista, dividida
 o completa, sigue a su jugador durante el choque). Apoyo al
 rayo: cerca de un aliado que forcejea (**Alcance del apoyo desde el
 aliado**, 60 por defecto),
@@ -296,6 +296,13 @@ CPU también pueden apoyar. Esa pulsación de R3 nunca te transforma; R3 funcion
 cuando no puedes apoyar. Las instalaciones nuevas empiezan con los golpes a
 quien forcejea y el apoyo al rayo (también de la CPU) activados; con todo
 desactivado no cambia nada.
+
+**Fusión** también permite ajustar por separado la salud, el daño y la defensa
+de las fusiones con y sin Pótara (0,25×–5×). Cada tipo tiene su interruptor; ambos
+empiezan desactivados y con valores de 1×. Una defensa de 2× reduce a la mitad
+el daño recibido. Se aplican a las fusiones realizadas durante la partida,
+se mantienen al transformarse y terminan al separarse. Los personajes
+fusionados elegidos directamente conservan sus estadísticas normales.
 
 **Movimiento → Caminar y correr por el suelo** hace que los luchadores caminen o
 corran por el suelo en lugar de deslizarse justo por encima; los acelerones, los
@@ -364,7 +371,7 @@ reactivarlos.
 ### Cambiar el disco del juego
 
 El editor de escritorio (Mod settings.cmd; Mod settings.sh en Linux) tiene una
-página más después de las 18 categorías: **Disco del juego**. Con ella eliges
+página más después de las 19 categorías: **Disco del juego**. Con ella eliges
 cuál de tus ISO inicia Play, y cada cambio se aplica al momento (Guardar y
 Cancelar son para las demás páginas):
 
@@ -670,3 +677,18 @@ Tocar suelo prohibido elimina al luchador sin posibilidad de reanimarlo. Volar f
 es seguro hasta tocar el suelo. Los aliados siguen luchando y el equipo pierde
 cuando no queda nadie. Un jugador eliminado puede controlar a un aliado CPU vivo.
 Desactiva Eliminación por salir del ring para jugar sin esa regla.
+
+## Ataque combinado
+
+Los combates por equipos sin conexión de BT3 USA y BT4 permiten realizar ataques
+combinados. Cuando ambos medidores estén llenos, pulsa **cargar ki + Triángulo + Izquierda**
+para invitar a un compañero. Puede aceptar con la misma combinación si ambos
+tenéis fijado al mismo enemigo.
+
+El final depende de los luchadores: dos rayos, un combo cuerpo a cuerpo o un combo
+seguido de un rayo. El daño se aplica a lo largo del ataque. En los ajustes del
+mod puedes cambiar el daño, el tiempo de carga, el medidor siempre lleno en
+Entrenamiento modificado y la cámara compartida. Los valores iniciales son
+15 000 de daño y 25 segundos. Los gigantes no pueden usar este ataque.
+Tampoco está disponible en línea ni en las
+ediciones europea y japonesa de BT3.

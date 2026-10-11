@@ -57,6 +57,21 @@ assert len(SAVED) * 8 <= FRAME_BYTES and FRAME_BYTES % 16 == 0
 assert RING + RING_ENTRIES * ENTRY <= END
 
 
+def fusion_buff_rows():
+    """The optional fusion_buffs ABI, without importing its runtime builder.
+
+    Hash every setting and receipt field used by its guest code. Empty padding,
+    work stacks and instruction memory do not decide the next update. Keeping
+    these data-only addresses here also supports the standalone online kit.
+    """
+    rows=[(DIRECT,6,0x06DCF000,0,12,'fusion buff identity, version and host settings')]
+    for index in range(12):
+        address=0x06DCF100+index*256
+        rows.append((DIRECT,6,address,0,6,f'fusion buff fighter {index}: identity, partner, kind and body epoch'))
+        rows.append((DIRECT,6,address+64,0,20,f'fusion buff fighter {index}: native and scaled health ownership'))
+    return rows
+
+
 def descriptors(profile='lean'):
     """(kind, class, address, offset, words, why). USA addresses through A(); guest-owned mod state as-is.
 
@@ -137,6 +152,7 @@ def descriptors(profile='lean'):
     add(DIRECT, 6, ringout.CONTROL, 0, 6, 'tournament identity, enabled flag and permanent elimination mask')
     add(DIRECT, 6, vanish.CONTROL, 0, 2, 'counter-pair guard identity and deterministic update clock')
     add(DIRECT, 6, vanish.ROWS, 0, 12 * vanish.STRIDE // 4, 'counter-pair opponent, actor/model identity and response age')
+    rows.extend(fusion_buff_rows())
     if full:
         add(DIRECT, 6, ground.ACTORS, 0, 12 * ground.ROW // 4, 'ground movement per-fighter gait and phase state')
         add(DIRECT, 6, ringout.CONTROL + ringout.F['pointers'], 0, 12, 'tournament captured fighter pointers')

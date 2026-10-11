@@ -202,10 +202,12 @@ def apply(config=CONFIG, receipt=RECEIPT):
     raw = config.read_bytes(); lines = raw.decode('utf-8-sig').splitlines(keepends=True)
     original = {}
     values=dict(VALUES)
-    import native_map
-    # BT4 changes the disc serial and has no stock GameDB alignment entry. Keep
-    # its manual fixes intact rather than disable them without an automatic replacement.
-    if native_map.ADAPTER == 'bt4-b14-rev2-eng': values.pop('UserHacks', None)
+    import bt4_graphics_fixes as graphics
+    alignment = graphics.session(config.parent.parent, receipt.with_name(receipt.stem+'-bt4-graphics.json'))
+    # BT4 uses the selected emulator's complete BT3 correction block. If its
+    # resources cannot be edited (e.g. an AppImage), retain manual preferences.
+    if alignment['adapter'] == graphics.ADAPTER and not alignment['ready']:
+        values.pop('UserHacks', None)
     import mod_settings
     import widescreen_support as wide
     settings=mod_settings.load_settings()
@@ -272,10 +274,16 @@ def apply(config=CONFIG, receipt=RECEIPT):
 
 def restore(config=CONFIG, receipt=RECEIPT):
     config, receipt = Path(config), Path(receipt)
-    if not receipt.exists(): return False
-    saved = read_json(receipt)
-    if not receipt_matches(saved, config, receipt):
+    saved = read_json(receipt) if receipt.exists() else None
+    if saved is not None and not receipt_matches(saved, config, receipt):
         raise ForeignReceipt(RECEIPT_FOREIGN)
+    import bt4_graphics_fixes as graphics
+    graphics_receipt = receipt.with_name(receipt.stem+'-bt4-graphics.json')
+    if graphics_receipt.exists():
+        try: graphics.restore(config.parent.parent, graphics_receipt)
+        except (OSError, ValueError, KeyError, UnicodeError) as error:
+            print('BT4 graphics alignment receipt could not be restored: '+str(error), flush=True)
+    if saved is None: return False
     raw = config.read_bytes(); lines = raw.decode('utf-8-sig').splitlines(keepends=True)
     copies = {(item['section'], item['key']): item['values'] for item in saved.get('duplicates', [])}
     for key, value in saved['values'].items():

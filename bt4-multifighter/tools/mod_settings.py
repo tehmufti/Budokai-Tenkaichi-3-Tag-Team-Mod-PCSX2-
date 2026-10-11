@@ -81,6 +81,9 @@ DISPLAY_KEYS = (FRIEND_BARS_KEY, ENEMY_BARS_KEY, NATIVE_HUD_KEY, KILL_FEED_KEY, 
 BEAM_KEYS = ('beam_clash_camera', 'beam_struggle_length', 'beam_struggle_push_ahead', 'beam_struggle_cpu_power_percent',
              'beam_struggle_interference', 'beam_struggle_damage_penalty_percent',
              'beam_assist_enabled', 'beam_assist_multiplier_percent', 'beam_assist_cpu', 'beam_assist_range')
+# Coordinated two-attacker cinematic.
+TAG_TEAM_RUSH_KEYS = ('tag_team_rush_enabled', 'tag_team_rush_damage', 'tag_team_rush_charge_seconds',
+                      'tag_team_rush_training_full', 'tag_team_rush_shared_camera')
 # Every key of the Movement page (ground_locomotion.py), in display order.
 MOVEMENT_KEYS = ('ground_running', 'ground_motion_style', 'ground_walk_tilt_percent', 'ground_walk_speed_percent', 'ground_run_speed_percent',
                  'ground_size_speed')
@@ -108,9 +111,14 @@ GROUPS = (
     ('Cinematics', (MODE_KEY, ULTIMATE_KEY, TRANSFORMATION_KEY, TRANSFORM_VIEW_KEY, 'rush_cinematics',
                     'prevent_cinematic_recentering', 'extra_character_intros', 'battle_camera_distance_percent')),
     ('Battle rules', ('tournament_ring_outs',)),
+    ('Tag-team rush', TAG_TEAM_RUSH_KEYS),
     ('Fusion', ('fusion_enabled', COOP_FUSION_KEY, 'show_fusion_control_owner', 'show_fusion_control_countdown',
                 'fusion_duration_enabled', 'fusion_duration_seconds', 'show_fusion_timer',
-                'fusion_defusion_animation')),
+                'fusion_defusion_animation',
+                'fusion_potara_buffs_enabled', 'fusion_potara_health_multiplier',
+                'fusion_potara_damage_multiplier', 'fusion_potara_defense_multiplier',
+                'fusion_non_potara_buffs_enabled', 'fusion_non_potara_health_multiplier',
+                'fusion_non_potara_damage_multiplier', 'fusion_non_potara_defense_multiplier')),
     ('Fighters', (TRUE_BODY_KEY, 'ginyu_stolen_abilities', 'extra_character_voices', NPC_TRANSFORM_KEY,
                   NPC_GIANT_KEY, 'npc_transform_chance_percent')),
     ('Giants', ('canonical_giants', 'giant_size_multiplier', 'giant_attack_speed_percent', 'giant_damage_percent',
@@ -150,7 +158,8 @@ notes = {
     'Movement': 'On the ground, fighters walk or run instead of gliding; dashes, jumps and flight stay unchanged. Classic keeps the previous animation. Natural is relaxed; Fighter has a more athletic stride. Tilt the left stick past the threshold to run; CPU fighters run. Speed and fighter size adjust the stride. Applies from the next match; Fight Again keeps the settings of its match.',
     'Cinematics': 'Special-move pause chooses who stops. Shared cameras pause everyone outside the scene for one view; off keeps separate views (paired attacks still hold their fighters). Split-screen transformations use one view or each half. Extra intros can be skipped. Zoom-out above 100% pulls the camera back. Kept in place, attacks and transformations play where they start, not at the arena centre. Applies next match; Fight Again keeps it.',
     'Battle rules': 'Tournament ring-outs use the original stage ground-contact rules. Flying outside the ring is safe until you touch a disallowed surface. Ringed-out fighters cannot be revived; their teammates keep fighting. Defeated humans can still take over a living CPU teammate when takeover is enabled. Turn this off to fight without ring-outs. Applies from the next match; Fight Again keeps the settings of its match.',
-    'Fusion': 'Allow fusions controls new fusions for humans and CPUs; preselected fused characters are unaffected. When two humans share a fusion, swap passes control every 20 s, split gives P1 attacks and P2 movement, or Player 1 controls it. The control message and countdown show in swap mode only. The time limit covers Fusion Dance fusions made in the match, not Potara or preselected ones; its timer and power-down animation are optional. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
+    'Tag-team rush': 'Offline team matches on BT3 USA and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. The three participants follow the attack camera; Shared camera and pause includes everyone. Training full affects Modded Training only. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online or on BT3 Europe/Japan.',
+    'Fusion': 'Allow fusions controls new human and CPU fusions; preselected forms are unaffected. Shared controls: swap every 20 s, split P1 attacks/P2 movement, or P1 only. Control messages show in swap mode. The time limit, timer and power-down apply to Fusion Dance, not Potara. Optional Potara and non-Potara buffs apply only when fusing in the match; non-Potara includes Fusion Dance. Health scales current and max HP together; damage scales outgoing damage; 2x defense halves damage taken. Off or 1x keeps native stats. Applies next match; Fight Again keeps it.',
     'Fighters': 'Ginyu can exchange bodies with the opponent he actually hits; stolen-body abilities are optional. Extra voices borrow idle native voice streams. The CPU switches and chance limit native CPU transformations; per-character exceptions override them. Humans, fusion and Body Change are unaffected. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
     'Giants': 'Larger giants scale native giant forms; expanded maps give them room. Size, attack speed, damage, stagger resistance and camera distance apply only while larger giants are on; the Cinematics zoom-out multiplies that distance up to a fixed limit. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
     'HUD': 'Health bars, battle HUD, kill feed, watched fighter kill count, target indicator and attacker arrows are separate switches. Battle HUD off also hides split-screen panels. The indicator is a gold arrow, a ring sized to your target, or both, in every view. Red arrows point at each enemy locked on to you, on the screen edge if off screen; they flash while it attacks. Applies next match; Fight Again keeps it.',

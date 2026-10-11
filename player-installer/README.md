@@ -247,8 +247,8 @@ save state from a different mod build is not a supported upgrade path.
 ## Settings
 
 **Modded Modes → Mod Settings** (controller) and **Mod settings.cmd** (desktop
-editor) offer every setting in the same 18 categories: Menus, Players and controllers,
-Controls, Movement, Cinematics, Battle rules, Fusion, Fighters, Giants, HUD, Split-screen HUD,
+editor) offer every setting in the same 19 categories: Menus, Players and controllers,
+Controls, Movement, Cinematics, Battle rules, Tag-team rush, Fusion, Fighters, Giants, HUD, Split-screen HUD,
 Spectating, Revival, Outnumbered, Beam struggles, Training, Launch
 options (restart), Diagnostics. Both also
 offer the per-character CPU transformation exceptions and Restore defaults
@@ -257,7 +257,7 @@ swap-mode switches: the "Fused - Player n has control" message and the
 "Pn takes control in" countdown. **Beam struggles** sets the clash camera, the
 struggle length, an early win by an input lead, the CPU's strength, hits on
 struggling fighters and beam assists. **Beam clash camera**: Switch to clash
-(the game's own struggle camera, the default) or Keep player views (every view,
+(the game's own struggle camera) or Keep player views (the default; every view,
 split or single, keeps following its own player during a clash). Beam assist:
 stand near a struggling teammate (**Assist range from the struggling ally**, 60
 by default) and press **R3** alone (the hint "R3 - BEAM ASSIST" shows while
@@ -273,6 +273,12 @@ teammates can assist too. That R3 press never
 transforms you; R3 works as usual when you cannot assist. New installations start with hits on struggling fighters and
 beam assists (CPU allies too) switched on; with every option off nothing
 changes.
+
+**Fusion** also offers separate Potara and non-Potara bonuses for health, damage
+and defense (0.25×–5×). Each has its own switch; both start off with 1× values.
+A 2× defense multiplier halves damage taken. These bonuses apply when fighters
+fuse during a match, remain through their transformations, and end on defusion.
+Preselected fused characters keep their normal stats.
 
 **Movement → Walk and run on the ground** makes fighters walk or run on solid
 ground instead of gliding just above it; dashes, jumps, flight and water stay as
@@ -330,7 +336,7 @@ you turn the mod mode menus off, only Mod settings.cmd can turn them back on.
 ### Switching the game disc
 
 The desktop editor (Mod settings.cmd; Mod settings.sh on Linux) has one more
-page after the 18 categories: **Game disc**. It chooses which of your ISOs Play
+page after the 19 categories: **Game disc**. It chooses which of your ISOs Play
 starts, and each change applies at once (Save and Cancel are for the other
 pages):
 
@@ -595,3 +601,16 @@ Touching a disallowed ground surface permanently eliminates that fighter; flying
 outside is safe until ground contact. Teammates keep fighting, and a team loses
 only when nobody remains. Ring-outs prevent revival but allow the existing CPU
 teammate takeover. Turn Tournament ring-outs off to disable this rule.
+
+## Tag-team rush
+
+Offline team battles in BT3 USA and BT4 support tag-team rush attacks. When both fighters have
+full tag meters, press **charge ki + Triangle + Left** to invite a teammate.
+They can accept with the same input while targeting the same enemy.
+
+The ending depends on whether the two fighters use ki: two beams, a melee
+combination, or melee followed by a beam. Damage is dealt throughout the attack.
+Change the damage, meter time, Training refill and shared camera in
+**Mod Settings → Tag-team rush**. The defaults are 15,000 damage and 25 seconds.
+Giants cannot use this attack. It is not available online or on the
+European/Japanese BT3 discs.

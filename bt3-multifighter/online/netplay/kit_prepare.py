@@ -382,8 +382,9 @@ class Prepare:
 
     def copy_python(self, *args, timeout=300):
         env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME', 'TAGTEAM_DISC',
-                                                                 'TAGTEAM_ADAPTER', 'REVIEW_TOOLS')}
-        env.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONNOUSERSITE='1')
+                    'TAGTEAM_ADAPTER', 'REVIEW_TOOLS', 'TAGTEAM_TAG_RUSH_PLAYTEST', 'TAGTEAM_TAG_RUSH_ROOT',
+                    'TAGTEAM_TAG_RUSH_SETTINGS')}
+        env.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONNOUSERSITE='1',TAGTEAM_ONLINE_PREPARATION='1')
         r = subprocess.run([str(self.python()), '-B', *[str(a) for a in args]], cwd=str(self.dest / 'game'), env=env,
                            capture_output=True, text=True, timeout=timeout, creationflags=kit_win.CREATE_NO_WINDOW)
         return r.returncode, r.stdout, r.stderr
@@ -396,7 +397,9 @@ class Prepare:
                                               f'{owner}.', fix='Close that program, or use --prep-pine-slot N.')
         play = self.dest / 'Play.cmd'
         console = self.run.run_dir / 'prepare-play.console.txt'
-        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME', 'REVIEW_TOOLS')}
+        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME', 'REVIEW_TOOLS',
+                    'TAGTEAM_TAG_RUSH_PLAYTEST', 'TAGTEAM_TAG_RUSH_ROOT', 'TAGTEAM_TAG_RUSH_SETTINGS')}
+        env['TAGTEAM_ONLINE_PREPARATION']='1'
         if self.desktop:
             self.cmd_pid = kit_win.launch(['cmd.exe', '/d', '/c', str(play)], self.dest, console, self.desktop,
                                           env=dict(env, PYTHONUTF8='1', PYTHONIOENCODING='utf-8'))
