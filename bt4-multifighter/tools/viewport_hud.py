@@ -118,7 +118,7 @@ def active(shared_ultimate=True,shared_form=True,form_fallback=True,quad_support
 # Optional per-view HUD extensions (beta.37), drawn in every view right after the revival text. Each listed
 # module's hud_extension(ram) returns (control, magic, draw) while its caption is installed, else None. With none
 # installed the wrapper and the quad pass are byte-identical to the previous release.
-HUD_EXTENSION_MODULES=('beam_struggle',)
+HUD_EXTENSION_MODULES=('beam_struggle', 'tag_rush_hud')
 
 
 def hud_extensions(ram,installing=None):

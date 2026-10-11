@@ -131,6 +131,15 @@ ES = {
     'HUD': 'Interfaz', 'Split-screen HUD': 'Interfaz dividida', 'Spectating': 'Espectador',
     'Revival': 'Reanimación', 'Training': 'Entrenamiento',
     'Outnumbered': 'Inferioridad numérica',
+    'Tag-team rush': 'Rush en equipo',
+    'Enable tag-team rush attacks': 'Permitir ataques Rush en equipo',
+    'Tag-team rush damage': 'Daño del Rush en equipo',
+    'Time to fill the tag meter (seconds)': 'Tiempo de carga del medidor de apoyo (segundos)',
+    'Always full meter in Modded Training': 'Medidor siempre lleno en Entrenamiento mod',
+    'Tag-team rush: shared camera and pause': 'Rush en equipo: cámara compartida y pausa',
+    'Offline team matches on BT3 USA and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. The three participants follow the attack camera; Shared camera and pause includes everyone. Training full affects Modded Training only. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online or on BT3 Europe/Japan.':
+        'Combates por equipos sin conexión en BT3 USA y BT4. Cada luchador tiene un medidor. Con ambos llenos, pulsa Cargar ki + Triángulo + Izquierda (stick o cruceta) para invitar o aceptar al fijar al mismo rival; suelta Triángulo e Izquierda antes de repetir. Un aliado CPU acepta automáticamente. Los tres participantes siguen la cámara del ataque; Cámara compartida y pausa incluye a todos. Medidor lleno solo afecta a Entrenamiento mod. No pueden participar gigantes, formas no compatibles ni fusiones con control dividido. Se aplica al siguiente combate; la revancha conserva sus ajustes. No disponible en línea ni en BT3 Europa/Japón.',
+    'Preparing tag attacks': 'Preparando ataques en equipo',
     'Beam struggles': 'Forcejeos de rayos',
     'Movement': 'Movimiento',
     'Launch options (restart)': 'Opciones de inicio (reiniciar)', 'Diagnostics': 'Diagnóstico',
@@ -214,6 +223,9 @@ ES = {
     'Stick tilt to run (%; 0 = always run)': 'Inclinación del stick para correr (%; 0 = siempre)',
     'Walking speed (% of normal)': 'Velocidad al caminar (% de la normal)',
     'Running speed (%; 100 = normal)': 'Velocidad al correr (%; 100 = normal)',
+    'TAG ATTACK': 'ATAQUE TAG',
+    'TAG': 'EQUIPO', 'TAG L2 TRI LEFT': 'TAG L2 TRI IZQ',
+    'JOIN L2 TRI LEFT': 'UNIR L2 TRI IZQ', 'TAG WAITING': 'TAG ESPERANDO',
     'R3 - BEAM ASSIST': 'R3 - APOYAR AL RAYO',
     'ASSIST FAILED - BUSY': 'APOYO FALLIDO - OCUPADO', 'ASSIST FAILED - BLOCKED': 'APOYO FALLIDO - BLOQUEADO',
     'ASSIST FAILED - HIT': 'APOYO FALLIDO - GOLPEADO',
@@ -1482,3 +1494,16 @@ ES.update({
 ES.update({'Walking and running style': 'Estilo al caminar y correr', 'Allow fusions': 'Permitir fusiones', 'Battle rules': 'Reglas de combate', 'Tournament ring-outs': 'Eliminación por salir del ring', 'On the ground, fighters walk or run instead of gliding; dashes, jumps and flight stay unchanged. Classic keeps the previous animation. Natural is relaxed; Fighter has a more athletic stride. Tilt the left stick past the threshold to run; CPU fighters run. Speed and fighter size adjust the stride. Applies from the next match; Fight Again keeps the settings of its match.': 'En el suelo, los luchadores caminan o corren; los impulsos, saltos y el vuelo no cambian. Clásico conserva la animación anterior. Natural es relajado; Luchador tiene una zancada más atlética. Inclina el stick izquierdo más allá del umbral para correr; la CPU corre. La velocidad y el tamaño ajustan la zancada. Se aplica al próximo combate; la revancha conserva sus ajustes.', 'Tournament ring-outs use the original stage ground-contact rules. Flying outside the ring is safe until you touch a disallowed surface. Ringed-out fighters cannot be revived; their teammates keep fighting. Defeated humans can still take over a living CPU teammate when takeover is enabled. Turn this off to fight without ring-outs. Applies from the next match; Fight Again keeps the settings of its match.': 'La salida del ring sigue las reglas originales de contacto con el suelo del escenario. Volar fuera es seguro hasta tocar una superficie prohibida. Los eliminados no pueden reanimarse; sus aliados siguen luchando. Los jugadores derrotados pueden controlar un aliado CPU vivo si está permitido. Desactívalo para luchar sin salidas del ring. Se aplica al próximo combate; la revancha conserva sus ajustes.', 'Allow fusions controls new fusions for humans and CPUs; preselected fused characters are unaffected. When two humans share a fusion, swap passes control every 20 s, split gives P1 attacks and P2 movement, or Player 1 controls it. The control message and countdown show in swap mode only. The time limit covers Fusion Dance fusions made in the match, not Potara or preselected ones; its timer and power-down animation are optional. Applies from the next match; a Fight Again rematch keeps the settings of its match.': 'Permitir fusiones controla las nuevas fusiones de jugadores y CPU; no afecta a los personajes fusionados elegidos de antemano. Si dos jugadores comparten una fusión, el modo alterno pasa el control cada 20 s, el reparto da ataque al J1 y movimiento al J2, o controla el J1. El aviso y la cuenta atrás solo salen en modo alterno. El límite afecta a la Danza de la Fusión del combate, no a Potara ni a fusiones elegidas; el temporizador y la animación son opcionales. Se aplica desde el próximo combate; la revancha conserva sus ajustes.'})
 VALUES_EN.update({'classic': 'Classic', 'natural': 'Natural', 'fighter': 'Fighter'})
 VALUES.update({'classic': 'Clásico', 'natural': 'Natural', 'fighter': 'Luchador'})
+
+ES.update({
+    'Potara fusion buffs': 'Mejoras de fusión Potara',
+    'Potara health multiplier': 'Multiplicador de vida Potara',
+    'Potara damage multiplier': 'Multiplicador de daño Potara',
+    'Potara defense multiplier': 'Multiplicador de defensa Potara',
+    'Non-Potara fusion buffs': 'Mejoras de fusión sin Potara',
+    'Non-Potara health multiplier': 'Multiplicador de vida sin Potara',
+    'Non-Potara damage multiplier': 'Multiplicador de daño sin Potara',
+    'Non-Potara defense multiplier': 'Multiplicador de defensa sin Potara',
+    'Allow fusions controls new human and CPU fusions; preselected forms are unaffected. Shared controls: swap every 20 s, split P1 attacks/P2 movement, or P1 only. Control messages show in swap mode. The time limit, timer and power-down apply to Fusion Dance, not Potara. Optional Potara and non-Potara buffs apply only when fusing in the match; non-Potara includes Fusion Dance. Health scales current and max HP together; damage scales outgoing damage; 2x defense halves damage taken. Off or 1x keeps native stats. Applies next match; Fight Again keeps it.':
+        'Permitir fusiones controla las nuevas fusiones de jugadores y CPU; no afecta a formas preseleccionadas. Control compartido: alternar cada 20 s, J1 ataca/J2 se mueve, o solo J1. Los avisos salen en modo alterno. El límite, temporizador y animación se aplican a la Danza de la Fusión, no a Potara. Las mejoras opcionales Potara y sin Potara solo afectan a fusiones durante el combate; sin Potara incluye la Danza. Vida multiplica los PS actuales y máximos; daño multiplica el daño causado; defensa x2 reduce el recibido a la mitad. Desactivado o x1 conserva los atributos originales. Se aplica al próximo combate; la revancha lo conserva.',
+})

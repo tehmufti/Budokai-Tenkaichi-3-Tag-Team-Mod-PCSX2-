@@ -940,6 +940,7 @@ class LinuxInstallFlowTests(unittest.TestCase):
                 game=Path(work)/folder
                 for sub in ('tools','assets','analysis'):(game/sub).mkdir(parents=True)
                 (game/'tools/autopilot.py').write_text('# payload module\n')
+                shutil.copy2(BT3_TOOLS/'bt4_graphics_fixes.py',game/'tools')
                 (game/'tools/pcsx2_versions.json').write_text(json.dumps(dict(player_minimum=release['pcsx2_minimum'],tested=release['pcsx2_supported'])))
                 for name in (*installer.WINDOWS_ONLY_GAME_FILES,'Tag Team Mod Logo.png'):(game/name).write_bytes(b'payload')
             (Path(work)/'bt3-usa/tools/pal_native_map.json').write_text(json.dumps(dict(self.TABLE,**(table or {}))))

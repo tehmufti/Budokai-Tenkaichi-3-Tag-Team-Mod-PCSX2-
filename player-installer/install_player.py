@@ -744,6 +744,23 @@ def runtime_copy(source,destination):
     require(any(destination.rglob('qwindows.dll')),'TTM-PCSX2-05',file=str(source),missing=r'QtPlugins\platforms\qwindows.dll')
 
 
+def runtime_graphics_plan(runtime,adapter,tools):
+    """Only a supported BT4's copied Windows GameDB; no emulator/INI enum guesses."""
+    if not WINDOWS or adapter!='bt4-b14-rev2-eng':return dict(state='not-applicable',ready=False)
+    source=Path(tools)/'bt4_graphics_fixes.py'
+    spec=importlib.util.spec_from_file_location('_ttm_setup_graphics',source)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module.plan_runtime(runtime,adapter)
+
+def install_runtime_graphics(runtime,adapter,tools):
+    planned=runtime_graphics_plan(runtime,adapter,tools)
+    if 'data' in planned:
+        # Setup owns this freshly copied runtime; its immutable receipt below
+        # includes the corrected database. The source emulator is never changed.
+        (Path(runtime)/'resources/GameIndex.yaml').write_bytes(planned['data'])
+    return {key:value for key,value in planned.items() if key not in ('data','inserted')}
+
+
 # ---- Online play (TTM Online, part of the installation since kit 2.1) ------------------------------------------------
 # The payload's online/ folder (the online lobby and its netplay code, match/ templates, README / LEAME) becomes
 # <installation>/online. Windows: online/pcsx2 is a second copy of the installation's own PCSX2 build (runtime_copy),
@@ -1454,6 +1471,7 @@ def install(args):
             # The shared payload's PowerShell launchers serve Windows only (Play.sh and the other scripts replace them);
             # they are removed before the file receipt is written.
             for name in WINDOWS_ONLY_GAME_FILES:(game/name).unlink(missing_ok=True)
+        install_runtime_graphics(runtime,adapter,game/'tools')
         data=data_folder(runtime)
         for name in ('bios','inis','sstates','memcards','cheats','logs'):(data/name).mkdir(parents=True,exist_ok=True)
         (data/'bios'/args.bios.name).write_bytes(bios);(runtime/'portable.ini').write_text('')
@@ -1466,6 +1484,7 @@ def install(args):
         shutil.copytree(work/'iso_compatibility',root/'iso_compatibility')
         os.replace(game,root/'game');game=root/'game';runtime=game/'runtime28'
         online=install_online(root,work,adapter,args.pcsx2 if WINDOWS else None)
+        if online is not None:install_runtime_graphics(online/'pcsx2',adapter,game/'tools')
         stage='[5/6] Checking dependencies, native hooks and configuration';update(stage,ready=False)
         env=child_environment(BT3_RUNTIME_PROFILE='runtime28')
         for script,arguments in (('autopilot.py',['--check']),('install_boot_hooks.py',[])):

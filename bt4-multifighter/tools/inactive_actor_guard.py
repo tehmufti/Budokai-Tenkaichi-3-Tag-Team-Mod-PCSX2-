@@ -27,6 +27,20 @@ def code():
     for caller in CALLERS:
         a.li(8,caller);a.branch(4,31,8,'actor_update')
     a.jump('native');a.label('actor_update')
+    # The tag rush advances its three borrowed clips itself. Only these
+    # audited per-actor dispatch queries are held; global pause/scene queries
+    # keep the native answer so the private cinematic can keep progressing.
+    import tag_rush_camera as tag
+    tag.emit_active(a,'not_tag_rush')
+    a.lw(11,4);a.lw(12,8,8);a.r(0x2B,9,11,12);a.branch(4,9,0,'not_tag_rush')
+    a.li(9,core.POINTERS);a.r(0,12,0,11,2);a.r(0x2D,9,9,12);a.lw(9,9)
+    a.branch(5,9,4,'not_tag_rush')
+    a.lw(9,8,tag.SHARED);a.branch(5,9,0,'inactive')
+    a.li(9,1);a.r(4,9,11,9);a.lw(12,8,tag.MEMBERS);a.r(0x24,12,12,9)
+    a.branch(5,12,0,'inactive');a.label('not_tag_rush')
+    import tag_rush_approach as approach
+    approach.emit_hold(a,4,'inactive','not_tag_approach')
+    a.label('not_tag_approach')
     core.gate(a,'native')
     a.li(8,part.CONTROL);a.lw(9,8);a.addiu(11,0,5);a.branch(5,9,11,'native')
     a.lw(9,8,4);a.lw(11,28,-22364);a.branch(5,9,11,'native')

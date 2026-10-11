@@ -434,6 +434,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # programs it extends. All-legacy settings add nothing.
     import beam_struggle
     builders.append(lambda r: beam_struggle.build_memory(r, settings=preferences, source=source))
+    import beam_assist_pose
+    builders.append(lambda r: beam_assist_pose.build_memory(r, source=source))
     import buu_ultimate_fanout
     builders.append(lambda r: buu_ultimate_fanout.build_memory(r, enabled=False,krillin_enabled=False, source=source))
     import inactive_actor_guard
@@ -441,6 +443,9 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     if humans>=3 or assignment is not None:
         import four_player_mode
         builders.append(lambda r: four_player_mode.build_memory(r,mode=battle_mode,humans=humans,source=source,settings=preferences,assignment=assignment))
+    if humans>=2:
+        import split_borders
+        builders.append(lambda r: split_borders.build_memory(r))
     import tournament_ringout
     builders.append(lambda r: tournament_ringout.build_memory(r, settings=preferences, source=source))
     import rush_cinematics
@@ -461,6 +466,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # Wraps those entries, the damage accumulator and the overhead-bar call again, so it is the last builder.
     import lockon_threat
     builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
+    import fusion_buffs
+    builders.append(lambda r: fusion_buffs.build_memory(r,settings=preferences,source=source))
     import localization
     localization.pin_battle(preferences)
     with localization.using(preferences):
@@ -875,6 +882,7 @@ class Session:
         self.wait_word(spawn_placement.CONTROL, 5, 'Placing fighters on the arena terrain...')
         self.wait_word(team_participation.CONTROL, 5, 'Checking selected fighter participation...')
         self.wait_counter(ai.CONTROL+0x10, 10)
+        self.install_tag_rush()
         ram = self.snapshot('ready-held')
         self.export_playable(ram)
         # The optional presentation callback uncovers the ready arena before
@@ -928,6 +936,28 @@ class Session:
         report = patch(self.source, manifest, output)
         write_json(self.run/'playable-export.json', report)
         self.index += 1; self.source = output
+
+    def install_tag_rush(self):
+        """Prepare enabled offline tag attacks after participation is ready.
+
+        The regular install publishes pending participation records, so this
+        must follow its guest acknowledgment and precede the rematch snapshot.
+        Online builders and unsupported adapters exit before native tag imports.
+        """
+        import tag_rush_availability
+        reason=tag_rush_availability.preparation_reason(self.settings,self.battle_mode,ROOT)
+        if reason:
+            # Explain an adapter limitation in the existing log, without a
+            # failed match or a new confirmation for an unavailable feature.
+            if self.settings.get('tag_team_rush_enabled') and 'currently supports' in reason:
+                print(reason,flush=True)
+            return
+        import tag_rush_install
+        self.progress('Preparing tag attacks',5)
+        ram=self.snapshot('tag-rush-ready')
+        plan=tag_rush_install.build_offline(ram,self.settings,source=self.source,
+            training=self.battle_mode in ('training','training_coop'))
+        if plan['blocks']:self.install(plan,'tag-rush')
 
     def release_start(self):
         with self.running_client() as p:

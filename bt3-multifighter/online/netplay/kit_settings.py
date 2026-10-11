@@ -42,6 +42,10 @@ GAMEPLAY = (
     'rush_cinematics', 'prevent_cinematic_recentering', 'battle_camera_distance_percent',
     # Fusion (the timer itself is a service)
     'fusion_duration_seconds', 'fusion_defusion_animation',
+    'fusion_potara_buffs_enabled', 'fusion_potara_health_multiplier',
+    'fusion_potara_damage_multiplier', 'fusion_potara_defense_multiplier',
+    'fusion_non_potara_buffs_enabled', 'fusion_non_potara_health_multiplier',
+    'fusion_non_potara_damage_multiplier', 'fusion_non_potara_defense_multiplier',
     # Fighters
     'extra_character_voices',
     # Giants
@@ -77,6 +81,7 @@ CAMERA = ('special_pause_mode', 'ultimate_cinematics', 'transformation_cinematic
 # the revive ring's look - plus the emulator's resolution and renderer.
 SERVICE_KEYS = {k: name for name, keys in SERVICES.items() for k in keys}
 FORCED = {'expanded_maps': False, 'widescreen_patch': False, 'extra_character_intros': False,
+          'tag_team_rush_enabled': False,
           'keep_preparation_diagnostics': False, 'capture_freeze_dumps': False,
           'record_battle_diagnostics': False, 'npc_transform_overrides': {}, 'npc_transform_chance_percent': 100}
 FORCED_LANGUAGE = 'language'                 # the host's lobby language (text is baked into several code pages)
@@ -89,6 +94,9 @@ NOT_APPLICABLE = (
     'show_hud_sparking_effects', 'hud_damage_trail_seconds', 'training_cpu_behavior', 'training_refill_health',
     'training_health_delay_seconds', 'training_refill_ki', 'training_refill_stocks', 'fast_disc_loading',
     'emulated_cpu_speed',
+    # Offline tag cinematics do not yet participate in network scheduling.
+    'tag_team_rush_damage', 'tag_team_rush_charge_seconds', 'tag_team_rush_training_full',
+    'tag_team_rush_shared_camera',
 )
 # Online values of not-applicable keys (none differ from the mod's defaults: the default controller check-in,
 # 'connection_order', never arms the hub's P1/P2 override; the conversion disarms that override anyway).

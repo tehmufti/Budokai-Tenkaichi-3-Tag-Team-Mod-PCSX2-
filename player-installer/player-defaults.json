@@ -118,5 +118,18 @@
   "ground_size_speed": true,
   "ground_motion_style": "classic",
   "fusion_enabled": true,
-  "tournament_ring_outs": true
+  "tournament_ring_outs": true,
+  "tag_team_rush_enabled": true,
+  "tag_team_rush_damage": 15000,
+  "tag_team_rush_charge_seconds": 25,
+  "tag_team_rush_training_full": false,
+  "tag_team_rush_shared_camera": false,
+  "fusion_potara_buffs_enabled": false,
+  "fusion_potara_health_multiplier": 1.0,
+  "fusion_potara_damage_multiplier": 1.0,
+  "fusion_potara_defense_multiplier": 1.0,
+  "fusion_non_potara_buffs_enabled": false,
+  "fusion_non_potara_health_multiplier": 1.0,
+  "fusion_non_potara_damage_multiplier": 1.0,
+  "fusion_non_potara_defense_multiplier": 1.0
 }

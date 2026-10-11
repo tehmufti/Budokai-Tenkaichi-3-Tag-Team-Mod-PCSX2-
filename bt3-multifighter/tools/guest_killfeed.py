@@ -203,16 +203,23 @@ def record_code():
 
 
 def damage_code():
+    import tag_rush_safety as tag
     a=Assembler(DAMAGE); prologue(a); a.call(GATE); a.branch(4,2,0,'fallback')
     a.call(IDENTIFY); a.branch(1,2,0,'fallback'); a.sw(2,29,0xF0)
     a.call(ROW); a.branch(4,2,0,'fallback'); a.sw(2,29,0xF8)
     a.lw(8,2); a.sw(8,29,0xFC); a.addiu(8,0,-1); a.sw(8,29,0xF4)
-    a.lw(8,29,RETURN)
+    a.lw(12,29,RETURN)
+    tag.emit_damage_attacker(a,4,4,12,'ordinary_caller','tag_hit')
+    a.call(IDENTIFY);a.sw(2,29,0xF4);a.jump('native')
+    a.label('ordinary_caller');a.lw(8,29,RETURN)
     for index,(pc,reg) in enumerate(sorted(ATTRIBUTION.items())):
         a.li(9,pc); a.branch(5,8,9,f'caller{index}')
         a.i(55,4,29,REG_OFFSET[reg]); a.call(IDENTIFY); a.sw(2,29,0xF4); a.jump('native')
         a.label(f'caller{index}')
-    a.label('native'); restore(a); a.call(DAMAGE_NATIVE); save(a)
+    a.label('native')
+    import fusion_buffs
+    fusion_buffs.emit_call(a,fusion_buffs.DAMAGE,frame=True)
+    restore(a); a.call(DAMAGE_NATIVE); save(a)
     a.lw(8,29,0xFC); a.branch(6,8,0,'done'); a.lw(8,29,0xF8); a.lw(8,8)
     a.branch(7,8,0,'done'); a.lw(4,29,0xF0); a.lw(5,29,0xF4); a.call(RECORD)
     a.label('done'); epilogue(a)
@@ -222,6 +229,8 @@ def damage_code():
 
 def tick_code():
     a=Assembler(TICK); prologue(a); a.call(GATE); a.branch(4,2,0,'native')
+    import fusion_buffs
+    fusion_buffs.emit_call(a,fusion_buffs.TICK)
     a.li(8,CONTROL); a.lw(9,8,12); a.addiu(9,9,1); a.sw(9,8,12)
     a.label('native'); restore(a); a.call(A(0x1CF220)); save(a)
     a.call(GATE); a.branch(4,2,0,'done'); a.li(16,CONTROL); a.lw(17,16,8); a.move(18,0)

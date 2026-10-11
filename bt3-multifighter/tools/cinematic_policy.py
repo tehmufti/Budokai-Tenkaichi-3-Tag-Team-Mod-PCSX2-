@@ -22,8 +22,9 @@ The shared stop never holds a fighter the running presentation itself needs:
 one the authored camera binds (a victim at +768/+772), nor the live rush
 partner of a member or of such a fighter. Holding them froze the reaction that
 ends the move, so the presentation renewed itself until the hold bound (the
-30 s rush stall). A latch is never taken, nor kept, onto a camera that is
-showing another pair's live rush.
+30 s rush stall). Independently accepted transformations and reciprocal rush
+pairs also keep advancing, even after another move takes the shared camera.
+A latch is never taken, nor kept, onto another pair's live rush camera.
 """
 from native_map import A, CRC, FLAG_BITS, SERIAL, TRANSLATED, elf_path
 import struct
@@ -80,6 +81,7 @@ RESULT_CALLS=(
     *((p,A(0x23DE60),RESULT_CAMERA) for p in (A(0x217A20),A(0x217A44))),
 )
 COOP_FUSION = 0x07117400
+PROTECT_ACTIVE = 0x07117800
 ULTIMATE_OWNER, ULTIMATE_STOP, ULTIMATE_FRAME = 0x0711D000,0x0711E800,0x0711EC00
 NATIVE_CAMERA_OWNER = 0x0711E000
 ULTIMATE_KIND, ULTIMATE_MEMBERS = 52,56
@@ -456,10 +458,14 @@ def view(enhanced=True):
     data=a.finish();assert len(data)<BIND-VIEW;return data
 
 
-def selector(complete_ultimates=True,activation_cameras=True,shared_stop=True,quad_support=False,rush_support=True):
+def selector(complete_ultimates=True,activation_cameras=True,shared_stop=True,quad_support=False,rush_support=True,*,shared_participant=True):
     unowned='stopped_views' if shared_stop else 'ordinary_selector'
     a=Assembler(CODE);save(a);a.call(camera.CODE);a.i(63,2,29,0xE0);a.i(63,3,29,0xE8)
     gate(a,'return')
+    import tag_rush_camera as tag
+    tag.emit_presentation(a,'not_tag_rush');a.call(tag.SELECT);a.li(8,0xFFFFFFFF)
+    a.branch(4,2,8,'not_tag_rush');a.i(63,2,29,0xE0);a.jump('return')
+    a.label('not_tag_rush')
     if quad_support:
         import multiplayer_fusion as fusion
         a.li(8,fusion.CONTROL);a.lw(9,8);a.li(11,fusion.MAGIC);a.branch(5,9,11,'not_shared_pair')
@@ -471,6 +477,18 @@ def selector(complete_ultimates=True,activation_cameras=True,shared_stop=True,qu
         # final pose finishes. Keep its authenticated authored track here;
         # side0's combat camera looks at the back of that scripted pose.
         a.li(8,fusion.seats.views.SUBJECTS);a.lw(4,8);a.call(fusion.CINEMATIC)
+        if shared_participant:
+            a.branch(5,2,0,'shared_pair_camera')
+            # After the fusion action ends this is still one shared body,
+            # but it can perform or receive another authored special. Query
+            # the ordinary participant policy for that actual body, just as
+            # quad_viewports does for each private view. The temporary subject
+            # is render-local; it never changes either player's ownership.
+            a.li(8,fresh.SUCCESSOR_CONTROL);a.lw(17,8,8)
+            a.li(9,fusion.seats.views.SUBJECTS);a.lw(9,9);a.sw(9,8,8)
+            a.move(4,0);a.call(VIEW)
+            a.li(8,fresh.SUCCESSOR_CONTROL);a.sw(17,8,8)
+            a.label('shared_pair_camera')
         a.branch(4,2,0,'return');a.lw(4,28,-22180)
         a.lw(8,28,-22172);a.sw(4,8,0xC40);a.addiu(5,0,1);a.call(A(0x23E6A0))
         a.jump('return');a.label('not_shared_pair')
@@ -560,6 +578,7 @@ def selector(complete_ultimates=True,activation_cameras=True,shared_stop=True,qu
 
 def bind(complete_ultimates=True,shared_stop=True,rush_support=True):
     a=Assembler(BIND);save(a);a.move(16,4);gate(a,'native')
+    import tag_rush_camera as tag
     if complete_ultimates:
         if shared_stop:
             shared_owner(a,'ordinary_bind','bind',rush_support=rush_support,bounded=True);a.jump('native')
@@ -572,8 +591,11 @@ def bind(complete_ultimates=True,shared_stop=True,rush_support=True):
     # 23EF98 selected precisely one of the two real side camera records.
     a.addiu(8,18,0x720);a.move(19,0);a.branch(4,8,17,'side')
     a.addiu(8,18,0x9B0);a.addiu(19,0,1);a.branch(5,8,17,'native')
-    a.label('side');a.move(4,19);a.call(VIEW);a.branch(4,2,0,'native')
+    a.label('side');tag.emit_side_camera(a,20,19,'ordinary_tag_view','bind_tag')
+    a.jump('copy_camera');a.label('ordinary_tag_view')
+    a.move(4,19);a.call(VIEW);a.branch(4,2,0,'native')
     a.lw(20,28,-22180);a.branch(4,20,0,'native')
+    a.label('copy_camera')
     a.li(21,CLONES[0]);a.r(0,8,0,19,10);a.r(0x2D,21,21,8)
     a.move(8,20);a.move(9,21);a.addiu(10,20,0x340)
     a.label('copy');a.i(55,11,8,0);a.i(55,12,8,8);a.i(63,11,9,0);a.i(63,12,9,8)
@@ -590,7 +612,8 @@ def bind(complete_ultimates=True,shared_stop=True,rush_support=True):
     a.move(8,20);a.move(9,21);a.addiu(10,20,0x80)
     a.label('view_copy');a.i(55,11,8,0);a.i(55,12,8,8);a.i(63,11,9,0);a.i(63,12,9,8)
     a.addiu(8,8,16);a.addiu(9,9,16);a.branch(5,8,10,'view_copy')
-    a.move(4,21);a.addiu(5,20,544);a.call(A(0x23E598))
+    tag.emit_fit_view(a,21,20,'tag_view_fitted')
+    a.move(4,21);a.call(A(0x23E598))
     a.move(4,21);a.move(5,16);a.call(A(0x23E6A0))
     a.sw(21,18,0xC40);a.sw(21,28,-22176)
     a.li(8,CONTROL);a.lw(9,8,36);a.addiu(9,9,1);a.sw(9,8,36)
@@ -1042,14 +1065,15 @@ def ultimate_stop(shared_stop=True,rush_support=True,participants=False):
     data=a.finish();assert len(data)<ULTIMATE_FRAME-ULTIMATE_STOP;return data
 
 
-def protect():
+def protect(independent=True):
     """v0 = fighters the running presentation needs that are not members; never holds anyone itself.
 
     P1: every registered fighter whose model the running authored camera binds at +768/+772 (the
     victim of an actor-local ultimate is a nonmember, and holding it froze the reaction that ends the
     move). P2: the reciprocal partner of a member or P1 fighter, while that partner is live in the
-    native paired families (cinematic_contact_guard.paired_pending): stale pair fields alone never
-    exempt anyone. Telemetry: PROTECT_LAST/PROTECT_UPDATES.
+    native paired families (cinematic_contact_guard.paired_pending). P3: independent living forms and
+    mutually live rush pairs, whose native pause/reload handshakes must finish even with another
+    foreground camera. Stale pair fields alone never exempt anyone. Telemetry: PROTECT_LAST/PROTECT_UPDATES.
     """
     import special_camera_arbitration as arbitration
     a=Assembler(PROTECT);save(a)
@@ -1082,11 +1106,56 @@ def protect():
     a.move(4,25);a.call(PENDING);a.branch(4,2,0,'pair_next')
     a.addiu(9,0,1);a.r(4,9,24,9);a.r(0x25,18,18,9)
     a.label('pair_next');a.addiu(20,20,1);a.branch(5,20,16,'pair_scan')
+    if independent:
+        a.call(PROTECT_ACTIVE);a.r(0x25,18,18,2)
     # v0 = P & ~members, without nor.
     a.r(0x24,2,18,17);a.r(0x26,2,2,18);a.branch(4,2,0,'done')
     a.li(8,CONTROL);a.sw(2,8,PROTECT_LAST);a.lw(9,8,PROTECT_UPDATES);a.addiu(9,9,1);a.sw(9,8,PROTECT_UPDATES)
     a.label('done');restore(a,skip=(2,));a.jr()
     data=a.finish();assert len(data)<FOREIGN-PROTECT;return data
+
+
+def protect_active():
+    """Return living forms and reciprocal rushes which must finish independently.
+
+    These actors may own another native pause or reload handshake even when
+    the selected camera belongs to a different move. Only current/requested
+    ordinary forms and a mutually live, opposing rush pair qualify; historical
+    actions, idle stale pairs and fallen or unregistered bodies do not.
+    """
+    import cinematic_admission as admission
+    import special_camera_arbitration as arbitration
+    import extra_throws as actors
+    a=Assembler(PROTECT_ACTIVE);save(a);gate(a,'no');a.move(16,10)
+    a.move(17,0);a.move(18,0)
+    a.label('scan');a.move(4,18);a.jump('live',link=True);a.branch(4,2,0,'next');a.move(19,2)
+    for off in admission.ACTION_FIELDS:
+        a.lw(8,19,off);a.addiu(9,8,-236);a.i(11,9,9,5);a.branch(5,9,0,'protect_self')
+    a.move(4,19);a.call(PENDING);a.branch(4,2,0,'next')
+    a.lw(20,19,3732);a.lw(21,19,3736)
+    for reg in (20,21):a.r(0x2B,8,reg,16);a.branch(4,8,0,'next')
+    a.branch(4,20,21,'next');a.move(22,21);a.branch(4,20,18,'partner')
+    a.move(22,20);a.branch(5,21,18,'next')
+    a.label('partner');modes.emit_enemy(a,20,21,'next','protect_independent_pair')
+    a.move(4,22);a.jump('live',link=True);a.branch(4,2,0,'next');a.move(23,2)
+    a.lw(8,23,3732);a.branch(5,8,20,'next');a.lw(8,23,3736);a.branch(5,8,21,'next')
+    a.move(4,23);a.call(PENDING);a.branch(4,2,0,'next')
+    a.li(8,1);a.r(4,8,22,8);a.r(0x25,17,17,8)
+    a.label('protect_self');a.li(8,1);a.r(4,8,18,8);a.r(0x25,17,17,8)
+    a.label('next');a.addiu(18,18,1);a.branch(5,18,16,'scan')
+    a.move(2,17);a.jump('done');a.label('no');a.move(2,0)
+    a.label('done');restore(a,skip=(2,));a.jr()
+    # Leaf lookup returns the registered physical actor, including invisible
+    # living transform poses. The model identity still has to agree with it.
+    a.label('live');a.r(0,8,0,4,2);a.li(9,core.POINTERS);a.r(0x2D,8,8,9);a.lw(2,8)
+    arbitration.pointer(a,2,0x1600,'invalid');a.lw(8,2);a.branch(5,8,4,'invalid')
+    a.lw(12,2,12);a.i(11,9,12,12);a.branch(4,9,0,'invalid')
+    a.r(0,8,0,12,2);a.li(9,core.MODELS);a.r(0x2D,8,8,9);a.lw(13,8)
+    arbitration.pointer(a,13,0x1700,'invalid');a.lw(8,13,16);a.branch(5,8,12,'invalid')
+    a.lw(8,13,4);a.branch(4,8,0,'invalid');actors.hp(a,2,'invalid');a.jr()
+    a.label('invalid');a.move(2,0);a.jr()
+    data=a.finish();assert COOP_FUSION+len(coop_fusion())<=PROTECT_ACTIVE
+    assert PROTECT_ACTIVE+len(data)<=OLD_PREPARE,len(data);return data
 
 
 def foreign():
@@ -1245,7 +1314,7 @@ def result_bridge(base,native,kind):
 
 
 def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activation_cameras=True,shared_stop=True,script_stop_fix=True,rush_support=True,
-            participants=False):
+            participants=False,independent=True):
     """participants=False is exactly the beta.36 emission (old receipts and installs); build_memory always
     asks for participants=True, which adds PROTECT/FOREIGN and their call sites."""
     old_prep=fresh.rebound(pause.prepare_code,PREPARE=OLD_PREPARE)(legacy=False)
@@ -1268,7 +1337,9 @@ def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activati
         if native_cameras:parts.append((NATIVE_CAMERA_OWNER,native_camera_owner()))
         if shared_stop:parts.append((SHARED_FORM,shared_form_owner(script_stop_fix)))
         if script_stop_fix:parts += [(SCRIPT_STOP,script_stop()),(BYSTANDERS,bystanders(rush_support))]
-        if participants:parts += [(PROTECT,protect()),(PENDING,pending())]
+        if participants:
+            parts += [(PROTECT,protect(independent)),(PENDING,pending())]
+            if independent:parts.append((PROTECT_ACTIVE,protect_active()))
         if participants and shared_stop:parts.append((FOREIGN,foreign()))
     return parts
 
@@ -1283,6 +1354,24 @@ def hooks(complete_ultimates=True,script_stop_fix=True):
         out += [(pause.FRAME,jump(ULTIMATE_FRAME))]
         if script_stop_fix:out += [(A(0x1D63A8),jump(SCRIPT_STOP))]
     return out
+
+
+def selector_dependency(ram,address,expected,*,upgrade=False):
+    """Accept the exact preceding shared-fusion selector, never arbitrary code.
+
+    The four-seat dependency validator otherwise rejects an old selector
+    before this policy can upgrade it. Only the default four-seat emission
+    had this early-return bug; all other overrides keep their existing checks.
+    """
+    import four_player_mode
+    if address==CODE and expected==selector() and four_player_mode.installed(ram):
+        current=selector(quad_support=True)
+        previous=selector(quad_support=True,shared_participant=False)
+        for data in (current,previous):
+            if ram[CODE:CODE+len(data)]==data:
+                return current if upgrade else data
+        raise ValueError('Four-player cinematic selector changed')
+    return four_player_mode.dependency_override(ram,address,expected)
 
 
 def validate_memory(ram,manager=None,count=None):
@@ -1301,10 +1390,17 @@ def validate_memory(ram,manager=None,count=None):
         candidate=program(enhanced,complete_ultimates=complete,native_cameras=native_cameras,
                           activation_cameras=activation,shared_stop=shared,script_stop_fix=stop_fix,rush_support=rush_support,
                           participants=participants)+hooks(complete,stop_fix)
-        import four_player_mode
-        candidate=[(p,four_player_mode.dependency_override(ram,p,b)) for p,b in candidate]
+        candidate=[(p,selector_dependency(ram,p,b)) for p,b in candidate]
         if all(ram[p:p+len(data)]==data for p,data in candidate):
             recognized=candidate;break
+        if participants:
+            # The exact preceding protection pass only knew the foreground
+            # camera's members. Its private unused helper gap must remain
+            # empty for build_memory to install the independent handshake pass.
+            previous=[(p,protect(False) if p==PROTECT else data)
+                      for p,data in candidate if p!=PROTECT_ACTIVE]
+            if all(ram[p:p+len(data)]==data for p,data in previous):
+                recognized=previous;break
         # The previous shipped classifier differs only in its participant
         # pass. Match the complete old program, including viewport overrides,
         # at the capture's capacity; do not strand old 3/4-player checkpoints.
@@ -1352,8 +1448,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
     installed=u(CONTROL)==MAGIC
     if installed:
         installed_parts=validate_memory(ram,manager,count)
-        import four_player_mode
-        current=[(p,four_player_mode.dependency_override(ram,p,b)) for p,b in program(participants=True)+hooks()]
+        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True)+hooks()]
         parts=[]
         if installed_parts!=current:
             old=dict(installed_parts)

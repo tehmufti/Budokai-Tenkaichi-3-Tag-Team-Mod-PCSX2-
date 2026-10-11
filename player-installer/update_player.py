@@ -231,6 +231,19 @@ def version_key(value):
     return tuple(int(part or 0) for part in match.groups())
 
 
+def update_runtime_graphics(root,adapter,installer,transaction):
+    """Journal each isolated runtime's version-derived BT4 alias with the update."""
+    graphics={}
+    for runtime in ('game/runtime28','online/pcsx2'):
+        folder=Path(root)/runtime
+        if not folder.is_dir():continue
+        planned=installer.runtime_graphics_plan(folder,adapter,Path(root)/'game/tools')
+        if 'data' in planned:
+            name=runtime+'/resources/GameIndex.yaml'
+            transaction.write(name,planned['data']);graphics[name]=planned['data']
+    return graphics
+
+
 def update(root,setup=HERE):
     root=Path(root).absolute();setup=Path(setup).resolve()
     require(root.is_dir() and not linked(root),'Choose the existing Tag Team Mod installation folder.')
@@ -273,11 +286,13 @@ def update(root,setup=HERE):
                 hooks=work/'hooks';run(root,helper,root/'game/tools',hooks)
                 cheatdir='game/runtime28/'+('' if os.name=='nt' else 'PCSX2/')+'cheats/'
                 for path in hooks.iterdir():transaction.write(cheatdir+path.name,path.read_bytes())
+                graphics=update_runtime_graphics(root,adapter,installer,transaction)
                 # Retain original ISO-derived receipts; change only the replaced/new managed code and documents.
                 updated=dict(old)
                 for name in stale:updated.pop(name,None)
                 for name,data in files.items():
                     if not name.startswith('game/missions/'):updated[name]=hashlib.sha256(data).hexdigest()
+                for name,data in graphics.items():updated[name]=hashlib.sha256(data).hexdigest()
                 updated['game/player-install.json']=digest(root/'game/player-install.json')
                 receipt.update(version=release['version'],files=updated)
                 transaction.write('installed-files.json',json_bytes(receipt))

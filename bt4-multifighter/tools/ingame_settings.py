@@ -74,6 +74,11 @@ POLICIES = (None, True, False)   # Default, Allow, Block (mod_settings npc_trans
 POLICY_LABELS = {None: 'Default', True: 'Allow', False: 'Block'}
 # Display only: a row is dimmed while its master switch does not enable it.
 DEPENDS = {
+    'tag_team_rush_damage': ('tag_team_rush_enabled', True),
+    'tag_team_rush_charge_seconds': ('tag_team_rush_enabled', True),
+    'tag_team_rush_training_full': ('tag_team_rush_enabled', True),
+    'tag_team_rush_shared_camera': ('tag_team_rush_enabled', True),
+
     'lockoff_button': ('lockoff_enabled', True),
     'lockoff_hold_seconds': ('lockoff_enabled', True),
     'lockoff_target_hud': ('lockoff_enabled', True),
@@ -84,6 +89,14 @@ DEPENDS = {
     'fusion_duration_seconds': ('fusion_duration_enabled', True),
     'show_fusion_timer': ('fusion_duration_enabled', True),
     'fusion_defusion_animation': ('fusion_duration_enabled', True),
+    'fusion_potara_buffs_enabled': ('fusion_enabled', True),
+    'fusion_non_potara_buffs_enabled': ('fusion_enabled', True),
+    'fusion_potara_health_multiplier': ('fusion_potara_buffs_enabled', True),
+    'fusion_potara_damage_multiplier': ('fusion_potara_buffs_enabled', True),
+    'fusion_potara_defense_multiplier': ('fusion_potara_buffs_enabled', True),
+    'fusion_non_potara_health_multiplier': ('fusion_non_potara_buffs_enabled', True),
+    'fusion_non_potara_damage_multiplier': ('fusion_non_potara_buffs_enabled', True),
+    'fusion_non_potara_defense_multiplier': ('fusion_non_potara_buffs_enabled', True),
     'ginyu_stolen_abilities': ('true_body_change', True),
     'giant_size_multiplier': ('canonical_giants', True),
     'giant_attack_speed_percent': ('canonical_giants', True),

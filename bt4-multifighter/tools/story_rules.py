@@ -38,13 +38,16 @@ def scale_integer(a,value,factor,denominator,tag):
 def damage_code(mission):
     """a0 points to the outer protection hook's saved ABI frame."""
     import story_runtime as story
+    import tag_rush_safety as tag
     ids={f['id']:story.physical(f) for f in mission['fighters']}
     a=Assembler(DAMAGE);abi.prologue(a);a.move(21,4)
     a.r(0x10,8,0,0);a.r(0x12,9,0,0);a.i(63,8,29,0xF0);a.i(63,9,29,0xF8)
     a.li(8,CONTROL);a.lw(8,8);a.li(9,MAGIC);a.branch(5,8,9,'done')
     story.guard(a,'done',allow_alias=True)
     a.lw(22,21,abi.REG_OFFSET[4])  # victim, never an aliased side number
-    a.move(23,0);a.lw(8,21,abi.RETURN)
+    a.move(23,0);a.lw(12,21,abi.RETURN)
+    tag.emit_damage_attacker(a,23,22,12,'ordinary_caller','tag_hit');a.jump('identified')
+    a.label('ordinary_caller');a.move(23,0);a.lw(8,21,abi.RETURN)
     for i,(pc,reg) in enumerate(sorted(abi.ATTRIBUTION.items())):
         a.li(9,pc);a.branch(5,8,9,f'caller{i}')
         a.lw(23,21,abi.REG_OFFSET[reg]);a.jump('identified');a.label(f'caller{i}')

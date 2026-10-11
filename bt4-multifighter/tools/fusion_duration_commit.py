@@ -102,7 +102,9 @@ def snapshot(ram,side):
     require(bytes(ram[resource:resource+56])==bytes(ram[record+0x300:record+0x338]),'Retained partner resource bundle changed')
     originals=[bytes(ram[record+off:record+off+164]) for off in timer.ROW_OFFSETS]
     require(u(ram,model+12)==struct.unpack_from('<I',originals[1])[0],'Fusion partner form changed')
-    hp=health_split(leader['health'],*(struct.unpack_from('<I',row,64)[0] for row in originals))
+    import fusion_buffs
+    remaining=fusion_buffs.unscaled_health(ram,leader['actor'],leader['health'])
+    hp=health_split(remaining,*(struct.unpack_from('<I',row,64)[0] for row in originals))
     destination=copy.deepcopy(leader)
     destination.update(character=struct.unpack_from('<I',originals[0])[0],costume=struct.unpack_from('<I',originals[0],4)[0],
                        damaged=bool(struct.unpack_from('<I',originals[0],96)[0]),row_hex=originals[0].hex(),physical=physical)

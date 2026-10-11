@@ -1,3 +1,17 @@
+## Unreleased
+
+Adds tag-team rush attacks to offline team battles in BT3 USA and BT4.
+
+- When both fighters have full tag meters, press **charge ki + Triangle + Left** to invite a teammate. They can accept with the same input while targeting the same enemy.
+- The finish changes with your fighters: two beams, a combined melee attack, or a melee combo followed by a beam. Each hit deals part of the attack's damage.
+- **Mod Settings → Tag-team rush** lets you change the damage and meter time, keep the meter full in Modded Training, or have everyone watch the attack. The defaults are 15,000 damage and a 25-second meter.
+- Rush cameras now follow fused human players correctly. Transformations can still happen alongside another fighter's rush attack.
+- Beam assists and tag finishes choose each fighter's own beam pose, with a native clash pose for other move styles.
+- Windows BT4 installs now use the base game's graphics corrections to keep character outlines aligned.
+- Fusion settings have separate optional health, damage and defense multipliers for Potara and non-Potara fusions. Both start off, preserving the normal game stats.
+
+Giants cannot use tag-team rush. It is offline only for now. BT3 Europe and Japan keep their existing features without the new attack.
+
 ## Version 11.2
 
 Version 11.2 adds Potaras to online matches and fixes the flickering online menus.

@@ -264,6 +264,7 @@ def begin_code(timed=False):
 
 def commit_code(timed=False,extra=False):
     a=Assembler(EXTRA_COMMIT if extra else COMMIT);save(a);a.sw(0,29,0x300);a.lw(9,4,2376)
+    a.sw(9,29,0x314)  # accepted native fusion kind, before resource/stat refresh
     a.addiu(9,9,-241);a.i(11,9,9,2);a.branch(4,9,0,'native')
     a.call(SYNC);a.branch(4,2,0,'native');a.addiu(8,2,-1)
     # leader+4856 is the partner's native roster slot: 1..capacity-1 is a
@@ -286,6 +287,8 @@ def commit_code(timed=False,extra=False):
     a.move(4,16);a.call(CONSUME);a.branch(4,2,0,'failed')
     a.li(8,CONTROL);a.lw(9,8,16);a.addiu(9,9,1);a.sw(9,8,16);a.sw(16,8,20)
     a.sw(18,8,24)
+    import fusion_buffs
+    fusion_buffs.emit_call(a,fusion_buffs.ACTIVATE,actor=18,kind=0x314,partner=16)
     if timed:
         a.li(8,0x070DF000);a.lw(9,8);a.li(10,0x46555331);a.branch(5,9,10,'done')
         a.move(4,18);a.move(5,16);a.call(0x070D2000)

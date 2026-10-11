@@ -74,6 +74,8 @@ def draw(extensions=()):
     a=Assembler(DRAW);save(a);gate(a,'native')
     import story_cinematics as story
     story.emit_active(a,'native','not_story')
+    import tag_rush_camera as tag
+    tag.emit_shared(a,'native','not_shared_tag')
     # Keep stock intro/results and checked shared cinematics in their native
     # renderer. Free-action specials retain all four independent viewports.
     cinema.gate(a,'native',combat=False)
@@ -145,7 +147,7 @@ def draw(extensions=()):
         a.label('effects_done')
     pair_pass('world_effects',effects)
     a.sw(0,16,16);a.call(A(0x247688))
-    a.lw(8,16,VIEW_COUNT);a.addiu(9,0,3);a.branch(5,8,9,'no_matte');a.call(MATTE);a.label('no_matte')
+    a.call(MATTE)
     # Menus, HUD, fades and flash cleanup are once per complete frame.
     for routine in (A(0x2129C8),A(0x23A2B8),A(0x2476D8)):a.call(routine)
     a.li(8,fusion.CONTROL);a.lw(9,8);a.li(10,fusion.MAGIC);a.branch(5,9,10,'no_fusion_caption')
@@ -252,6 +254,9 @@ def prepare():
     a.li(8,core.POINTERS);a.r(0,9,0,9,2);a.r(0x2D,8,8,9);a.lw(18,8)
     a.lw(4,18,12);a.addiu(5,17,608);a.addiu(6,17,624);a.call(A(0x207DD0))
     a.lw(4,18,12);a.call(A(0x207E78));a.sw(2,17,648)
+    import tag_rush_camera as tag
+    a.lw(4,18);tag.emit_camera(a,20,4,'ordinary_tag_camera','quad_tag')
+    a.jump('private_camera_ready');a.label('ordinary_tag_camera')
     # Reuse the proven participant policy with a temporary view-zero subject;
     # this is render-local and never transfers input or spectator ownership.
     a.li(8,follow.SUCCESSOR_CONTROL);a.lw(19,8,8);a.lw(9,18);a.sw(9,8,8)
@@ -262,8 +267,10 @@ def prepare():
     a.label('cinema_ready');a.li(8,follow.SUCCESSOR_CONTROL);a.sw(19,8,8)
     a.branch(4,20,0,'follow')
     a.lw(20,28,-22180);a.branch(4,20,0,'follow')
+    a.label('private_camera_ready')
     a.move(8,20);a.move(9,17);copy_words(a,8,9,0x80,'authored_view')
-    a.move(4,17);a.addiu(5,20,544);a.call(A(0x23E598));a.jump('done')
+    tag.emit_fit_view(a,17,20,'tag_view_fitted')
+    a.move(4,17);a.call(A(0x23E598));a.jump('done')
     a.label('follow');a.move(4,17);a.move(5,0);a.call(A(0x23EAD0))
     a.label('done')
     restore(a);a.jr();return a.finish()
@@ -283,17 +290,35 @@ def scissor():
     a.label('native');restore(a);a.jump(TAILS+0x60);return a.finish()
 
 
+def matte_rectangles(humans):
+    """Half-open pixel rectangles covering exactly the gaps between views.
+
+    Full-frame postprocessing can write outside the per-camera scissors, so
+    these pixels need a final opaque coat before the timer and other UI.
+    """
+    if humans==2:return ((255,0,257,DISPLAY_H),)
+    if humans==4:return ((255,0,257,DISPLAY_H),(0,TOP_LAST+1,512,BOTTOM_FIRST))
+    if humans==3:return ((255,0,257,TOP_LAST+1),(0,TOP_LAST+1,512,BOTTOM_FIRST),
+                         (0,BOTTOM_FIRST,128,DISPLAY_H),(383,BOTTOM_FIRST,512,DISPLAY_H))
+    raise ValueError('Split matte requires two to four views')
+
+
 def matte():
-    """Clear unused lower corners explicitly so prior frames cannot leak in."""
+    """Paint stable separators/corners after world effects and before the UI."""
     import guest_healthbars as bars
     a=Assembler(MATTE);save(a)
+    a.li(8,CONTROL);a.lw(16,8,VIEW_COUNT);a.addiu(9,16,-2);a.i(11,9,9,3);a.branch(4,9,0,'done')
     for reg,value in ((4,0),(5,511),(6,0),(7,SCISSOR_Y1)):a.addiu(reg,0,value)
     a.call(A(0x101400))
-    for left,right in ((0,128),(383,512)):
-        for reg,value in ((4,(1792+left)*16),(5,(Y_ORIGIN+BOTTOM_FIRST)*16),(6,(1792+right)*16),(7,(Y_ORIGIN+DISPLAY_H)*16),(8,0x80000000)):
-            a.li(reg,value)
-        a.call(bars.RECT)
-    restore(a);a.jr();return a.finish()
+    for humans in (2,3,4):
+        a.li(8,humans);a.branch(5,16,8,f'not_{humans}')
+        for left,top,right,bottom in matte_rectangles(humans):
+            for reg,value in ((4,(1792+left)*16),(5,(Y_ORIGIN+top)*16),
+                              (6,(1792+right)*16),(7,(Y_ORIGIN+bottom)*16),(8,0x80000000)):
+                a.li(reg,value)
+            a.call(bars.RECT)
+        a.jump('done');a.label(f'not_{humans}')
+    a.label('done');restore(a);a.jr();data=a.finish();assert len(data)<=OT_RESET-MATTE;return data
 
 
 def filled(a,op,rs,rt,label,delay):
