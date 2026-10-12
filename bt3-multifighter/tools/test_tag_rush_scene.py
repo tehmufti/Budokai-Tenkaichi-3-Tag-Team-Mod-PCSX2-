@@ -66,6 +66,11 @@ def fixture(ki=(True,True), hz=30, adversarial=True):
         for off in (2380,2388,2392,2396,2400):c.w(actor+off,-1)
         c.w(model+4,1);c.w(model+8,1);c.w(model+12,index);c.w(model+16,index)
         c.w(model+64,0x3180000+index*0x1000);c.w(model+192,0x3200000+index*0x1000)
+        # Native linked part headers, including both native height layouts.
+        header=0x3180000+index*0x1000;c.w(model+68,header+0x100);c.w(model+24,header+0x800)
+        c.fw(header+0x874,.83 if index==2 else .9)
+        for part,bone in enumerate((0,2,31,45,52)):
+            c.write(header+0x100+64*part,struct.pack('<I4H',64,0 if part==0 else 2 if part==4 else 1,int(part==4),0,bone)+bytes(52))
         c.w(model+5728,0x3300000+index*0x20000);c.w(c.u(model+5728)+98344,7)
         c.w(model+2348,0x3900000+index*0x1000)
         for own_clip in (264,332,364):

@@ -1324,9 +1324,10 @@
       "shared": true
     },
     "tools/tag_rush_assets.py": {
-      "bt3": "778394bcc8d673db770ec58f84aa4da68c67bbdfe7abb1bac4b2fae5ed5d5c55",
-      "bt4": "778394bcc8d673db770ec58f84aa4da68c67bbdfe7abb1bac4b2fae5ed5d5c55",
-      "shared": true
+      "bt3": "f48f3c6009c683501f7e01e507f1179fd725aa6a18fff3fb284832a606104bf9",
+      "bt4": "f48f3c6009c683501f7e01e507f1179fd725aa6a18fff3fb284832a606104bf9",
+      "shared": true,
+      "bt3_path": "tools/tag_rush_assets.py"
     },
     "tools/tag_rush_audio.py": {
       "bt3": "4777d0326d3814414c0902ece59e242e9fb4f8c7eb356047c1526861de8d2ad2",
@@ -1374,9 +1375,10 @@
       "shared": true
     },
     "tools/tag_rush_effects.py": {
-      "bt3": "d61cd11dbdd7ee9ecaeb867f65bb0c20197f0e54ab0017f08132c65b90a331ea",
-      "bt4": "d61cd11dbdd7ee9ecaeb867f65bb0c20197f0e54ab0017f08132c65b90a331ea",
-      "shared": true
+      "bt3": "d69ba46250f9870e510c004590922c4deeef01491fff16735f5e3c6802ceabdc",
+      "bt4": "d69ba46250f9870e510c004590922c4deeef01491fff16735f5e3c6802ceabdc",
+      "shared": true,
+      "bt3_path": "tools/tag_rush_effects.py"
     },
     "tools/tag_rush_hud.py": {
       "bt3": "3b4995d980c7667070574525c02465f2e8e886ab96f6201c1b393e5a6fde3979",
@@ -1389,9 +1391,10 @@
       "shared": true
     },
     "tools/tag_rush_launch.py": {
-      "bt3": "d19b74aabec95128f1d6716b8531b4e2180fc4f6d05413a7e8c216f6cde204e5",
-      "bt4": "d19b74aabec95128f1d6716b8531b4e2180fc4f6d05413a7e8c216f6cde204e5",
-      "shared": true
+      "bt3": "31e57426e7bc5b21ac11686ef9220d3d73db8ee57ca8f826d206c1b73516b8c1",
+      "bt4": "31e57426e7bc5b21ac11686ef9220d3d73db8ee57ca8f826d206c1b73516b8c1",
+      "shared": true,
+      "bt3_path": "tools/tag_rush_launch.py"
     },
     "tools/tag_rush_native_pose.py": {
       "bt3": "0d577364324ec2d1950e6dd9688effff2a491e026426ad7fb19c2bbdeb073fb4",
@@ -1414,9 +1417,10 @@
       "shared": true
     },
     "tools/tag_rush_scene.py": {
-      "bt3": "3bdd87d731ed581078449883cbc8b2d53d69108db45b213d7102ac44d3a97235",
-      "bt4": "3bdd87d731ed581078449883cbc8b2d53d69108db45b213d7102ac44d3a97235",
-      "shared": true
+      "bt3": "557768e9bd902e788b4c8582d697685558f5cd018d93f62e6c0679a4dbb51530",
+      "bt4": "557768e9bd902e788b4c8582d697685558f5cd018d93f62e6c0679a4dbb51530",
+      "shared": true,
+      "bt3_path": "tools/tag_rush_scene.py"
     },
     "tools/tag_rush_shots.py": {
       "bt3": "881337f893cab4271270cc4adfa2c528cab5637ceeabc3147157ab01f039fc28",
@@ -1645,6 +1649,36 @@
     "Build expanded maps.cmd": {
       "bt4": "1a697acd0f2e41f43629e08eaf342cbc02ce38d7e8e9bbb75d6e70ff7eb61897",
       "shared": false
+    },
+    "tools/tag_rush_retarget.py": {
+      "bt3": "4bb86a79d675fffe4cd6677898e830c4722a7fabdcdea2793a51ff148d3d10f7",
+      "bt4": "4bb86a79d675fffe4cd6677898e830c4722a7fabdcdea2793a51ff148d3d10f7",
+      "shared": true,
+      "bt3_path": "tools/tag_rush_retarget.py"
+    },
+    "tools/test_tag_rush_skeletons.py": {
+      "bt3": "4d225fa4b3d76dc7018a249a8a0eff8e37d85c69530294c9b27d9c629568b806",
+      "bt4": "4d225fa4b3d76dc7018a249a8a0eff8e37d85c69530294c9b27d9c629568b806",
+      "shared": true,
+      "bt3_path": "tools/test_tag_rush_skeletons.py"
+    },
+    "tools/test_tag_rush_scene.py": {
+      "bt3": "6b13f56c59cc3096e9cf36221e170122953701c0ac2678c93a74655254a8d518",
+      "bt4": "6b13f56c59cc3096e9cf36221e170122953701c0ac2678c93a74655254a8d518",
+      "shared": true,
+      "bt3_path": "tools/test_tag_rush_scene.py"
+    },
+    "tools/test_tag_rush_retarget_costumes.py": {
+      "bt3": "d961fd58e8aae37791c2462dec718dc20be5d8b8958ee83195db5c4dbfe5e907",
+      "bt4": "d961fd58e8aae37791c2462dec718dc20be5d8b8958ee83195db5c4dbfe5e907",
+      "shared": true,
+      "bt3_path": "tools/test_tag_rush_retarget_costumes.py"
+    },
+    "tools/test_tag_rush_effects.py": {
+      "bt3": "9fd6eb98dc45569aaba538125bf65f26bf0105999295b45cd4747e060219fcf0",
+      "bt4": "9fd6eb98dc45569aaba538125bf65f26bf0105999295b45cd4747e060219fcf0",
+      "shared": true,
+      "bt3_path": "tools/test_tag_rush_effects.py"
     }
   }
 }

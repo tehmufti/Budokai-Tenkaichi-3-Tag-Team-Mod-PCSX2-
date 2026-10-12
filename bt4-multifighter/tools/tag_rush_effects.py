@@ -36,6 +36,7 @@ SOURCE, DIRECTION, TARGET = 0x7E0, 0x7F0, 0x800
 NODE_SIZE, BODY_SIZE, MAX_TICKS = 64, 0x620, 10*ACTOR_HZ
 NATIVE_POOL_OFFSET=-22600
 EMIT=A(0x16A7D0); COLLISION=A(0x16ACA8); MOTION=A(0x16AC40)
+HARD_RETIRE=A(0x16A6F0)
 TERMINATE=A(0x16A900); ALIVE=A(0x16A9C0); BONE=A(0x2058E0)
 CALLBACKS=A(0x2C3AD8); NATIVE_UPDATE=A(0x16A400)
 NATIVE_IMPACT=A(0x187B00)
@@ -340,7 +341,20 @@ def stop_code():
     """
     a=Assembler(STOP);tag.save(a);a.li(16,ROWS);a.move(17,0);a.move(18,0)
     a.label('slot');a.move(4,16);a.call(OWNED);a.branch(4,2,0,'retired')
-    a.lw(4,16,R['node']);a.call(TERMINATE);a.li(8,1);a.sw(8,16,R['stopping'])
+    # Native16A400 keeps the beam children drawable between requesting stop
+    # and retiring the node. FINISH calls STOP without UPDATE during this
+    # interval, so invalidate their per-frame upload references here too.
+    # Otherwise an explosion's later GS uploads can replace those cached
+    # textures while the last beam frame still uses the old references.
+    a.addiu(4,16,DESC);a.call(A(0x14D460))
+    a.lw(4,16,R['node']);a.call(TERMINATE)
+    # The native explicit cleanup callback ends only children referenced by
+    # this authenticated beam. Normal expiry can leave independently pooled
+    # sprites alive after their parent, when no private descriptor update is
+    # left to refresh their texture addresses. Keep the stock explosion and
+    # every other actor's effect pools entirely outside this cleanup.
+    a.lw(4,16,R['node']);a.call(HARD_RETIRE)
+    a.li(8,1);a.sw(8,16,R['stopping'])
     a.addiu(18,18,1);a.jump('next')
     a.label('retired');a.sw(0,16,R['node']);a.sw(0,16,R['body']);a.sw(0,16,R['stopping']);a.sw(0,16,R['ticks'])
     a.label('next');a.addiu(16,16,STRIDE);a.addiu(17,17,1);a.li(8,2);a.branch(5,17,8,'slot')
@@ -467,12 +481,26 @@ def impact_code(explosion=False):
         a.li(9,assets.END-64);a.r(0x2B,9,9,10);a.branch(5,9,0,'no')
         a.lw(10,10,28);a.i(12,9,10,assets.FINISHER);a.branch(4,9,0,'no')
         a.i(12,9,10,assets.BEAM_LEAD|assets.BEAM_PARTNER);a.branch(4,9,0,'no')
-    a.r(0,8,0,16,9);a.li(9,scene.ROWS);a.r(0x21,21,8,9)
+    a.label('impact_actor');a.r(0,8,0,16,9);a.li(9,scene.ROWS);a.r(0x21,21,8,9)
     a.lw(10,21,scene.R['index']);a.li(8,tag.CONTROL);a.lw(9,8,tag.C['count'])
     a.r(0x2B,9,10,9);a.branch(4,9,0,'no')
     a.lw(10,21,scene.R['model_id']);a.i(11,9,10,12);a.branch(4,9,0,'no')
     scene.identity(a,21,'no','impact');a.lw(9,23,8);a.li(10,1);a.branch(5,9,10,'no')
-    a.r(0,8,0,17,2);a.r(0x21,8,23,8);a.lw(10,8,3436);full.pointer(a,10,80,'no')
+    a.r(0,8,0,17,2);a.r(0x21,8,23,8);a.lw(10,8,3436)
+    if not explosion:
+        # Some valid tail-less outfits omit the complete4..7 dummy branch.
+        # The native opening's first spark names lead bone5. If that exact
+        # branch is absent, place this cosmetic contact at the captured
+        # victim's torso instead; every present native bone keeps its cue.
+        # Re-enter full identity/loaded checks for the victim before reading.
+        a.branch(5,10,0,'impact_bone');a.branch(5,16,0,'no')
+        a.li(8,5);a.branch(5,17,8,'no');a.li(8,scene.STATE)
+        a.lw(9,8,scene.S['phase']);a.branch(5,9,0,'no')
+        for bone in (4,5,6,7):
+            a.lw(9,23,3436+4*bone);a.branch(5,9,0,'no')
+        a.li(16,2);a.li(17,17);a.jump('impact_actor')
+        a.label('impact_bone')
+    full.pointer(a,10,80,'no')
     finite(a,10,(64,68,72),'no');finite(a,23,(2404,),'no')
     # The ordinary battle initializes these14 descriptors and its30-node pool.
     # No new resource load or allocator switch occurs in the middle of a hit.

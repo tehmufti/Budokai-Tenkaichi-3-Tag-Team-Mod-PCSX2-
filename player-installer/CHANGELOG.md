@@ -1,16 +1,16 @@
-## Unreleased
+## Version 12
 
-Adds tag-team rush attacks to offline team battles in BT3 USA and BT4.
+Version 12 adds tag-team rush attacks and gives the mod's HUD and online menus a look closer to the original game.
 
-- When both fighters have full tag meters, press **charge ki + Triangle + Left** to invite a teammate. They can accept with the same input while targeting the same enemy.
-- The finish changes with your fighters: two beams, a combined melee attack, or a melee combo followed by a beam. Each hit deals part of the attack's damage.
-- **Mod Settings → Tag-team rush** lets you change the damage and meter time, keep the meter full in Modded Training, or have everyone watch the attack. The defaults are 15,000 damage and a 25-second meter.
-- Rush cameras now follow fused human players correctly. Transformations can still happen alongside another fighter's rush attack.
-- Beam assists and tag finishes choose each fighter's own beam pose, with a native clash pose for other move styles.
-- Windows BT4 installs now use the base game's graphics corrections to keep character outlines aligned.
-- Fusion settings have separate optional health, damage and defense multipliers for Potara and non-Potara fusions. Both start off, preserving the normal game stats.
+- **Tag attacks:** when both fighters have full meters and are targeting the same enemy, press **charge ki + Triangle + Left** to invite a teammate. They accept with the same input. The move has three endings depending on whether both, one, or neither fighter uses ki. Only the two attackers spend their meters.
+- **Tag settings:** change the damage, charge time and shared camera, or keep the meter full in Modded Training. The defaults are 15,000 damage and 25 seconds.
+- **HUD and menus:** the tag meter now sits under your health bar. Fusion messages, scores and other indicators use the game's own HUD style, with better spacing in split-screen. You can choose Native or Classic target markers under HUD settings. The online menus have also been restyled.
+- **Fusion buffs:** add separate health, damage and defense bonuses for Potara and non-Potara fusions. These are off by default.
+- **Fixes:** corrected rush cameras for fused players, beam poses for more characters, BT4 character outlines, and setup failures in three- and four-player team matches. Kid Goku outfit 3 and Pan outfit 4 can use tag attacks, and the texture glitch at the end of the beams is fixed.
 
-Giants cannot use tag-team rush. It is offline only for now. BT3 Europe and Japan keep their existing features without the new attack.
+Tag attacks work offline in BT3 USA and BT4. Giants cannot use them. BT3 Europe and Japan still have the other mod features, but not tag attacks yet.
+
+For a new installation, download the Windows ZIP or Linux archive. If you already have the mod, use the matching **Updater**. Your settings and saves carry over. Everyone playing online together should update to Version 12.
 
 ## Version 11.2
 

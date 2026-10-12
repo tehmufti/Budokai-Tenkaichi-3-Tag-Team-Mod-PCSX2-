@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 11.2 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.11.2).
+Download the **Version 12 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.12).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -19,7 +19,7 @@ This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
 
-The unreleased development source adds offline tag-team rush attacks for BT3
+Version 12 adds offline tag-team rush attacks for BT3
 USA and BT4. When both tag meters are full, press charge ki + Triangle + Left; a teammate targeting the same
 enemy can accept with the same input. The finish changes with the fighters,
 and damage is dealt throughout the attack. Adjust it in Mod Settings →
@@ -28,6 +28,9 @@ Tag-team rush. Giants cannot use this attack, and it is not available online.
 Fusion settings also let you set separate health, damage and defense bonuses for
 Potara and non-Potara fusions. Both are off by default. They apply to fusions
 performed during the match; choosing a fused character keeps its normal stats.
+
+The HUD and online menus now follow the game's own style. Tag meters sit below
+each player's health bar, and HUD settings offer Native or Classic target markers.
 
 ## Source layout
 
@@ -67,10 +70,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 11.2 Windows ZIP can be used instead of downloading it:
+An existing Version 12 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.11.2.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.12.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -86,10 +89,9 @@ adapters, using an installed game's runtime, and validating changes.
 
 ## Development source and downloads
 
-The main branch includes upcoming tag-team attacks and other unreleased
-changes. The downloadable installers and updaters remain Version 11.2.
-Use the release tag for the exact source behind those downloads.
-Choose a new version before distributing a build from this branch.
+Version 12 is available in Releases. Main may receive further development changes;
+use the release tag for the source behind the installers and updaters.
+Choose a new version before distributing a modified build.
 
 ## License
 
