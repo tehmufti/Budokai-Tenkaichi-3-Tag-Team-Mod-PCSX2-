@@ -85,8 +85,10 @@ HALF, WARN_HALF, EDGE_SCALE, EDGE_WARN_SCALE, BLINK = 256, 384, 160, 280, 4
 TIP_NUM, TIP_ADD, MARK_NUM, MARK_BASE = 230, 64, 72, 96
 ORIENT = dict(right=0, left=1, down=2, up=3)    # lockon_select TRI orientations (the way the tip points)
 # Rows kept clear at the top of every view (the clamp's minimum y, on and off screen): the native HUD's health-bar
-# band (1-view rows 0..~30, split/quad HUDs ~29) is drawn after the world pass and would cover a top-border mark.
-TOP_INSET = screen_y(30)
+# band (1-view rows 0..~30, split/quad HUDs ~29) is drawn after the world pass and would cover a top-border mark, and
+# the tag attack meter sits just below it (tag_rush_hud: bar foot at row 52 in one view, at most 51 in split views).
+# BT4: the meter sits one status row lower (tag_rush_hud.FULL_LABEL), its bar foot at row 70.
+TOP_INSET = screen_y(74 if __import__('mod_settings').ADAPTER == 'BT4' else 56)
 EDGE_LIMIT = 32767
 SAVED = tuple(range(16, 24))+(31,)
 # The quad renderer's per-view effects pass: `jal 12CCD0; nop; jal 102708` once per side.
@@ -704,6 +706,7 @@ def render_tails():
 
 def validate_memory(ram):
     """Own code, CONTROL, hook words and tails. Never calls another module's validator."""
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     import cpu_retaliation as retaliation
     import ffa_targeting as ffa
     if not installed(ram): raise ValueError('Attacker marks belong to another capture')

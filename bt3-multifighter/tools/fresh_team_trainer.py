@@ -468,6 +468,9 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
     import fusion_buffs
     builders.append(lambda r: fusion_buffs.build_memory(r,settings=preferences,source=source))
+    # The optional native HUD style re-points the classic draw calls installed above, so it is the last builder.
+    import native_hud_style
+    builders.append(lambda r: native_hud_style.build_memory(r,settings=preferences,source=source))
     import localization
     localization.pin_battle(preferences)
     with localization.using(preferences):
@@ -953,6 +956,8 @@ class Session:
         ram=self.snapshot('tag-rush-ready')
         plan=tag_rush_install.build_offline(ram,self.settings,source=self.source,
             training=self.battle_mode in ('training','training_coop'))
+        import native_hud_style
+        plan=native_hud_style.splice_plan(ram,plan)
         if plan['blocks']:self.install(plan,'tag-rush')
 
     def release_start(self):

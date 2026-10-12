@@ -1195,6 +1195,7 @@ def validate_memory(ram):
     """Own programs, hooks and marker call. Never calls lockoff_target.validate_memory (which calls
     dependency_override below); lock-off's remaining bytes are validated by it. lockon_threat, installed after this,
     re-points the two entry hooks and the marker call; its own override recognises them."""
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     import lockon_threat
     if not installed(ram): raise ValueError('Target selection belongs to another capture')
     for p, b in programs():

@@ -200,6 +200,7 @@ def build_memory(ram, seat=0, source='<prepared-match>'):
 
 def validate_memory(ram):
     """Report the installed spectator policy, or None when absent."""
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     u = lambda p: struct.unpack_from('<I', ram, p)[0]
     if u(CONTROL) != MAGIC: return None
     import spectator_takeover as takeover

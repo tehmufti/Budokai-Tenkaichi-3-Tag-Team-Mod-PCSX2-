@@ -252,6 +252,7 @@ def build_memory(ram,seconds=40,show_timer=True,source='<prepared>',lore=False,a
 
 
 def validate_memory(ram):
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     import coop_fusion
     import viewport_hud

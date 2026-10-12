@@ -99,6 +99,7 @@
   "lockon_after_ko": "nearest_to_centre",
   "lockon_target_marker": true,
   "lockon_target_style": "arrow",
+  "lockon_target_look": "native",
   "lockon_attacker_switch": "tap_during_warning",
   "lockon_threat_marks": "marks_and_warning",
   "beam_clash_camera": "keep",

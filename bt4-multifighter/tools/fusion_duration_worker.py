@@ -55,7 +55,12 @@ class Worker(shared.Worker):
             with policy.building_for(capacity):
                 pieces=timer.program(previous,draw_previous)+[(timer.fusion.BEGIN,timer.fusion.begin_code(True)),(timer.fusion.COMMIT,timer.fusion.commit_code(True))]
                 with lazy_ram.patched():
-                    try:pieces=[(at,four_player_mode.dependency_override(ram,at,data))for at,data in pieces]
+                    # The optional native HUD style re-points the timer bar's call: checks read the classic view,
+                    # the comparison below the installed words.
+                    import native_hud_style
+                    classic=native_hud_style.classic_view(ram)
+                    try:pieces=[(at,native_hud_style.dependency_override(ram,at,four_player_mode.dependency_override(classic,at,data)))
+                                for at,data in pieces]
                     except ValueError:continue
                 if all(p.read(at,len(data))==data for at,data in pieces):self.capacity=capacity;self.pieces=pieces;matched=True;break
         if not matched:raise ValueError('Timed fusion executable changed')

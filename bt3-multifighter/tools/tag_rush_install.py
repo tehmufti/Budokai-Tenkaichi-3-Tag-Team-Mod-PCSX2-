@@ -265,6 +265,12 @@ def hud_patches(ram):
     if _u(ram,quad.CONTROL)!=quad.MAGIC:return captions.hud_patch(ram)
     entry=(tag.CONTROL,tag.MAGIC,captions.DRAW)
     before=hud.hud_extensions(ram);without=tuple(e for e in before if e!=entry);after=without+(entry,)
+    # The target marker appends its own quad-only entry last (lockon_select.quad_patch: hud_extensions + QMARKER), and
+    # its rematch check expects that order: the caption goes before it.
+    import lockon_select as sel
+    if _u(ram,sel.CONTROL)==sel.MAGIC and _u(ram,sel.CONTROL+sel.FIELDS['quad']):
+        marker=((sel.CONTROL,sel.MAGIC,sel.QMARKER),)
+        before,without,after=before+marker,without+marker,after+marker
     marked=_u(ram,threat.CONTROL)==threat.MAGIC and bool(_u(ram,threat.CONTROL+threat.FIELDS['quad_sites']))
     if marked:threat.validate_memory(ram)
     def with_markers(code):
@@ -609,9 +615,11 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
             raise ValueError('Existing tag-rush initialization state changed')
         if ready and phase!=bootstrap.READY:raise ValueError('Tag rush was armed before guest initialization')
         if ready:_ready_receipts(ram,manager,count)
+        import native_hud_style
+        classic=native_hud_style.classic_view(ram)   # the optional native HUD style re-points caption and meter calls
         for p,b in immutable:
-            if ram[p:p+len(b)]!=b:raise ValueError(f'Existing tag-rush program changed at {p:08X}')
-        if hud_patches(ram):raise ValueError('Existing tag-rush HUD hook changed')
+            if classic[p:p+len(b)]!=b:raise ValueError(f'Existing tag-rush program changed at {p:08X}')
+        if hud_patches(classic):raise ValueError('Existing tag-rush HUD hook changed')
         return dict(blocks=[],usable=True,status='Tag rush already installed',source=str(source),characters=admission,limitations=scene_plan.get('limitations',[]))
     parts=static+[(tag.CONTROL,bytes(control)),(META,_meta_bytes(record))]
     parts+=hud_patches(ram)

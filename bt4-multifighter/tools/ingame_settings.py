@@ -84,6 +84,7 @@ DEPENDS = {
     'lockoff_target_hud': ('lockoff_enabled', True),
     'lockon_right_stick_mode': ('lockon_right_stick', True),
     'lockon_target_style': ('lockon_target_marker', True),
+    'lockon_target_look': ('lockon_target_marker', True),
     'show_fusion_control_owner': ('coop_fusion_controls', 'swap_20s'),
     'show_fusion_control_countdown': ('coop_fusion_controls', 'swap_20s'),
     'fusion_duration_seconds': ('fusion_duration_enabled', True),

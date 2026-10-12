@@ -260,6 +260,8 @@ TEXT = {
     'pick.search': {'en': 'Search', 'es': 'Buscar'},
     'pick.colour': {'en': 'Colour', 'es': 'Color'},
     'pick.forms': {'en': 'Forms', 'es': 'Formas'},
+    'pick.changed': {'en': 'Someone changed this fighter while you were choosing. Press OK again to replace it.',
+                     'es': 'Alguien cambió este luchador mientras elegías. Pulsa Aceptar otra vez para reemplazarlo.'},
     'stage.title': {'en': 'Choose the stage', 'es': 'Elige el escenario'},
     # ---- S6 / S7
     'prep.title': {'en': 'Preparing the match', 'es': 'Preparando el combate'},

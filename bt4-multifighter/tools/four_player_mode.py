@@ -93,6 +93,8 @@ def dependency_override(ram,address,expected):
         if address==at and expected==old:
             import lockoff_target
             new=lockoff_target.dependency_override(ram,at,new)
+            import native_hud_style
+            new=native_hud_style.dependency_override(ram,at,new)   # the native HUD kit's re-pointed text entry
             if ram[at:at+len(new)]!=new:raise ValueError(f'Four-player executable changed at {at:08X}')
             return new
     return expected

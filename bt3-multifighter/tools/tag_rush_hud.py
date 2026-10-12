@@ -28,15 +28,116 @@ REGS, STACK = (*range(16, 24), 31), 0x70
 LABEL = 'TAG ATTACK'
 TEXT_STRIDE = 32
 BLUE, GOLD, BLACK = 0x80FFC050, 0x8050D8FF, 0x80000000
+# Placement: just below the subject's own main gauge, under its middle third and right of the ki bars (mirrored for a
+# right-hand status). One full view: the native status of the subject's side (logical 512 x 448 coordinates, the
+# right-hand one mirrored). Split views: below each view's own viewport_hud panel, located as viewport_hud.post_code
+# places it (PANEL_* are 1/256ths of that panel's width: the 256-unit native frame scaled to it).
+FULL_X, FULL_LABEL = 123, 38
+PANEL_X, PANEL_LABEL, LABEL_GAP = 118, 33, 9
+PANEL_LABEL_MAX = 50   # rows: a large panel's meter stays above the 3/4-view fusion captions (top + 70)
+# BT4's status has a second row under the main gauge's middle third (ki bars, stocks and its own small gauge, rows
+# 33..51): the meter goes one row lower there, still clear of the partner panel (x <= 109).
+import mod_settings as _settings   # the tree's adapter fact ('BT3' / 'BT4'); native_map maps BT4 to bt3-usa
+if _settings.ADAPTER == 'BT4':
+    FULL_LABEL = 56
+    # BT4's split-screen frame: its ki bars reach 124/256 of the panel and rows 33..49; the meter starts right of them
+    # and below the frame's lower edge (live B14 REV2 three/four-view frames).
+    PANEL_X, PANEL_LABEL = 130, 58
+SPLIT_SLOT = 0x58     # stack word: split view index + 1 (0 = one full view)
 
 
-def rectangles(view):
+def split_panel(view, column, settings, coop, views=2):
+    """(x, y, width, faces_right) of a split view's own status panel, as viewport_hud.post_code places it.
+    settings: viewport_hud_art.SETTINGS words (native style, portraits, sparks, coop targets, trail, scale, filter,
+    top_bottom); coop: every view's subject is on one team."""
+    x0, x1, y0, _y1 = view
+    vw = x1-x0
+    if settings[7] == 1:
+        w = min(vw-2, 256); return (x0+1 if not column else x1-1-w), y0+2, w, bool(column)
+    if settings[3] == 0 and coop:
+        return x0+4, y0+5, vw-8, bool(column)
+    fit = (vw-14) >> 1
+    w = fit
+    if settings[0] == 1:
+        scale = settings[5] if 80 <= settings[5] <= 140 else 100
+        w = min(fit, (((vw-11) >> 1)*scale)//100)
+    inset = 1 if views < 3 else 7          # post_code: 2 views x0+4 shifted 3 outward; 3/4 views (4:3) x0+7
+    return (x0+inset if not column else x1-inset-w), y0+2, w, bool(column)
+
+
+def placement(view, split=None, subject=0, settings=(1, 1, 1, 1, 15, 100, 1, 0), coop=False, views=2):
+    """(meter x, caption y, bar y) as draw_code computes them. split: None (one full view) or the view index."""
+    x0, x1, y0, _y1 = view
+    if split is None:
+        x = x0+FULL_X if not subject & 1 else x1-FULL_X-WIDTH
+        return x, y0+screen_y(FULL_LABEL), y0+screen_y(FULL_LABEL)+LABEL_GAP
+    if settings[0] != 1:
+        # Compact text panels (64 px tall, no gauge art): the strip right of the fusion captions, below both panels.
+        return x1-MARGIN-WIDTH, y0+screen_y(LABEL_TOP), y0+screen_y(LABEL_TOP)+LABEL_GAP
+    px, py, w, right = split_panel(view, split & 1, settings, coop, views)
+    off, label = (w*PANEL_X) >> 8, py+min((w*PANEL_LABEL) >> 8, PANEL_LABEL_MAX)+3
+    x = px+off if not right else px+w-off-WIDTH
+    return x, label, label+LABEL_GAP
+
+
+def rectangles(view, **where):
     """Design bounds used by layout checks (native coordinates, inclusive view)."""
-    x0, x1, y0, y1 = view
-    x, y = x1-MARGIN-WIDTH, y0+screen_y(LABEL_TOP)
+    x, y, bar = placement(view, **where)
     return {'caption': (x, y, x+WIDTH, y+6.25),
-            'meter': (x-1, y0+screen_y(BAR_TOP)-1,
-                      x+WIDTH+1, y0+screen_y(BAR_TOP)+HEIGHT+1)}
+            'meter': (x-1, bar-1, x+WIDTH+1, bar+HEIGHT+1)}
+
+
+def _place(a):
+    """t-registers only. s1 camera, s2 physical subject -> s5 meter x, s3 caption y, s6 bar y (pixels)."""
+    import viewport_hud_art as art
+    a.lw(8, 29, SPLIT_SLOT); a.branch(5, 8, 0, 'split_place')
+    a.lw(19, 17, 520); a.addiu(19, 19, screen_y(FULL_LABEL))
+    a.lw(21, 17, 512); a.addiu(21, 21, FULL_X)
+    a.i(12, 9, 18, 1); a.branch(4, 9, 0, 'placed')
+    a.lw(21, 17, 516); a.addiu(21, 21, -FULL_X-WIDTH); a.jump('placed')
+    a.label('split_place')
+    a.addiu(8, 8, -1); a.i(12, 13, 8, 1)                                    # t5 = column parity: faces right
+    a.lw(9, 17, 516); a.lw(10, 17, 512); a.r(0x23, 9, 9, 10)                # t1 = view width
+    a.li(14, art.SETTINGS)
+    a.lw(11, 14, 28); a.addiu(12, 0, 1); a.branch(5, 11, 12, 'not_full_width')
+    a.addiu(10, 9, -2); a.addiu(11, 0, 256); a.r(0x2A, 12, 11, 10); a.branch(4, 12, 0, 'fw_ready'); a.move(10, 11)
+    a.label('fw_ready'); a.addiu(11, 0, 1); a.addiu(12, 0, 2); a.jump('panel_x')
+    a.label('not_full_width')
+    a.lw(11, 14, 12); a.branch(5, 11, 0, 'not_coop')
+    # Co-op: every view's subject on one team (team parity of the captured physical subjects).
+    a.li(11, hud.CONTROL); a.lw(11, 11, 12); a.li(12, hud.VIEWS); a.lw(15, 12, 20); a.lw(15, 15); a.i(12, 15, 15, 1)
+    a.label('coop_scan'); a.branch(4, 11, 0, 'coop')
+    a.li(10, hud.VIEWS); a.addiu(11, 11, -1)
+    a.addiu(8, 0, hud.VIEW_STRIDE); a.r(24, 0, 11, 8); a.r(18, 8, 0); a.r(0x21, 10, 10, 8)
+    a.lw(10, 10, 20); a.lw(10, 10); a.i(12, 10, 10, 1); a.branch(5, 10, 15, 'not_coop'); a.jump('coop_scan')
+    a.label('coop')
+    a.addiu(10, 9, -8); a.lw(21, 17, 512); a.addiu(21, 21, 4); a.addiu(12, 0, 5); a.jump('panel_y')
+    a.label('not_coop')
+    a.addiu(10, 9, -14); a.r(3, 10, 0, 10, 1)                               # fit = (vw-14) >> 1
+    a.lw(11, 14); a.addiu(12, 0, 1); a.branch(5, 11, 12, 'compact_width')
+    a.lw(11, 14, 20); a.addiu(12, 11, -80); a.i(11, 15, 12, 61); a.branch(5, 15, 0, 'scale_ok'); a.addiu(11, 0, 100)
+    a.label('scale_ok')
+    a.addiu(15, 9, -11); a.r(3, 15, 0, 15, 1); a.r(24, 0, 15, 11); a.r(18, 15, 0)
+    a.addiu(11, 0, 100); a.r(27, 0, 15, 11); a.r(18, 15, 0)
+    a.r(0x2A, 12, 15, 10); a.branch(4, 12, 0, 'compact_width'); a.move(10, 15)
+    a.label('compact_width'); a.addiu(11, 0, 1); a.addiu(12, 0, 2)
+    a.li(15, hud.CONTROL); a.lw(15, 15, 12); a.i(10, 15, 15, 3); a.branch(5, 15, 0, 'panel_x'); a.addiu(11, 0, 7)
+    a.label('panel_x')                                                      # t3 inset, t2 width
+    a.lw(21, 17, 512); a.r(0x21, 21, 21, 11); a.branch(4, 13, 0, 'panel_y')
+    a.lw(21, 17, 516); a.r(0x23, 21, 21, 11); a.r(0x23, 21, 21, 10)
+    a.label('panel_y'); a.lw(19, 17, 520); a.r(0x21, 19, 19, 12)            # s5 panel x, s3 panel y
+    a.lw(11, 14); a.addiu(12, 0, 1); a.branch(5, 11, 12, 'text_panel')
+    a.addiu(8, 0, PANEL_X); a.r(24, 0, 10, 8); a.r(18, 8, 0); a.r(3, 8, 0, 8, 8)
+    a.addiu(11, 0, PANEL_LABEL); a.r(24, 0, 10, 11); a.r(18, 11, 0); a.r(3, 11, 0, 11, 8)
+    a.addiu(12, 0, PANEL_LABEL_MAX); a.r(0x2A, 15, 12, 11); a.branch(4, 15, 0, 'label_capped'); a.move(11, 12)
+    a.label('label_capped')
+    a.r(0x21, 19, 19, 11); a.addiu(19, 19, 3); a.jump('panel_offset')
+    a.label('text_panel')
+    a.lw(21, 17, 516); a.addiu(21, 21, -MARGIN-WIDTH); a.lw(19, 17, 520); a.addiu(19, 19, screen_y(LABEL_TOP))
+    a.jump('placed')
+    a.label('panel_offset'); a.branch(5, 13, 0, 'faces_right'); a.r(0x21, 21, 21, 8); a.jump('placed')
+    a.label('faces_right'); a.r(0x21, 21, 21, 10); a.r(0x23, 21, 21, 8); a.addiu(21, 21, -WIDTH)
+    a.label('placed'); a.addiu(22, 19, LABEL_GAP)
 
 
 def caption_code():
@@ -123,6 +224,7 @@ def draw_code():
     for i, reg in enumerate(REGS): a.i(63, reg, 29, i*8)
     a.r(16, 8, 0); a.i(63, 8, 29, 0x48)
     a.r(18, 8, 0); a.i(63, 8, 29, 0x50)
+    a.sw(0, 29, SPLIT_SLOT)
     core.gate(a, 'done')
     a.li(16, CONTROL); a.lw(9, 16); a.li(8, MAGIC); a.branch(5, 9, 8, 'done')
     a.lw(9, 16, 4); a.lw(8, 28, -22364); a.branch(5, 9, 8, 'done')
@@ -154,7 +256,7 @@ def draw_code():
     a.label('view')
     for off, desc in ((512, 4), (516, 8), (520, 12), (524, 16)):
         a.lw(8, 17, off); a.lw(9, 20, desc); a.branch(5, 8, 9, 'next_view')
-    a.lw(19, 20, 20); a.jump('subject')
+    a.addiu(8, 21, 1); a.sw(8, 29, SPLIT_SLOT); a.lw(19, 20, 20); a.jump('subject')
     a.label('next_view'); a.addiu(20, 20, hud.VIEW_STRIDE); a.addiu(21, 21, 1)
     a.addiu(8, 0, hud.MAX_VIEWS); a.branch(5, 21, 8, 'view'); a.jump('done')
     a.label('subject'); a.lw(18, 19); a.move(4, 18); a.call(ALIVE); a.branch(4, 2, 0, 'done')
@@ -172,18 +274,17 @@ def draw_code():
     a.r(0x2B, 8, 23, 20); a.branch(5, 8, 0, 'charging'); a.move(23, 20)
     a.li(8, GOLD); a.sw(8, 29, 0x60); a.jump('chosen')
     a.label('charging'); a.li(8, BLUE); a.sw(8, 29, 0x60)
-    a.label('chosen'); a.li(22, TEXT); a.lw(21, 17, 516); a.addiu(21, 21, -MARGIN-WIDTH)
+    a.label('chosen'); _place(a)
+    # Never outside this view: left and right edges, and the bar's foot above its bottom.
     a.lw(8, 17, 512); a.r(0x2A, 8, 21, 8); a.branch(5, 8, 0, 'done')
-    a.lw(19, 17, 520); a.addiu(19, 19, screen_y(LABEL_TOP))
-    a.lw(8, 17, 524); a.lw(9, 17, 520); a.addiu(9, 9, screen_y(BAR_TOP)+HEIGHT+1)
-    a.r(0x2A, 8, 8, 9); a.branch(5, 8, 0, 'done')
+    a.lw(8, 17, 516); a.addiu(9, 21, WIDTH+1); a.r(0x2A, 8, 8, 9); a.branch(5, 8, 0, 'done')
+    a.lw(8, 17, 524); a.addiu(9, 22, HEIGHT+5); a.r(0x2A, 8, 8, 9); a.branch(5, 8, 0, 'done')
     for dx, dy, color in ((1, 1, BLACK), (0, 0, None)):
-        a.move(4, 22); a.addiu(5, 21, 1792+dx); a.r(0, 5, 0, 5, 4)
+        a.li(4, TEXT); a.addiu(5, 21, 1792+dx); a.r(0, 5, 0, 5, 4)
         a.addiu(6, 19, Y_ORIGIN+dy); a.r(0, 6, 0, 6, 4)
         if color is None: a.lw(7, 29, 0x60)
         else: a.li(7, color)
         a.call(CAPTION)
-    a.lw(22, 17, 520); a.addiu(22, 22, screen_y(BAR_TOP))
     a.addiu(8, 0, WIDTH); a.r(24, 0, 23, 8); a.r(18, 23, 0)
     a.r(27, 0, 23, 20); a.r(18, 23, 0)
     _rect(a, WIDTH+2, -1, HEIGHT+2, BLACK, dx=-1)

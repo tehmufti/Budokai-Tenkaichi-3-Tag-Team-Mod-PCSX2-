@@ -318,6 +318,7 @@ def programs():
 
 
 def validate_memory(ram):
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     if struct.unpack_from('<2I',ram,CONTROL)!=(MAGIC,struct.unpack_from('<I',ram,core.ACTORS)[0]):
         raise ValueError('Lock-off belongs to another capture')
     # lockon_select hooks the INPUT/APPLY entries; it validates its own programs, never these.
