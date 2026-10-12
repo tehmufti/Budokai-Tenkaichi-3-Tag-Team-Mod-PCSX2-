@@ -98,6 +98,7 @@ ES = {
     'When your target is defeated': 'Cuando tu objetivo cae derrotado',
     'Mark your target': 'Marcar tu objetivo',
     'Target indicator': 'Indicador del objetivo',
+    'Target marker look': 'Aspecto del indicador',
     'Switch to your attacker': 'Cambiar a quien te ataca',
     'Enemies targeting you': 'Enemigos que te fijan',
     'Help when outnumbered': 'Ayuda en inferioridad numérica',
@@ -506,11 +507,11 @@ ES.update({
     'Watch two teams of CPU fighters.\nChoose the fighters for each team.': 'Observa un combate entre equipos CPU.\nElige los luchadores de cada equipo.',
     'Return to the mod mode groups.': 'Vuelve al menú de modos del mod.',
     'One player against every other fighter.\nAll remaining fighters are CPUs.': 'Un jugador contra todos los demás.\nLos otros luchadores son CPU.',
-    'Two players fight each other and CPUs.\nEvery fighter is an opponent.': 'Dos jugadores luchan entre sí y contra la CPU.\nTodos los luchadores son rivales.',
+    'Two players fight each other and CPUs.\nEvery fighter is an opponent.': 'Dos jugadores luchan entre sí y con la CPU.\nTodos los luchadores son rivales.',
     'Watch a free-for-all between CPUs.\nEvery fighter is an opponent.': 'Observa un todos contra todos entre CPU.\nTodos los luchadores son rivales.',
     'Two players share Team 1.\nChoose at least two Team 1 fighters\nand one or more CPU opponents.': 'Dos jugadores comparten el equipo 1.\nElige al menos dos aliados\ny al menos un rival CPU.',
     'Two to four allies practice together.\nSelect an ally for every human player\nand one or more CPU opponents.': 'De dos a cuatro aliados practican juntos.\nElige un aliado por jugador\ny uno o más rivales CPU.',
-    'Practice with one human and CPU fighters.\nChoose CPU behavior and refill in Mod settings.': 'Practica con un jugador y luchadores CPU.\nConfigura la CPU y la recuperación en Ajustes.',
+    'Practice with one human and CPU fighters.\nSet CPU behavior and refill in Mod settings.': 'Practica con un jugador y luchadores CPU.\nConfigura CPU y recuperación en Ajustes.',
     'Practice with a human on each side.\nAdd CPU fighters to either team.': 'Practica con un jugador en cada equipo.\nAñade luchadores CPU a cualquier equipo.',
     'Four players and any selected CPUs.\nSelect at least four fighters total.': 'Cuatro jugadores y las CPU elegidas.\nSelecciona al menos cuatro luchadores.',
     'Four players share Team 1.\nSelect at least four Team 1 fighters.': 'Cuatro jugadores comparten el equipo 1.\nSelecciona al menos cuatro aliados.',
@@ -520,7 +521,7 @@ ES.update({
     'Three players and any selected CPUs.\nSelect at least three fighters total.': 'Tres jugadores y las CPU elegidas.\nSelecciona al menos tres luchadores.',
     'Three allies share Team 1.\nSelect at least three Team 1 fighters.': 'Tres aliados comparten el equipo 1.\nSelecciona al menos tres aliados.',
     'Three allies practice against CPUs.\nSelect at least three Team 1 fighters.': 'Tres aliados practican contra la CPU.\nSelecciona al menos tres aliados.',
-    'Choose each player team before character select.\nShare a team for cooperative play.\nAdd CPU fighters to either team.': 'Asigna equipos antes de elegir luchadores.\nComparte equipo para jugar en cooperativo.\nPuedes añadir CPU a ambos equipos.',
+    'Choose a team for each player, then fighters.\nShare a team for cooperative play.\nAdd CPU fighters to either team.': 'Asigna equipos antes de elegir luchadores.\nComparte equipo para jugar en cooperativo.\nPuedes añadir CPU a ambos equipos.',
 })
 
 
@@ -601,8 +602,8 @@ ES.update({
         'Ginyu puede intercambiar cuerpos con el rival que alcanza; las habilidades robadas son opcionales. Las voces adicionales usan canales de voz libres. Los ajustes de la CPU y la probabilidad limitan sus transformaciones; las excepciones por personaje los anulan. No afectan a jugadores, fusiones ni al Cambio de Cuerpo. Se aplica desde el próximo combate; la revancha (Fight Again) conserva sus ajustes.',
     'Larger giants scale native giant forms; expanded maps give them room. Size, attack speed, damage, stagger resistance and camera distance apply only while larger giants are on; the Cinematics zoom-out multiplies that distance up to a fixed limit. Applies from the next match; a Fight Again rematch keeps the settings of its match.':
         'Los gigantes grandes amplían las formas gigantes del juego; los mapas ampliados les dan espacio. Tamaño, velocidad, daño, resistencia y distancia de cámara solo se aplican con gigantes grandes activados; la distancia de la cámara de combate (Cinemáticas) la multiplica hasta un límite fijo. Se aplica desde el próximo combate; la revancha (Fight Again) conserva los ajustes de su combate.',
-    'Health bars, battle HUD, kill feed, watched fighter kill count, target indicator and attacker arrows are separate switches. Battle HUD off also hides split-screen panels. The indicator is a gold arrow, a ring sized to your target, or both, in every view. Red arrows point at each enemy locked on to you, on the screen edge if off screen; they flash while it attacks. Applies next match; Fight Again keeps it.':
-        'Barras de salud, interfaz, registro de bajas, bajas del observado, indicador del objetivo y flechas de atacantes se activan por separado. Sin interfaz no hay paneles divididos. El indicador es una flecha dorada, un anillo a la medida del objetivo o ambos, en cada vista. Flechas rojas señalan a cada enemigo que te fija, en el borde si no se ve; parpadean mientras te ataca. Se aplica al próximo combate y revancha.',
+    'Mod text, bars and markers use the game font and HUD art. Health bars, battle HUD, kill feed, watched fighter kill count, target indicator and attacker arrows are separate switches. Battle HUD off also hides split-screen panels. The indicator is a gold arrow, a ring sized to your target, or both, in every view, in the Native or Classic look. Red arrows point at each enemy locked on to you, on the screen edge if off screen; they flash while it attacks. Applies next match; Fight Again keeps it.':
+        'Textos, barras y marcadores del mod usan la fuente y el arte del juego. Barras de salud, interfaz, registro de bajas, bajas del observado, indicador del objetivo y flechas de atacantes se activan por separado. Sin interfaz no hay paneles divididos. El indicador es una flecha dorada, un anillo a la medida del objetivo o ambos, en cada vista, con aspecto Original o Clásico. Flechas rojas señalan a cada enemigo que te fija, en el borde si no se ve; parpadean mientras te ataca. Se aplica al próximo combate y revancha.',
     'Native style uses the game frames and meters; portraits and lightning need it. "Same top row" holds both panels (size in %); "Player top, target bottom" puts your target opposite you. Co-op panels show both players or each player and target. Smooth filtering softens textures. The damage trail briefly shows lost health (0 = off). Applies from the next match; a Fight Again rematch keeps the settings of its match.':
         'El estilo original usa marcos y medidores del juego; retratos y rayos lo requieren. "Ambos arriba" pone los dos paneles arriba (tamaño en %); "Jugador arriba, objetivo abajo" coloca a tu objetivo frente a ti. En cooperativo se ven los jugadores o cada uno con su objetivo. El suavizado alisa las texturas. La estela muestra la salud perdida (0 = no). Se aplica desde el próximo combate; la revancha conserva sus ajustes.',
     'A defeated human can watch fighters and take over a living CPU teammate, never an enemy, and not in free-for-all or CPU-only matches. Fallen fighters can be watched for their score. The hint shows the takeover button after its delay; the confirmation names your new fighter. Applies from the next match; a Fight Again rematch keeps the settings of its match.':

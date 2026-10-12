@@ -221,7 +221,10 @@ arrows (as in the PSP game Tenkaichi Tag Team) around its body instead, or
 both; the ring is sized to your target on screen (smaller far away and in
 split screen). It shows in every layout, each view marking its own player's
 target. Switch it off with **HUD → Mark your target**, separately from the
-health bars. During an attack
+health bars. **HUD → Target marker look** draws the arrow and ring with the game's own
+lock-on art (Native, the default) or as the earlier gold arrow and yellow ring
+(Classic). The other mod HUD texts, bars and meters always use the game's own
+font and HUD art. During an attack
 warning (or up to half a second after it) the switch tap locks on to the enemy
 attacking you instead (**Controls → Switch to your attacker**: Never, Tap during
 a warning, or Tap, or automatic when hit). Red arrows point in at the enemies

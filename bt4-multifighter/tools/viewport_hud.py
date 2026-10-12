@@ -477,7 +477,9 @@ def post_code(sizing=True,placement=True,inset=True,outward=True,pair_offset=8,q
             a.addiu(25,0,22);a.jump('target_inset_ready');a.label('quad_target_inset')
             a.li(8,art.SETTINGS);a.lw(9,8);a.branch(4,9,0,'target_inset_ready')
             a.lw(9,17,12);a.branch(5,9,0,'target_inset_ready')
-            a.move(10,0);wide.emit_detection(a,10,'target_inset_ready');a.addiu(25,0,26)
+            # 4:3 as well (Version 12): the native timer box (rows 0..~34 around x 231..281) covered the inner panel's
+            # stock digits. 16 px clears it; the two frames then share only their transparent side padding.
+            a.addiu(25,0,16);a.move(10,0);wide.emit_detection(a,10,'target_inset_ready');a.addiu(25,0,26)
             a.label('target_inset_ready')
         a.branch(5,26,0,'left_target');a.lw(21,17,8)
         if inset:a.r(0x23,21,21,25)

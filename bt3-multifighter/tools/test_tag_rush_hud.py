@@ -133,29 +133,91 @@ class TagRushHudTests(unittest.TestCase):
             c=machine(subject=subject);c.w(h.CONTROL+16,1);c.w(h.CONTROL+20,7);c.w(h.CONTROL+24,shared)
             draw(c);self.assertEqual(bool(c.rects),visible,(subject,shared))
 
-    def test_every_view_uses_its_own_subject_and_scissor(self):
-        for humans in (1,2,3,4):
-            views=quad.rectangles(humans) if humans>1 else ((0,511,0,SCISSOR_Y1),)
-            for seat,view in enumerate(views):
-                with self.subTest(humans=humans,seat=seat):
-                    c=machine(subject=seat,view=view,split=True);draw(c)
-                    x0,x1,y0,y1=view
-                    self.assertTrue(c.rects)
-                    for left,top,right,bottom,_ in c.rects:
-                        self.assertGreaterEqual(left,x0);self.assertLessEqual(right,x1)
-                        self.assertGreaterEqual(top,y0);self.assertLessEqual(bottom,y1)
-                    self.assertEqual(c.texts[-1][1],x1-h.MARGIN-h.WIDTH)
-                    self.assertEqual(c.texts[-1][2],y0+h.screen_y(h.LABEL_TOP))
-                    self.assertEqual(c.rects[-1][1],y0+h.screen_y(h.BAR_TOP))
+    LAYOUTS = {'top': (1, 1, 1, 1, 15, 100, 1, 0), 'top 140%': (1, 1, 1, 1, 15, 140, 1, 0),
+               'top 80%': (1, 1, 1, 1, 15, 80, 1, 0), 'top_bottom': (1, 1, 1, 1, 15, 100, 1, 1),
+               'co-op players': (1, 1, 1, 0, 15, 100, 1, 0), 'compact text': (0, 1, 1, 1, 15, 100, 1, 0)}
+    SUBJECTS = 0x2200000
+
+    def split_machine(self, humans, seat, words, coop, language='en', views=None):
+        import viewport_hud_art as art
+        views = views or quad.rectangles(humans)
+        subjects = [(2*i) % 6 for i in range(humans)] if coop else list(range(humans))
+        c = machine(subject=subjects[seat], view=views[seat], split=True, language=language)
+        c.w(h.hud.CONTROL+12, humans)
+        for i, v in enumerate(views):
+            c.write(h.hud.VIEWS+i*h.hud.VIEW_STRIDE, struct.pack('<6I', 1, *v, self.SUBJECTS+4*i))
+            c.w(self.SUBJECTS+4*i, subjects[i])
+        c.write(art.SETTINGS, struct.pack('<8I', *words))
+        return c
+
+    def test_every_view_places_the_meter_below_its_own_status(self):
+        # One full view: below the subject's own main gauge, under its middle third and right of the ki bars
+        # (Version 12); a right-hand (team 2) subject gets the mirror image.
+        full = (0, 511, 0, SCISSOR_Y1)
+        self.assertEqual(h.placement(full)[:2], (123, h.screen_y(56 if h._settings.ADAPTER == 'BT4' else 38)))
+        self.assertEqual(h.placement(full, subject=1)[0], 511-123-h.WIDTH)
+        for subject in (0, 1):
+            c = machine(subject=subject); draw(c)
+            x, y, bar = h.placement(full, subject=subject)
+            self.assertEqual(c.texts[-1][1:3], (x, y)); self.assertEqual(c.rects[-1][1], bar)
+        # Split views: below each view's own viewport_hud panel, wherever its layout puts it.
+        for humans in (2, 3, 4):
+            views = quad.rectangles(humans)
+            for seat in range(humans):
+                for name, words in self.LAYOUTS.items():
+                    for coop in (False, True):
+                        with self.subTest(humans=humans, seat=seat, layout=name, coop=coop):
+                            c = self.split_machine(humans, seat, words, coop); draw(c)
+                            x, y, bar = h.placement(views[seat], split=seat, settings=words, coop=coop, views=humans)
+                            self.assertEqual(c.texts[-1][1:3], (x, y))
+                            self.assertEqual(c.rects[-1][1], bar)
+                            x0, x1, y0, y1 = views[seat]
+                            for left, top, right, bottom, _ in c.rects:
+                                self.assertGreaterEqual(left, x0); self.assertLessEqual(right, x1)
+                                self.assertGreaterEqual(top, y0); self.assertLessEqual(bottom, y1)
         c=machine(split=True);c.w(h.hud.VIEWS+4,1);draw(c)
         self.assertEqual(c.texts,[],'an unrecognised viewport never borrows the first player')
 
-    def test_near_hud_strip_avoids_captions_in_all_layouts_and_video_heights(self):
+    def test_bt4_one_view_meter_sits_below_its_second_status_row(self):
+        # BT4's status (measured from a live B14 REV2 frame, logical 512 x 448): portrait, main gauge, then a second
+        # row of ki bars, stocks and its own small gauge under the main gauge's middle third, and the partner panel.
+        parts = {'portrait': (5, 8, 62, 63), 'main gauge': (65, 15, 228, 30), 'ki bars': (63, 33, 111, 51),
+                 'stocks': (112, 33, 128, 51), 'small gauge': (130, 33, 192, 51), 'partner panel': (10, 66, 109, 83),
+                 'timer': (228, 13, 283, 35), 'kills': (8, 86, 62, 96)}
+        with mock.patch.object(h, 'FULL_LABEL', 56):
+            for subject in (0, 1):
+                bounds = h.rectangles((0, 511, 0, SCISSOR_Y1), subject=subject)
+                for name, (a, b, c, d) in parts.items():
+                    theirs = (a, b, c, d) if not subject else (511-c, b, 511-a, d)
+                    for ours in bounds.values():
+                        self.assertFalse(intersects(ours, theirs), (subject, name, ours))
+
+    def test_meter_clears_status_art_and_captions_in_all_layouts_and_video_heights(self):
         # Compact fusion captions use 75% glyphs; the older generic layout
         # reserves full-size lines, which would overstate their drawn width.
         labels=[f'FUSION - P{i} TAP R3 TO ACCEPT' for i in range(1,5)]
         labels += [f'FUSED - PLAYER {i} HAS CONTROL' for i in range(1,5)]
         labels += [f'P{i} TAKES CONTROL IN {n}' for i in range(1,5) for n in range(1,6)]
+
+        def panel(px, py, w, right):
+            """The drawn parts of a viewport_hud panel (256-unit native frame scaled to w; mirrored facing right)."""
+            out = {}
+            for part, (a, b, c_, d) in (('portrait', (14, 1, 82, 69)), ('gauge', (52, 3, 232, 31)),
+                                        ('ki bars', (62, 26, 112, 45)), ('stocks', (25, 44, 77, 60))):
+                l, r = (a*w/256, c_*w/256) if not right else (w-c_*w/256, w-a*w/256)
+                out[part] = (px+l, py+b*w/256, px+r, py+d*w/256)
+            return out
+
+        def native_full(left, right):
+            """The native one-view status of each side (logical 512 x 448, measured from the game's frame)."""
+            parts = {'gauge frame': (14, 6, 240, 32), 'ki bars': (60, 30, 116, 52), 'stocks': (14, 30, 62, 64),
+                     'partner panel': (12, 64, 114, 86), 'timer': (232, 6, 280, 34)}
+            out = {}
+            for name, (a, b, c_, d) in parts.items():
+                out['own '+name] = (left+a, b, left+c_, d)
+                out['other '+name] = (right-c_, b, right-a, d)
+            return out
+
         for height in (448,512):
             sy=(lambda n:n) if height==448 else (lambda n:(n*18725)>>14)
             for language in ('en','es'):
@@ -167,36 +229,58 @@ class TagRushHudTests(unittest.TestCase):
                     else:
                         views=((0,254,0,half-2),(257,511,0,half-2))
                         views+=((128,382,half+1,height-1),) if humans==3 else ((0,254,half+1,height-1),(257,511,half+1,height-1))
-                    for view in views:
+                    for seat,view in enumerate(views):
                         left,right,top,bottom=view
-                        occupied={'own status':(left,top,right,top+70),
-                                  'target status':(left,bottom-64,right,bottom),
-                                  'revive caption':(left+8,bottom+sy(-36),left+202,bottom+sy(-36)+8),
+                        captions={'revive caption':(left+8,bottom+sy(-36),left+202,bottom+sy(-36)+8),
                                   'revive meter':(left+8,bottom+sy(-25),left+128,bottom+sy(-25)+3)}
                         if humans>=3:
                             for i,name in enumerate(('fusion request/owner','control countdown')):
                                 y=top+sy(multiview_layout.FUSION_Y)+i*9
-                                occupied[name]=(left+8,y,left+8+fusion_width,y+6.25)
-                            occupied.update({
+                                captions[name]=(left+8,y,left+8+fusion_width,y+6.25)
+                            captions.update({
                                 'fusion timer':(left+8,top+sy(70)+18,left+99,top+sy(70)+30),
                                 'kills':(left+8,top+sy(114),left+62,top+sy(114)+7),
                                 'kill feed':(left+8,top+sy(128),left+248,top+sy(128)+17),
                                 'takeover':(left+8,top+sy(151),left+242,top+sy(151)+8)})
                         else:
-                            occupied.update({
+                            captions.update({
                                 'fusion request/owner/countdown':(left+8,sy(204),right,sy(217)+8),
                                 'fusion timer':(left+8,sy(232),left+130,sy(232)+16),
                                 'kills':(left+8,top+sy(88),left+62,top+sy(88)+8),
-                                'kill feed':(left+8,top+sy(106),left+248,top+sy(106)+83),
+                                'kill feed':(left+8,top+sy(250),left+248,top+sy(250)+83),
                                 'takeover':(left+8,bottom+sy(-22),left+242,bottom+sy(-22)+8)})
-                        with mock.patch.object(h,'screen_y',sy):
-                            c=machine(view=view,split=humans>1,language=language);draw(c)
-                            bounds=h.rectangles(view)
-                        self.assertTrue(c.rects)
-                        self.assertEqual(c.texts[-1][2],top+sy(h.LABEL_TOP))
-                        for name,ours in bounds.items():
-                            for other,theirs in occupied.items():
-                                self.assertFalse(intersects(ours,theirs),(height,language,humans,view,name,other))
+                        cases = []
+                        if humans == 1:
+                            for subject in (0, 1):
+                                occupied = dict(captions, **native_full(left, right))
+                                cases.append((dict(subject=subject), occupied, (lambda c, s=subject: machine(subject=s, view=view, language=language))))
+                        else:
+                            for name, words in self.LAYOUTS.items():
+                                for coop in (False, True):
+                                    occupied = dict(captions)
+                                    if words[0] == 1:
+                                        px, py, w, faces = h.split_panel(view, seat & 1, words, coop, humans)
+                                        occupied.update({'own '+k: v for k, v in panel(px, py, w, faces).items()})
+                                        if not coop or words[3]:
+                                            mid = (left+right)/2
+                                            # The target panel: the other half of the top row, 85 % of the own
+                                            # panel's width (post_code), so its height is a quarter of that.
+                                            foot = top+2+w*85/100/4+2
+                                            occupied['target panel'] = ((left, bottom-66, right, bottom) if words[7] else
+                                                                        (mid, top, right, foot) if not faces else (left, top, mid, foot))
+                                    else:
+                                        occupied['compact panels'] = (left, top, right, top+66)
+                                    cases.append((dict(split=seat, settings=words, coop=coop, views=humans), occupied,
+                                                  (lambda c, n=humans, s=seat, w_=words, co=coop: self.split_machine(n, s, w_, co, language, views))))
+                        for where, occupied, make in cases:
+                            with mock.patch.object(h,'screen_y',sy):
+                                c=make(None);draw(c)
+                                bounds=h.rectangles(view, **where)
+                            self.assertTrue(c.rects)
+                            self.assertEqual(c.texts[-1][2], bounds['caption'][1])
+                            for name,ours in bounds.items():
+                                for other,theirs in occupied.items():
+                                    self.assertFalse(intersects(ours,theirs),(height,language,humans,view,where,name,other))
 
     def test_private_caption_preserves_exact_glyphs_at_three_quarter_size_in_every_view(self):
         c=Cpu({'segments':[]});c.write(h.CAPTION,h.caption_code())

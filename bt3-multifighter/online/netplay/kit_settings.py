@@ -129,6 +129,9 @@ LOCKOFF, LOCKOFF_MAGIC = 0x06946000, 0x4C4F4631                # lockoff_target 
 LOCKON, LOCKON_MAGIC = 0x06957000, 0x4C4B5331                  # lockon_select CONTROL ('LKS1')
 FEEDBACK, FEEDBACK_MAGIC = 0x0728D000, 0x53504632              # spectator_feedback CONTROL + its CONFIG magic
 REVIVE, REVIVE_MAGIC = 0x070BF000, 0x52565631                  # teammate_revive CONTROL ('RVV1')
+# native_hud_style CONTROL ('NHS1'): +4 is its style word, one bit per element group; 'lockon' (4) is the target
+# marker's look. Draw only (no simulation state reads it): each PC keeps its own look in its own copy.
+HUD_STYLE, HUD_STYLE_MAGIC, HUD_ALL, HUD_LOCKON = 0x07153000, 0x4E485331, 0x7F, 0x04
 LOCAL = {
     'show_friendly_healthbars': Patch(DISPLAY + 0x08, DISPLAY, DISPLAY_MAGIC, _bool),
     'show_enemy_healthbars': Patch(DISPLAY + 0x0C, DISPLAY, DISPLAY_MAGIC, _bool),
@@ -146,6 +149,8 @@ LOCAL = {
     'show_takeover_hints': Patch(FEEDBACK + 0x38, FEEDBACK + 0x40, FEEDBACK_MAGIC, _bool),
     'show_takeover_confirmation': Patch(FEEDBACK + 0x3C, FEEDBACK + 0x40, FEEDBACK_MAGIC, _bool),
     'show_revive_ring': Patch(REVIVE + 0x50, REVIVE, REVIVE_MAGIC, _bool),
+    'lockon_target_look': Patch(HUD_STYLE + 4, HUD_STYLE, HUD_STYLE_MAGIC,
+                                lambda v: {'native': HUD_ALL, 'classic': HUD_ALL & ~HUD_LOCKON}[v]),
     'revive_ring_opacity': Patch(REVIVE + 0x54, REVIVE, REVIVE_MAGIC, lambda v: round(float(v) * 128)),
     'revive_ring_wave_height': Patch(REVIVE + 0x58, REVIVE, REVIVE_MAGIC, float, kind='f32'),
     'revive_ring_wave_speed': Patch(REVIVE + 0x5C, REVIVE, REVIVE_MAGIC, lambda v: round(float(v) * 65536 / 30)),
@@ -155,7 +160,8 @@ LOCAL = {
 BUILD_LOCAL = {'show_friendly_healthbars': True, 'show_enemy_healthbars': True, 'show_native_hud': True,
                'show_kill_feed': True, 'show_kill_score': True, 'lockoff_target_hud': 'show',
                'lockon_target_marker': True, 'lockon_target_style': 'both',
-               'show_takeover_hints': True, 'show_takeover_confirmation': True, 'show_revive_ring': True}
+               'show_takeover_hints': True, 'show_takeover_confirmation': True, 'show_revive_ring': True,
+               'lockon_target_look': 'native'}
 
 
 def classes():

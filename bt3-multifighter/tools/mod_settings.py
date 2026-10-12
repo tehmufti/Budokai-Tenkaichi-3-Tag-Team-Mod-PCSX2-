@@ -124,7 +124,7 @@ GROUPS = (
     ('Giants', ('canonical_giants', 'giant_size_multiplier', 'giant_attack_speed_percent', 'giant_damage_percent',
                 'giant_armor_levels', 'giant_camera_distance_percent')),
     ('HUD', (*DISPLAY_KEYS, 'lockoff_target_hud', 'lockon_target_marker', 'lockon_target_style',
-            'lockon_threat_marks')),
+            'lockon_target_look', 'lockon_threat_marks')),
     ('Split-screen HUD', ('split_hud_style', 'split_hud_scale_percent', 'split_hud_layout', 'split_hud_filter',
                           'coop_hud_layout', 'show_hud_portraits', 'show_hud_sparking_effects',
                           'hud_damage_trail_seconds')),
@@ -162,7 +162,7 @@ notes = {
     'Fusion': 'Allow fusions controls new human and CPU fusions; preselected forms are unaffected. Shared controls: swap every 20 s, split P1 attacks/P2 movement, or P1 only. Control messages show in swap mode. The time limit, timer and power-down apply to Fusion Dance, not Potara. Optional Potara and non-Potara buffs apply only when fusing in the match; non-Potara includes Fusion Dance. Health scales current and max HP together; damage scales outgoing damage; 2x defense halves damage taken. Off or 1x keeps native stats. Applies next match; Fight Again keeps it.',
     'Fighters': 'Ginyu can exchange bodies with the opponent he actually hits; stolen-body abilities are optional. Extra voices borrow idle native voice streams. The CPU switches and chance limit native CPU transformations; per-character exceptions override them. Humans, fusion and Body Change are unaffected. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
     'Giants': 'Larger giants scale native giant forms; expanded maps give them room. Size, attack speed, damage, stagger resistance and camera distance apply only while larger giants are on; the Cinematics zoom-out multiplies that distance up to a fixed limit. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
-    'HUD': 'Health bars, battle HUD, kill feed, watched fighter kill count, target indicator and attacker arrows are separate switches. Battle HUD off also hides split-screen panels. The indicator is a gold arrow, a ring sized to your target, or both, in every view. Red arrows point at each enemy locked on to you, on the screen edge if off screen; they flash while it attacks. Applies next match; Fight Again keeps it.',
+    'HUD': 'Mod text, bars and markers use the game font and HUD art. Health bars, battle HUD, kill feed, watched fighter kill count, target indicator and attacker arrows are separate switches. Battle HUD off also hides split-screen panels. The indicator is a gold arrow, a ring sized to your target, or both, in every view, in the Native or Classic look. Red arrows point at each enemy locked on to you, on the screen edge if off screen; they flash while it attacks. Applies next match; Fight Again keeps it.',
     'Split-screen HUD': 'Native style uses the game frames and meters; portraits and lightning need it. "Same top row" holds both panels (size in %); "Player top, target bottom" puts your target opposite you. Co-op panels show both players or each player and target. Smooth filtering softens textures. The damage trail briefly shows lost health (0 = off). Applies from the next match; a Fight Again rematch keeps the settings of its match.',
     'Spectating': 'A defeated human can watch fighters and take over a living CPU teammate, never an enemy, and not in free-for-all or CPU-only matches. Fallen fighters can be watched for their score. The hint shows the takeover button after its delay; the confirmation names your new fighter. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
     'Revival': 'Stay inside the circle of a fallen teammate for the set time. Moving and taunting keep progress; damage or leaving interrupts. Revival costs blast stocks, not ki, and restores the set health. Get-up protection, corpse safety and ring appearance are adjustable. No revival in free-for-all. Applies from the next match; a Fight Again rematch keeps its settings.',
@@ -213,6 +213,11 @@ def validate_settings(settings, defaults=None):
         result.pop(key, None)
     for key in RETIRED_TAG_KEYS:
         result.pop(key, None)
+    # Version 12 retired the per-match HUD style: every mod HUD element now uses the game's own look. The saved
+    # choice still decides the one element that keeps a classic look, the target marker, unless that is saved too.
+    old_style = result.pop('hud_style', None)
+    if old_style in ('classic', 'native'):
+        result.setdefault('lockon_target_look', old_style)
     # The pre-layout release enlarged the four panels to120%. Adopt the new
     # requested100% layout once; subsequent explicit sizes remain user choices.
     if 'split_hud_layout' not in result and result.get('split_hud_scale_percent') == 120:

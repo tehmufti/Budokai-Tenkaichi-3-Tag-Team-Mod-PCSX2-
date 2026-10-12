@@ -318,6 +318,23 @@ class TagInstallTests(unittest.TestCase):
         with patch.object(threat,'validate_memory'):
             with self.assertRaisesRegex(ValueError,'per-view renderer'):install.hud_patches(ram)
 
+    def test_quad_hud_composes_before_the_target_markers_quad_entry(self):
+        # 3-4 player matches: the target marker appends its own quad-only entry (lockon_select.quad_patch). Without
+        # it among the candidates every such match stopped its setup ('Unknown per-view renderer').
+        import lockon_select as sel
+        marker=((sel.CONTROL,sel.MAGIC,sel.QMARKER),)
+        ram=fixture(four=True);put(ram,quad.DRAW,quad.draw(marker))
+        w(ram,sel.CONTROL,sel.MAGIC);w(ram,sel.CONTROL+sel.FIELDS['quad'],1)
+        updates=install.hud_patches(ram)
+        self.assertEqual(updates,[(quad.DRAW,quad.draw(((tag.CONTROL,tag.MAGIC,captions.DRAW),)+marker))])
+        w(ram,tag.CONTROL,tag.MAGIC)
+        for p,b in captions.pieces(OPTIONS):put(ram,p,b)
+        put(ram,quad.DRAW,updates[0][1])
+        self.assertEqual(install.hud_patches(ram),[])
+        # Without the marker's quad flag the entry is not expected.
+        ram=fixture(four=True);put(ram,quad.DRAW,quad.draw(marker));w(ram,sel.CONTROL,sel.MAGIC)
+        with self.assertRaisesRegex(ValueError,'per-view renderer'):install.hud_patches(ram)
+
     def test_nonki_classification_uses_disc_names_not_bt3_ids(self):
         names={55:dict(name='Hercule'),57:dict(name='Cabba'),69:dict(name='Hatchiyack'),
                70:dict(name='Golden Frieza'),150:dict(name='Top'),157:dict(name='Zamasu'),249:dict(name='Chi-Chi')}

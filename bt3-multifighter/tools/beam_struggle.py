@@ -1677,8 +1677,10 @@ def _build(ram, s, source):
         code = programs(consts, beam.contact_code()[:8])
         frame_prev = u(CONTROL+C['frame_prev'])
         if frame_prev: code = code + [(FRAMESTUB, frame_stub(frame_prev))]
+        import native_hud_style
+        classic = native_hud_style.classic_view(ram)   # the native HUD kit re-points the caption's text calls
         for p, d in code + hook_patches(mask):
-            if ram[p:p+len(d)] != d: raise ValueError(f'Changed beam struggle program {p:08X}')
+            if classic[p:p+len(d)] != d: raise ValueError(f'Changed beam struggle program {p:08X}')
         config = config_bytes(s, consts, mask)
         patches = [(CONTROL+0x20, config), (TEXT, text_bytes(s))]
     else:

@@ -576,6 +576,11 @@ def dependency_override(ram,address,expected):
     return actual
 
 
+# Rows kept free under the story captions: the revival caption and meter (teammate_revive: from 36 rows above the
+# view's bottom) and the takeover caption (spectator_feedback: 22 rows above it) share the bottom-left corner.
+CAPTION_FOOT = 38
+
+
 def draw_code(mission):
     import textwrap
     import unicodedata
@@ -600,7 +605,7 @@ def draw_code(mission):
     notice=b'STORY EVENT COULD NOT COMPLETE\0'
     a.li(4,STRINGS);data.extend(notice)
     a.lw(5,21,512);a.addiu(5,5,1792+8);a.r(0,5,0,5,4)
-    a.lw(6,21,524);a.addiu(6,6,Y_ORIGIN-12);a.r(0,6,0,6,4)
+    a.lw(6,21,524);a.addiu(6,6,Y_ORIGIN-CAPTION_FOOT-12);a.r(0,6,0,6,4)
     a.li(7,0x8080B0FF);a.call(abi.SMALL_TEXT);a.jump('done');a.label('messages')
     for i,e in enumerate(mission['events']):
         for k,action in enumerate(e['actions']):
@@ -608,12 +613,13 @@ def draw_code(mission):
             nxt=f'm{i}_{k}';a.li(8,(i<<8)|k);a.branch(5,8,22,nxt)
             text=unicodedata.normalize('NFKD',action['text']).encode('ascii','ignore').decode().upper()
             # Small native glyphs fit even a quarter screen. Every view gets
-            # the same story cue along its own bottom edge, away from the HUD.
+            # the same story cue near its own bottom edge, away from the HUD and
+            # above the revival and takeover captions (CAPTION_FOOT).
             lines=textwrap.wrap(text,32)[:4] or [' ']
             for line_no,line in enumerate(lines):
                 address=STRINGS+len(data);data.extend(line.encode()+b'\0')
                 a.li(4,address);a.lw(5,21,512);a.addiu(5,5,1792+8);a.r(0,5,0,5,4)
-                a.lw(6,21,524);a.addiu(6,6,Y_ORIGIN-12*(len(lines)-line_no));a.r(0,6,0,6,4)
+                a.lw(6,21,524);a.addiu(6,6,Y_ORIGIN-CAPTION_FOOT-12*(len(lines)-line_no));a.r(0,6,0,6,4)
                 a.li(7,0x80FFFFFF);a.call(abi.SMALL_TEXT)
             a.jump('done');a.label(nxt)
     a.label('done');abi.epilogue(a);return a.finish(),bytes(data)

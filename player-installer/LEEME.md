@@ -232,7 +232,11 @@ doble anillo amarillo con flechas laterales (como en el juego de PSP Tenkaichi
 Tag Team) alrededor de su cuerpo, o ambos; el anillo se ajusta al tamaño del
 objetivo en pantalla (más pequeño de lejos y en pantalla dividida). Se ve en
 cualquier disposición, cada vista con el objetivo de su jugador. Se desactiva en
-**Interfaz → Marcar tu objetivo**, aparte de las barras de salud. Con un aviso de ataque (o hasta medio segundo después), la pulsación de
+**Interfaz → Marcar tu objetivo**, aparte de las barras de salud.
+**Interfaz → Aspecto del indicador** dibuja la flecha y el anillo con el arte de
+fijado del propio juego (Original, por defecto) o como la flecha dorada y el anillo
+amarillo anteriores (Clásico). Los demás textos, barras y medidores del mod usan
+siempre la fuente y el arte del juego. Con un aviso de ataque (o hasta medio segundo después), la pulsación de
 cambio fija en su lugar al enemigo que te ataca (**Controles → Cambiar a quien te
 ataca**: Nunca, Pulsando durante el aviso o Pulsando o al recibir golpes). Unas
 flechas rojas apuntan a los enemigos que te fijan, o aparecen en el borde de tu

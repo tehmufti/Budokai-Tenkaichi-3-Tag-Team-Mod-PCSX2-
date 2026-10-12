@@ -290,6 +290,7 @@ def pieces(previous,coop=False,automatic=True,configurable=True,revival=True,ord
     return result
 
 def validate_memory(ram):
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     if (u(spec.CONTROL),u(spec.CONTROL+4),u(spec.CONTROL+F['version']))!=(spec.MAGIC,1,VERSION):
         raise ValueError('Unknown spectator upgrade header')

@@ -389,6 +389,7 @@ def dependency_override(ram,address,expected):
 
 @policy.matching_install
 def validate_memory(ram):
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     if u(CONTROL)!=MAGIC:raise ValueError('Revival identity missing')
     version=u(CONTROL+24)

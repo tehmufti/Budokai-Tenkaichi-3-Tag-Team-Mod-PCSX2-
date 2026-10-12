@@ -255,7 +255,7 @@ DESCRIPTIONS = (
      'Two players share Team 1.\nChoose at least two Team 1 fighters\nand one or more CPU opponents.', '',
      'Return to the mod mode groups.'),
     ('', '', 'Two to four allies practice together.\nSelect an ally for every human player\nand one or more CPU opponents.', '',
-     'Practice with one human and CPU fighters.\nChoose CPU behavior and refill in Mod settings.',
+     'Practice with one human and CPU fighters.\nSet CPU behavior and refill in Mod settings.',
      'Practice with a human on each side.\nAdd CPU fighters to either team.', '',
      'Return to the mod mode groups.'))
 
@@ -320,6 +320,6 @@ DESCRIPTIONS=tuple(tuple(THREE_DESCRIPTIONS[page] if row==1 and page else text f
 
 # Co-op is a team assignment, no longer a separate visible mode or submenu.
 DESCRIPTIONS=tuple(tuple(
-    'Choose each player team before character select.\nShare a team for cooperative play.\nAdd CPU fighters to either team.'
+    'Choose a team for each player, then fighters.\nShare a team for cooperative play.\nAdd CPU fighters to either team.'
     if page in (1,4) and row in (0,1,5) else text
     for row,text in enumerate(texts)) for page,texts in enumerate(DESCRIPTIONS))

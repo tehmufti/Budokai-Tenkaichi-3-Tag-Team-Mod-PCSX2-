@@ -26,6 +26,9 @@ OPTIONS = {
     # beta.39: the arrow (beta.37) is the default again; the ring (beta.38) is an option. Only matters while the
     # marker is on (not a legacy key).
     'lockon_target_style': ('arrow','choice',('arrow','ring','both'),None,'HUD','Target indicator'),
+    # Version 12: every other mod HUD element always uses the game's font and HUD art (native_hud_style); the
+    # target arrow and ring keep a choice. Older saved hud_style values map here (mod_settings.validate_settings).
+    'lockon_target_look': ('native','choice',('classic','native'),None,'HUD','Target marker look'),
     # lockon_threat. Legacy values (beta.36 behaviour, nothing installed when both hold them): never, hide.
     'lockon_attacker_switch': ('tap_during_warning','choice',('never','tap_during_warning','when_hit'),None,'Controls','Switch to your attacker'),
     'lockon_threat_marks': ('marks_and_warning','choice',('hide','marks','marks_and_warning'),None,'HUD','Enemies targeting you'),
