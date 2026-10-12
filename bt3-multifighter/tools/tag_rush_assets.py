@@ -102,6 +102,7 @@ def timeline(variant: str) -> tuple[Phase, ...]:
 
 TRANSLATED_BONES=frozenset((0,2,31,45,52))
 LAST_AUTHORED_BONE=58
+OPTIONAL_TAIL_BONES=frozenset((4,5,6,7))
 
 
 def prepared_clips(iso):
@@ -126,7 +127,8 @@ def prepared_clips(iso):
         raise TagRushAssetError('Tag choreography unexpectedly animates native motion root1')
     # Imported outfits can split a drawable joint into several native parts.
     #24BBE8 visits each part: rotations are shared safely; translations would
-    #be adjusted repeatedly. Admission refuses duplicates in this exact set.
+    #be adjusted repeatedly. The tag retarget wrapper supplies each admitted
+    #translated hand marker once; all other duplicate translated parts fail.
     for source,raw in result.items():
         for track in AnimationClip.from_decoded(source.animation,raw).tracks:
             if track.bone_id>LAST_AUTHORED_BONE:
@@ -181,7 +183,7 @@ def skeleton_from_package(package, parameters=None):
     # BT4 retains some edited meshes in the original 252-entry container.
     # Its separate parameter package, not mesh entry count, identifies them.
     imported = parameters is not None
-    rows, stack, seen = [], [], {}
+    rows, stack, seen, retarget_duplicates = [], [], {}, set()
     for index in range(256):
         if not 0 <= offset <= len(geometry) - 64:
             raise TagRushAssetError('Truncated skeleton part')
@@ -189,29 +191,37 @@ def skeleton_from_package(package, parameters=None):
         if size < 64 or offset + size > len(geometry) or last not in (0,1):
             raise TagRushAssetError('Invalid skeleton part chain')
         parent = stack[-1] if stack else -1
+        bind_vectors = tuple(struct.unpack_from('<3f',geometry,offset+field) for field in (16,32,48))
+        bind_signature = b''.join(geometry[offset+field:offset+field+12] for field in (16,32,48))
         if bone in seen:
             previous = seen[bone]
             # Native imported outfits split drawable joints into sibling mesh
             # parts. They share a rotation channel but retain their own bind.
-            # Never admit duplicate translated joints:24BBE8 would translate
-            #the same channel repeatedly. Unanimated accessories are independent.
+            # A few imported outfits repeat an identical invisible hand-effect
+            # marker. The tag-only retarget wrapper deduplicates those markers
+            # in a private descriptor; native drawable hierarchy is untouched.
+            # Roots/contact translations and differing hand binds stay strict.
             marker=(bone in (49,50,51) and size == 64 and vertices == 0 and pop >= 1
                     and previous['leaf_marker'])
             segmented=(bone not in TRANSLATED_BONES and size > 64 and vertices > 0
                        and previous['drawable_leaf'])
+            repeated_hand=(bone in (31,45) and size == 64 and vertices == 0 and pop >= 1
+                           and previous['leaf_marker'] and bind_signature == previous['bind_signature']
+                           and all(math.isfinite(v) for vector in bind_vectors for v in vector))
             accessory=bone>LAST_AUTHORED_BONE
-            if not (imported and (accessory or (previous['parent']==parent and (marker or segmented)))):
+            if not (imported and (accessory or (previous['parent']==parent and (marker or segmented or repeated_hand)))):
                 raise TagRushAssetError('Invalid duplicate skeleton part')
+            if repeated_hand:retarget_duplicates.add(bone)
         local = struct.unpack_from('<3f', geometry, offset + 48)
         if not all(math.isfinite(v) for v in local):
             raise TagRushAssetError('Non-finite skeleton bind translation')
         header = bytearray(geometry[offset:offset + 64])
         struct.pack_into('<I', header, 0, 64)
         struct.pack_into('<H', header, 8, 0)  # No drawable vertices in this data-only header.
-        rows.append(dict(bone=bone, parent=parent,
+        rows.append(dict(bone=bone, parent=parent, vertices=vertices,
                          translation=local, header=bytes(header)))
         seen.setdefault(bone, dict(parent=parent,index=index,leaf_marker=size == 64 and vertices == 0 and pop >= 1,
-                                   drawable_leaf=size > 64 and vertices > 0 and pop == 1))
+                                   drawable_leaf=size > 64 and vertices > 0 and pop == 1,bind_signature=bind_signature))
         stack.append(bone)
         if pop > len(stack):
             raise TagRushAssetError('Invalid skeleton parent chain')
@@ -231,7 +241,7 @@ def skeleton_from_package(package, parameters=None):
         raise TagRushAssetError('Unclosed imported skeleton root')
     if not imported and len(rows) != count:
         raise TagRushAssetError('Invalid skeleton part count')
-    return dict(height=height, rows=tuple(rows))
+    return dict(height=height, rows=tuple(rows), retarget_duplicate_bones=tuple(sorted(retarget_duplicates)))
 
 
 def read_skeleton(iso, character, costume=0, damaged=False):
@@ -294,6 +304,16 @@ def character_admission(iso, roster):
     core = set(range(0, 22)) | {31, 32, 33, 34, 35, 45, 46, 47, 52}
     expected = {r['bone']: r['parent'] for r in reference['rows'] if r['bone'] in core}
     reference_ids = {r['bone'] for r in reference['rows']}
+    # Parts4..7 form the separate tail branch, not either leg. Tail-less
+    # imported outfits can omit the entire branch. Only permit this when
+    # the actual source has invisible zero-bind markers rooted at pelvis3;
+    # native evaluation ignores their rotation channels on a tail-less rig.
+    # Partial chains or missing joints anywhere else still fail admission.
+    tail_rows = {r['bone']:r for r in reference['rows'] if r['bone'] in OPTIONAL_TAIL_BONES}
+    optional_tail = (set(tail_rows) == OPTIONAL_TAIL_BONES and all(
+        row['parent'] == bone-1 and row.get('vertices') == 0
+        and all(abs(value) < 1e-6 for value in row['translation'])
+        for bone,row in tail_rows.items()))
     cache, result = {}, []
     for entry in roster:
         item = dict(character=entry) if isinstance(entry, int) else dict(entry)
@@ -319,7 +339,9 @@ def character_admission(iso, roster):
                     return (len(header) == 64 and struct.unpack_from('<H',header,8)[0] == 0
                             and struct.unpack_from('<H',header,4)[0] >= 1
                             and all(abs(v) < 1e-6 for v in marker.get('translation', (float('inf'),))))
+                omitted_tail = optional_tail and not OPTIONAL_TAIL_BONES.intersection(actual)
                 incompatible = tuple(bone for bone, parent in expected.items()
+                                     if not (omitted_tail and bone in OPTIONAL_TAIL_BONES)
                                      if parent_of(bone) != parent and not equivalent_contact_root(bone,parent))
                 cache[key] = dict(supported=not incompatible, incompatible_bones=incompatible,
                                   height=skeleton['height'], reason='' if not incompatible else 'Incompatible limb topology')

@@ -25,6 +25,7 @@ import tag_rush_choreography as choreography
 import tag_rush_native_pose as native_pose
 import tag_rush_recovery as fall_recovery
 import tag_rush_damage as damage_schedule
+import tag_rush_retarget as retarget
 
 START, STEP, FINISH = tag.START, tag.STEP, tag.FINISH
 START_BODY,STEP_BODY,BODIES_END=0x06D89800,0x06D8B800,0x06D8D800
@@ -184,6 +185,7 @@ def start_code():
     a.r(0,8,0,21,2);a.li(9,core.POINTERS);a.r(0x21,8,8,9);a.lw(22,8)
     a.move(4,22);a.call(safety.PREFLIGHT);a.branch(4,2,0,'reject')
     actors.model(a,22,23,'reject')
+    a.move(4,23);a.call(retarget.CHECK);a.branch(4,2,0,'reject')
     a.li(25,ADMISSION);a.lw(10,25);full.pointer(a,10,4096,'reject')
     a.lw(8,23,12);a.lw(9,25,4);a.addiu(11,9,-1);a.i(11,11,11,4096)
     a.branch(4,11,0,'reject');a.r(0x2B,9,8,9);a.branch(4,9,0,'reject')
@@ -347,7 +349,7 @@ def step_code():
     a.move(4,23);a.move(5,0);a.move(6,0);a.li(7,1);a.call(A(0x24D038))
     a.lw(10,29,0x300);a.lw(8,29,0x304);a.sw(8,10)
     a.lw(4,23,2880);a.move(5,23);a.lw(8,19,60);a.r(0,9,0,20,2)
-    a.r(0x21,8,8,9);a.lw(6,8);a.move(7,0);a.move(8,0);a.call(A(0x24BBE8))
+    a.r(0x21,8,8,9);a.lw(6,8);a.move(7,0);a.move(8,0);a.call(retarget.RETARGET);a.branch(4,2,0,'cancel')
     # 24D038 decodes the new clip but does not reset the former animation's
     # blend clocks. Our authored clock bypasses their native decay; retaining
     # them would blend cached idle into every cinematic pose indefinitely.
@@ -669,7 +671,7 @@ def pieces():
     jump=lambda destination:struct.pack('<2I',0x08000000|(destination>>2),0)
     result=[(START,jump(START_BODY)),(START_BODY,start_code()),(STEP,jump(STEP_BODY)),(STEP_BODY,step_code()),
             (ANCHOR,anchor_code()),(FINISH,jump(FINISH_BODY)),(FINISH_BODY,finish_code()),(FX_STEP,jump(FX_BODY)),(FX_BODY,fx_step_code()),
-            (ALIGN,align_code()),(STATE,bytes(END-STATE)),(RECOVERY,recovery_code())]+shots.pieces()+staging.pieces()+native_pose.pieces()+fall_recovery.pieces()+damage_schedule.pieces()
+            (ALIGN,align_code()),(STATE,bytes(END-STATE)),(RECOVERY,recovery_code())]+shots.pieces()+staging.pieces()+native_pose.pieces()+fall_recovery.pieces()+damage_schedule.pieces()+retarget.pieces()
     result.sort()
     for (p,b),(q,_) in zip(result,result[1:]):assert p+len(b)<=q,(hex(p),len(b),hex(q))
     return result+approach.pieces()

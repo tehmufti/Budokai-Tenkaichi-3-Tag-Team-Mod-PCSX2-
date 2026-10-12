@@ -10,6 +10,7 @@ import tag_team_rush as tag
 import fusion_partner_lifecycle as full
 import extra_throws as actors
 import cinematic_contact_guard as contact
+import tag_rush_retarget as retarget
 
 CHECK,ENTER,RESTORE=0x06D9B000,0x06D9BC00,0x06D9CC00
 RETARGET,CONTACT,CONTACT_OLD=0x06D9D800,0x06D9E000,0x06D9E800
@@ -55,6 +56,7 @@ def copy_words(a,src,dst,size,label):
 
 def check_code():
     a=Assembler(CHECK);tag.save(a);a.move(16,4);table(a,17,'no')
+    a.move(4,16);a.call(retarget.CHECK);a.branch(4,2,0,'no')
     full.pointer(a,16,6000,'no');a.lw(8,16,5728);full.pointer(a,8,98348,'no',temp=10)
     a.lw(8,17,4);full.pointer(a,8,2400,'no',temp=10)
     for n,count in enumerate(FRAMES):
@@ -149,7 +151,9 @@ def retarget_code():
     a.branch(5,16,23,'native');a.li(8,PARAMS);a.lw(9,23,2348);a.branch(5,8,9,'native')
     for index in ANIMATIONS:a.li(8,index);a.branch(4,18,8,'borrowed')
     a.jump('native');a.label('borrowed');table(a,19,'native');a.move(4,17);a.move(5,16);a.lw(6,19,4);a.move(7,0);a.move(8,0)
-    a.call(A(0x24BBE8));tag.restore(a,2);a.jr()
+    a.call(retarget.RETARGET);a.branch(5,2,0,'retargeted')
+    a.li(8,rush.STATE);a.li(9,3);a.sw(9,8,rush.S['reason']);a.li(9,2);a.sw(9,8,rush.S['contact'])
+    a.label('retargeted');tag.restore(a,2);a.jr()
     a.label('native');tag.restore(a);a.jump(A(0x24BBE8))
     data=a.finish();assert RETARGET+len(data)<=CONTACT;return data
 

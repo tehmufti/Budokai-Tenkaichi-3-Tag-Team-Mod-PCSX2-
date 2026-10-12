@@ -61,10 +61,12 @@ def machine(prepared=True):
             c.write(ptr+64,struct.pack('<4f',30.0*index,-float(bone),100.0*index,1))
     native=elf_reader(elf_path(ROOT))[2]
     for addr,size in ((0x16A7D0,0x98),(0x16A900,0x50),(0x16A9C0,0x40),
+                      (0x16A6F0,0x48),(0x1ADA58,0x28),
                       (0x16AC40,0xD0),(0x1517A0,0x70),(0x14D8A8,0x2A0),(0x14D460,0x110)):
         c.write(A(addr),native(A(addr),size))
     c.w(fx.CALLBACKS,fx.NATIVE_UPDATE)
     c.callbacks[A(0x2A9ACC)]=lambda m:m.write(m.r[4],bytes(m.r[6]))
+    c.callbacks[A(0x150D80)]=lambda m:m.events.append(('retire_children',m.r[4],m.r[5]))
     def bone(m):
         model=m.u(core.MODELS+4*m.r[4]);p=m.u(model+3436+4*m.r[5])
         m.events.append(('bone',m.r[4],m.r[5]));m.write(m.r[6],m.read(p+64,16))
@@ -251,6 +253,42 @@ class TagEffectsTests(unittest.TestCase):
         for p in masks:c.w(p,0x3F)
         run(c,fx.UPDATE);self.assertTrue(all(c.u(p)==0 for p in masks))
 
+    def test_retiring_beams_refresh_texture_uploads_until_each_owned_node_is_gone(self):
+        c=machine();spawn(c);spawn(c,1);masks=[]
+        for slot in range(2):
+            row=fx.ROWS+slot*fx.STRIDE;p=0x3800000+slot*0x1000
+            c.w(row+fx.DESC+768,p);c.w(row+fx.DESC+784,2)
+            masks.append([p+260,p+264+260])
+            for mask in masks[-1]:c.w(mask-4,0x12345678)
+        c.w(tag.CONTROL+tag.C['active'],0);c.w(tag.CONTROL+tag.C['ready'],0)
+        for _ in range(3):
+            for mask in masks[0]+masks[1]:c.w(mask,0x7FFFFFFF)
+            run(c,fx.STOP);self.assertEqual(c.r[2],2)
+            self.assertTrue(all(c.u(p)==0 for p in masks[0]+masks[1]))
+            self.assertTrue(all(c.u(p-4)==0x12345678 for p in masks[0]+masks[1]))
+        # A recycled node can no longer authorize writes to that descriptor.
+        body=c.u(fx.ROWS+fx.R['body']);c.w(body,0x3700000)
+        for mask in masks[0]+masks[1]:c.w(mask,0x3F)
+        run(c,fx.STOP);self.assertEqual(c.r[2],1)
+        self.assertTrue(all(c.u(p)==0x3F for p in masks[0]))
+        self.assertTrue(all(c.u(p)==0 for p in masks[1]))
+
+    def test_stop_runs_exact_native_private_child_cleanup_once_per_parent(self):
+        c=machine();spawn(c);spawn(c,1)
+        bodies=[c.u(fx.ROWS+i*fx.STRIDE+fx.R['body']) for i in range(2)]
+        nodes=[c.u(fx.ROWS+i*fx.STRIDE+fx.R['node']) for i in range(2)]
+        expected=[('retire_children',fx.ROWS+i*fx.STRIDE+fx.DESC,body+656) for i,body in enumerate(bodies)]
+        run(c,fx.STOP)
+        self.assertEqual([e for e in c.events if e[0]=='retire_children'],expected)
+        self.assertTrue(all(c.u(body+1408)&0x12==0x12 for body in bodies))
+        self.assertTrue(all(c.read(node,1)[0]&1 for node in nodes))
+        run(c,fx.STOP)
+        self.assertEqual([e for e in c.events if e[0]=='retire_children'],expected)
+        # No scene/global battle gate is needed, but ownership must remain.
+        c=machine();spawn(c);body=c.u(fx.ROWS+fx.R['body']);c.w(body+48,0x3700000)
+        run(c,fx.STOP)
+        self.assertFalse(any(e[0]=='retire_children'for e in c.events))
+
     def test_cleanup_waits_for_native_retirement_and_never_touches_recycled_nodes(self):
         c=machine();spawn(c);row=fx.ROWS;p=c.u(row+fx.R['body'])
         run(c,fx.STOP);self.assertEqual(c.r[2],1);self.assertEqual(c.u(p+1408)&2,2)
@@ -406,6 +444,35 @@ class TagEffectsTests(unittest.TestCase):
         self.assertAlmostEqual(direction[0],math.sin(.4),places=6);self.assertAlmostEqual(direction[2],math.cos(.4),places=6)
         self.assertEqual(struct.unpack_from('<4I',request,48),(16,7,0,0))
         self.assertEqual([c.u(a+0x9E4)for a in c.actors],[30000]*4)
+
+    def test_first_opening_spark_uses_victim_torso_only_for_complete_absent_tail(self):
+        c=self.impact_machine();c.r[4:6]=[0,5]
+        run(c,fx.IMPACT);self.assertEqual(c.r[2],1)
+        request=c.requests[0][2]
+        torso=c.u(c.models[1]+3436+17*4)
+        self.assertEqual(request[16:32],c.read(torso+64,16))
+        self.assertEqual(struct.unpack_from('<4I',request,48),(16,4,0,0))
+        self.assertIn(('bone',4,17),c.events)
+        self.assertEqual([c.u(a+0x9E4)for a in c.actors],[30000]*4)
+        # A real native tail marker keeps the original position and owner.
+        c=self.impact_machine();c.w(c.models[0]+3436+5*4,c.u(c.models[0]+3436+12*4))
+        c.r[4:6]=[0,5];run(c,fx.IMPACT);self.assertEqual(c.r[2],1)
+        self.assertIn(('bone',0,5),c.events);self.assertNotIn(('bone',4,17),c.events)
+
+    def test_absent_tail_spark_fallback_preserves_identity_and_source_scope_guards(self):
+        for bad in ('phase','role','other bone','partial tail','bad nonzero pointer',
+                    'victim identity','victim reload','victim torso','victim finite'):
+            c=self.impact_machine();c.r[4:6]=[0,5]
+            if bad=='phase':c.w(scene.STATE+scene.S['phase'],1)
+            elif bad=='role':c.r[4]=1
+            elif bad=='other bone':c.r[5]=4
+            elif bad=='partial tail':c.w(c.models[0]+3436+4*4,c.u(c.models[0]+3436+12*4))
+            elif bad=='bad nonzero pointer':c.w(c.models[0]+3436+5*4,3)
+            elif bad=='victim identity':c.w(core.POINTERS+4,0)
+            elif bad=='victim reload':c.w(c.models[1]+8,0)
+            elif bad=='victim torso':c.w(c.models[1]+3436+17*4,0)
+            elif bad=='victim finite':c.w(c.u(c.models[1]+3436+17*4)+64,0x7FC00000)
+            run(c,fx.IMPACT);self.assertEqual(c.r[2],0,bad);self.assertFalse(c.requests,bad)
 
     def test_strike_guards_native_pool_and_captured_actor_without_loading_resources(self):
         for kind in ('pool','free node','descriptor','actor','reload','bone','retiring','inactive','paused','index overflow','model overflow','bad role','bad bone'):

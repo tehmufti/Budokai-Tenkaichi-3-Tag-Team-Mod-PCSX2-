@@ -66,6 +66,28 @@ class ImportedSkeletonTests(unittest.TestCase):
             with self.assertRaises(assets.TagRushAssetError):parse(entries)
         with self.assertRaises(assets.TagRushAssetError):parse(valid,False,declared=3)
 
+    def test_retarget_duplicate_hand_markers_require_identical_native_binds(self):
+        for bone in (31,45):
+            entries=[node(0,0),node(21,0),node(bone,local=(.5,.25,0.)),
+                     node(64,vertices=1,size=80),node(bone,3,local=(.5,.25,0.))]
+            result=parse(entries)
+            self.assertEqual(result['retarget_duplicate_bones'],(bone,))
+            self.assertEqual([r['bone'] for r in result['rows']],[0,21,bone,64,bone])
+            for offset in (16,32,48):
+                different=[bytearray(row) for row in entries]
+                struct.pack_into('<f',different[-1],offset,2.)
+                with self.subTest(bone=bone,offset=offset),self.assertRaises(assets.TagRushAssetError):parse(different)
+            signed_zero=[bytearray(row) for row in entries]
+            struct.pack_into('<I',signed_zero[-1],16,0x80000000)
+            with self.assertRaises(assets.TagRushAssetError):parse(signed_zero)
+            with self.assertRaises(assets.TagRushAssetError):parse(entries,False)
+        for bone in (0,2,52):
+            with self.assertRaises(assets.TagRushAssetError):parse([node(0,0),node(bone),node(bone,2)])
+        # Neither a nested hand nor a visible hand segment may use this rule.
+        for entries in ([node(0,0),node(31,0),node(31,3)],
+                        [node(0,0),node(31),node(31,2,vertices=1,size=80)]):
+            with self.assertRaises(assets.TagRushAssetError):parse(entries)
+
     def test_contact_marker_can_follow_unanimated_motion_root_but_not_a_joint(self):
         reference=[dict(bone=0,parent=-1),dict(bone=1,parent=0),dict(bone=52,parent=0)]
         for parent,offset,drawable,supported in ((1,0.,0,True),(0,0.,0,True),
@@ -76,6 +98,25 @@ class ImportedSkeletonTests(unittest.TestCase):
                  patch.object(assets,'read_donor_bindings',return_value={101:dict(rows=reference,height=1.)}), \
                  patch.object(assets,'read_skeleton',return_value=dict(rows=actual,height=1.)):
                 self.assertEqual(assets.character_admission('unused',[118])[0]['supported'],supported)
+
+    def test_only_the_complete_invisible_tail_branch_may_be_absent(self):
+        reference=[dict(bone=0,parent=-1),dict(bone=1,parent=0),dict(bone=2,parent=1),dict(bone=3,parent=2)]
+        reference += [dict(bone=bone,parent=bone-1,translation=(0.,0.,0.),vertices=0)
+                      for bone in range(4,8)]
+        reference += [dict(bone=8,parent=3),dict(bone=9,parent=8),dict(bone=12,parent=3)]
+        no_tail=[row for row in reference if row['bone'] not in assets.OPTIONAL_TAIL_BONES]
+        cases=[(reference,no_tail,True),
+               (reference,[row for row in reference if row['bone']!=7],False),
+               (reference,[row for row in no_tail if row['bone']!=8],False),
+               (reference,[dict(row,parent=4) if row['bone']==12 else row for row in no_tail],False)]
+        for field,value in (('vertices',1),('translation',(0.,0.,1.))):
+            source=[dict(row,**{field:value}) if row['bone']==4 else row for row in reference]
+            cases.append((source,no_tail,False))
+        for source,actual,supported in cases:
+            with self.subTest(source=source,actual=actual), \
+                 patch.object(assets,'read_donor_bindings',return_value={101:dict(rows=source,height=1.)}), \
+                 patch.object(assets,'read_skeleton',return_value=dict(rows=actual,height=1.)):
+                self.assertEqual(assets.character_admission('unused',[63])[0]['supported'],supported)
 
     def test_truncated_parts_nonfinite_translation_and_bad_parent_stack_still_fail(self):
         for entries in ([node(0,2)],[node(0,local=(float('nan'),0.,0.))]):
@@ -147,6 +188,39 @@ class NativeImportedSkeletonTests(unittest.TestCase):
             self.assertFalse(any(t.bone_id not in assets.TRANSLATED_BONES and any(k.translation is not None for k in t.keys)
                                  for t in clip.tracks))
             self.assertTrue(all(t.bone_id<=assets.LAST_AUTHORED_BONE for t in clip.tracks))
+
+    def test_pan_fourth_outfit_omits_only_optional_tail_in_both_languages(self):
+        reference=assets.read_skeleton(self.iso,63)
+        expected={r['bone']:r['parent'] for r in reference['rows']}
+        for iso in (self.iso,self.iso.with_name('SLUS_219.78.DBZBT4B14REV2.iso')):
+            if not iso.is_file():continue
+            for damaged in (False,True):
+                with self.subTest(iso=iso.name,damaged=damaged):
+                    skeleton=assets.read_skeleton(iso,63,3,damaged)
+                    actual={r['bone']:r['parent'] for r in skeleton['rows']}
+                    self.assertTrue(assets.OPTIONAL_TAIL_BONES.isdisjoint(actual))
+                    for bone in (*range(8,22),31,32,33,34,35,45,46,47,52):
+                        self.assertEqual(actual[bone],expected[bone])
+                    entry=dict(character=63,costume=3,damaged=damaged)
+                    self.assertTrue(assets.character_admission(iso,[entry])[0]['supported'])
+        for source,raw in assets.prepared_clips(self.iso).items():
+            for track in animations.AnimationClip.from_decoded(source.animation,raw).tracks:
+                if track.bone_id in assets.OPTIONAL_TAIL_BONES:
+                    self.assertTrue(all(key.translation is None for key in track.keys))
+
+    def test_kid_goku_third_outfit_has_identical_duplicate_hand_markers(self):
+        for iso in (self.iso,self.iso.with_name('SLUS_219.78.DBZBT4B14REV2.iso')):
+            if not iso.is_file():continue
+            for damaged in (False,True):
+                with self.subTest(iso=iso.name,damaged=damaged):
+                    skeleton=assets.read_skeleton(iso,11,2,damaged)
+                    self.assertEqual(skeleton['retarget_duplicate_bones'],(31,))
+                    hands=[r for r in skeleton['rows'] if r['bone']==31]
+                    self.assertEqual(len(hands),2)
+                    self.assertEqual([r['parent'] for r in hands],[21,21])
+                    self.assertEqual(hands[0]['translation'],hands[1]['translation'])
+                    self.assertEqual([r['vertices'] for r in hands],[0,0])
+                    self.assertTrue(assets.character_admission(iso,[dict(character=11,costume=2,damaged=damaged)])[0]['supported'])
 
 
 if __name__=='__main__':unittest.main()
