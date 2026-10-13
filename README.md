@@ -85,9 +85,6 @@ python -m pip install -r bt3-multifighter/requirements-gui.txt
 python bt3-multifighter/tools/modder_gui.py
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
-adapters, using an installed game's runtime, and validating changes.
-
 ## Development source and downloads
 
 Version 13 is available in Releases. Main may receive further development changes;
