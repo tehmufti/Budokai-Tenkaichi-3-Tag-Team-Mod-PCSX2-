@@ -16,9 +16,11 @@ import tag_rush_recovery as recovery
 RESET,TICK,FINAL,APPLY = 0x06DAC000,0x06DAC800,0x06DAE000,0x06DAE800
 TABLE,STATE,END = 0x06DAF400,0x06DAFC00,0x06DB0000
 MAGIC=0x54444831
-VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
 C=dict(magic=0,manager=4,count=8,bank=12,cursor=16,budget=20,paid=24,
-       loss=28,finalized=32,table=36,events=40)
+       loss=28,finalized=32,table=36,events=40,goku_bank=44,goku_loss=48,sacrifice=52)
+SACRIFICE = 0x06E7C000
+SACRIFICE_END = 0x06E80000
 HIT_FLAGS=0x02000502  # ultimate, nonlethal, no combo reduction, no rounding
 FINAL_FLAGS=(HIT_FLAGS & ~0x400)|8  # final continuation is not an extra combo hit
 
@@ -50,9 +52,11 @@ def schedules(pack=None):
                 if not 0<=elapsed<=duration:raise ValueError('Invalid tag damage contact frame')
                 contacts.add((phase,elapsed))
             if row['flags']&assets.FINISHER and row['flags']&(assets.BEAM_LEAD|assets.BEAM_PARTNER):
-                if burst is not None or duration<=30:raise ValueError('Invalid tag damage beam finisher')
-                burst=(phase,duration-30)
-        if not contacts:raise ValueError('Tag attack has no reviewed damage contacts')
+                if burst is not None:raise ValueError('Invalid tag damage beam finisher')
+                import tag_rush_choreography as choreography
+                burst=(phase,choreography.beam_burst_frame(duration,custom=bool(row['flags']&assets.CUSTOM_FINISHER)))
+        if not contacts and not (name=='early_goku_piccolo' and burst):
+            raise ValueError('Tag attack has no reviewed damage contacts')
         if burst:
             contacts.discard(burst)
             if any(p>=burst for p in contacts):raise ValueError('Tag damage contact follows beam burst')
@@ -65,7 +69,7 @@ def schedules(pack=None):
 
 
 def table_data(pack=None):
-    data=bytearray(32)
+    data=bytearray(8*len(VARIANTS))
     for variant,name in enumerate(VARIANTS):
         rows=schedules(pack)[name];struct.pack_into('<2I',data,variant*8,TABLE+len(data),len(rows))
         for phase,frame,weight in rows:data.extend(struct.pack('<4I',phase,frame,weight,0))
@@ -88,11 +92,20 @@ def valid(a,fail):
 def reset_code():
     import tag_rush_scene as scene
     a=Assembler(RESET);tag.save(a);a.li(16,STATE);a.sw(0,16)
-    camera.emit_active(a,'done');a.lw(9,8,tag.C['variant']);a.i(11,10,9,4);a.branch(4,10,0,'done')
+    camera.emit_active(a,'done');a.lw(9,8,tag.C['variant']);a.i(11,10,9,len(VARIANTS));a.branch(4,10,0,'done')
     a.r(0,9,0,9,3);a.li(10,TABLE);a.r(0x21,10,10,9);a.lw(11,10);a.lw(12,10,4)
     a.i(11,9,12,65);a.branch(4,9,0,'done');a.sw(11,16,C['table']);a.sw(12,16,C['events'])
     for off in (4,8):a.lw(9,8,off);a.sw(9,16,off)
     a.lw(9,8,tag.C['damage']);a.li(10,100000);a.r(0x2B,10,10,9);a.branch(5,10,0,'done');a.sw(9,16,C['budget'])
+    a.sw(0,16,C['sacrifice']);a.sw(0,16,C['goku_loss'])
+    a.lw(10,8,tag.C['variant']);a.li(11,4);a.branch(5,10,11,'budget_ready')
+    a.lw(10,8,tag.C['sacrifice_enabled']);a.li(11,1);a.branch(5,10,11,'budget_ready')
+    a.lw(10,8,tag.C['sacrifice_multiplier']);a.addiu(11,10,-1000);a.i(11,11,11,4001);a.branch(4,11,0,'done')
+    a.r(0x19,0,9,10);a.r(0x12,9,0,0);a.li(10,1000);a.r(0x1B,0,9,10);a.r(0x12,9,0,0)
+    a.sw(9,16,C['budget']);a.li(21,scene.ROWS);scene.identity(a,21,'done','reset_goku')
+    a.lw(9,22,0x994);a.i(11,10,9,5);a.branch(4,10,0,'done');a.sw(9,16,C['goku_bank'])
+    a.li(9,1);a.sw(9,16,C['sacrifice'])
+    a.label('budget_ready')
     a.li(21,scene.ROWS+2*scene.STRIDE);scene.identity(a,21,'done','reset_victim')
     a.lw(9,22,0x994);a.i(11,10,9,5);a.branch(4,10,0,'done');a.sw(9,16,C['bank'])
     for field in ('cursor','paid','loss','finalized'):a.sw(0,16,C[field])
@@ -115,7 +128,7 @@ def apply_code():
     a.move(4,22);a.move(5,18);a.move(6,19);a.call(safety.DAMAGE)
     a.branch(4,2,0,'no');valid(a,'no');a.lw(8,24);a.r(0x2B,9,8,20);a.branch(4,9,0,'yes')
     a.r(0x23,8,20,8);a.lw(9,16,C['loss']);a.r(0x21,9,9,8);a.sw(9,16,C['loss'])
-    a.label('yes');a.li(2,1);a.jump('done');a.label('no');a.move(2,0)
+    a.label('yes');a.move(4,18);a.move(5,19);a.call(SACRIFICE);a.jump('done');a.label('no');a.move(2,0)
     a.label('done');tag.restore(a,2);a.jr();data=a.finish();assert APPLY+len(data)<=TABLE;return data
 
 
@@ -130,14 +143,18 @@ def tick_code():
     a.li(8,60);a.r(0x19,0,19,8);a.r(0x12,19,0,0)
     a.label('event');a.lw(20,16,C['cursor']);a.lw(8,16,C['events']);a.r(0x2B,8,20,8);a.branch(4,8,0,'yes')
     a.r(0,8,0,20,4);a.lw(25,16,C['table']);a.r(0x21,25,25,8)
-    a.li(8,TABLE+32);a.r(0x2B,9,25,8);a.branch(5,9,0,'no');a.li(8,STATE-16)
+    a.li(8,TABLE+8*len(VARIANTS));a.r(0x2B,9,25,8);a.branch(5,9,0,'no');a.li(8,STATE-16)
     a.r(0x2B,9,8,25);a.branch(5,9,0,'no')
     a.lw(8,25);a.r(0x2B,9,18,8);a.branch(5,9,0,'yes');a.branch(5,8,18,'due')
     a.lw(8,25,4);a.li(9,ACTOR_HZ);a.r(0x19,0,8,9);a.r(0x12,8,0,0)
     a.r(0x2B,9,19,8);a.branch(5,9,0,'yes')
     a.label('due');a.lw(8,25,8);a.i(11,9,8,10001);a.branch(4,9,0,'no')
     a.lw(9,16,C['budget']);a.branch(4,9,0,'zero');a.addiu(9,9,-1)
-    a.r(0x19,0,8,9);a.r(0x12,8,0,0);a.li(9,10000);a.r(0x1B,0,8,9);a.r(0x12,24,0,0);a.jump('amount')
+    # Split first so the largest500000HP sacrifice budget cannot overflow
+    # the32-bit weight product at10000. All rounding remains integer-exact.
+    a.li(10,10000);a.r(0x1B,0,9,10);a.r(0x12,11,0,0);a.r(0x10,12,0,0)
+    a.r(0x19,0,11,8);a.r(0x12,24,0,0);a.r(0x19,0,12,8);a.r(0x12,12,0,0)
+    a.r(0x1B,0,12,10);a.r(0x12,12,0,0);a.r(0x21,24,24,12);a.jump('amount')
     a.label('zero');a.move(24,0);a.label('amount');a.lw(9,16,C['paid']);a.r(0x2B,8,24,9);a.branch(5,8,0,'no')
     a.r(0x23,4,24,9);a.sw(24,16,C['paid']);a.addiu(20,20,1);a.sw(20,16,C['cursor'])
     a.li(5,HIT_FLAGS);a.call(APPLY);a.branch(4,2,0,'no');a.jump('event')
@@ -158,6 +175,31 @@ def final_code():
     a.label('done');tag.restore(a,2);a.jr();data=a.finish();assert FINAL+len(data)<=APPLY;return data
 
 
+def sacrifice_code():
+    """Mirror a played special-pair portion to its exact captured Goku.
+
+    The ordinary attributed native damage call owns HP, scenario conditions
+    and KO. Never subtract HP directly or apply remaining damage on cancellation.
+    """
+    import tag_rush_scene as scene
+    a=Assembler(SACRIFICE);tag.save(a);a.move(18,4);a.move(19,5)
+    a.li(16,STATE);a.lw(8,16,C['sacrifice']);a.branch(4,8,0,'yes')
+    a.branch(6,18,0,'yes');camera.emit_active(a,'no')
+    a.lw(9,8,tag.C['variant']);a.li(10,4);a.branch(5,9,10,'no')
+    a.lw(9,8,tag.C['sacrifice_enabled']);a.li(10,1);a.branch(5,9,10,'no')
+    a.li(21,scene.ROWS);scene.identity(a,21,'no','sacrifice_goku')
+    a.lw(8,23,12);a.branch(5,8,0,'no')
+    a.lw(8,22,0x994);a.lw(9,16,C['goku_bank']);a.branch(5,8,9,'no')
+    recovery.hp_record(a,22,24,'no');a.lw(20,24);a.branch(6,20,0,'yes')
+    a.li(8,safety.DAMAGE_DONE);a.sw(0,8);a.move(4,22);a.move(5,18);a.move(6,19);a.call(safety.DAMAGE)
+    a.branch(4,2,0,'no');scene.identity(a,21,'no','sacrifice_after')
+    a.lw(8,22,0x994);a.lw(9,16,C['goku_bank']);a.branch(5,8,9,'no')
+    recovery.hp_record(a,22,24,'no');a.lw(8,24);a.r(0x2B,9,8,20);a.branch(4,9,0,'yes')
+    a.r(0x23,8,20,8);a.lw(9,16,C['goku_loss']);a.r(0x21,9,9,8);a.sw(9,16,C['goku_loss'])
+    a.label('yes');a.li(2,1);a.jump('done');a.label('no');a.move(2,0)
+    a.label('done');tag.restore(a,2);a.jr();data=a.finish();assert SACRIFICE+len(data)<=SACRIFICE_END;return data
+
+
 def pieces():
     return [(RESET,reset_code()),(TICK,tick_code()),(FINAL,final_code()),(APPLY,apply_code()),
-            (STATE,bytes(END-STATE))]
+            (SACRIFICE,sacrifice_code()),(STATE,bytes(END-STATE))]

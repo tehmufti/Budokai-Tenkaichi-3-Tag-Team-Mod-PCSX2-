@@ -5,7 +5,7 @@ update retains the native track and restores the render binding before another
 view is visited. A bystander's camera remains owned by the normal policy.
 """
 import struct
-from native_map import A
+from native_map import A, ACTOR_HZ
 from prototype import Assembler
 from regional import SCISSOR_Y1
 import fresh_team_combat as core
@@ -13,11 +13,18 @@ import fresh_team_camera as follow
 
 BASE, END = 0x06D78000, 0x06D80000
 INIT, UPDATE, SELECT, QUERY = BASE, BASE+0x800, BASE+0x1000, BASE+0x2000
+TAIL_GUARD = BASE+0x300
 FIT_VIEW, FIT_END = BASE+0x2400, BASE+0x2800
-FIT_WEIGHT = BASE+0x1800
+FIT_WEIGHT = BASE+0x1900
+TAIL_TICK = BASE+0x1B00
 CAMERA = 0x06D7C000
 CONTROL, MAGIC = 0x06D08000, 0x54414731
 ACTIVE, MEMBERS, SHARED = 16, 20, 24
+# Separate presentation receipt in the director's unused header. ACTIVE in
+# CONTROL remains zero: fighters, input and meter charging are already free.
+# This packet mirrors the camera's manager/count/membership field offsets.
+TAIL, TAIL_MAGIC = CONTROL+0x4B0, 0x54435431
+TAIL_TICKS = (8*ACTOR_HZ+4)//5  # 1.6 seconds, including native burst retirement.
 REGS = tuple(range(2, 28))+(30, 31)
 
 
@@ -46,7 +53,8 @@ def emit_presentation(a,fail):
     """Camera-only ownership includes the native launch; gameplay ACTIVE does not."""
     import tag_team_rush as runtime
     import tag_rush_approach as rush
-    emit_active(a,fail+'_launch');a.jump(fail+'_present')
+    emit_active(a,fail+'_tail');a.jump(fail+'_present')
+    a.label(fail+'_tail');emit_tail(a,fail+'_launch');a.jump(fail+'_present')
     a.label(fail+'_launch');a.li(8,CONTROL);a.lw(9,8);a.li(11,MAGIC);a.branch(5,9,11,fail)
     a.lw(9,8,4);a.lw(11,28,-22364);a.branch(5,9,11,fail);a.branch(4,9,0,fail)
     a.lw(9,8,8);a.li(11,core.MODE+4);a.lw(11,11);a.branch(5,9,11,fail)
@@ -56,6 +64,47 @@ def emit_presentation(a,fail):
     a.lw(9,8,rush.S['active']);a.li(11,1);a.branch(5,9,11,fail)
     a.lw(9,8,rush.S['manager']);a.lw(11,28,-22364);a.branch(5,9,11,fail)
     a.li(8,CONTROL);a.label(fail+'_present')
+
+
+def emit_tail(a,fail):
+    """Presentation only; reject before a call when the optional payload is absent."""
+    a.li(8,CONTROL);a.lw(9,8);a.li(11,MAGIC);a.branch(5,9,11,fail)
+    a.li(8,TAIL);a.lw(9,8);a.li(11,TAIL_MAGIC);a.branch(5,9,11,fail)
+    # This helper has the same t0,t1,t3-only ABI as our inlined ownership guard.
+    # Preserve the caller's return address even when used by a leaf program.
+    a.addiu(29,29,-16);a.i(63,31,29,0);a.call(TAIL_GUARD)
+    a.i(55,31,29,0);a.addiu(29,29,16);a.branch(4,8,0,fail)
+
+
+def tail_guard_code():
+    """t0 = live tail packet or zero; only t0,t1,t3 are clobbered."""
+    import tag_team_rush as runtime
+    import team_start_gate as start
+    a=Assembler(TAIL_GUARD);fail='no'
+    a.li(8,CONTROL);a.lw(9,8);a.li(11,MAGIC);a.branch(5,9,11,fail)
+    a.lw(9,8,12);a.branch(4,9,0,fail)
+    for off in (ACTIVE,runtime.C['approaching']):a.lw(9,8,off);a.branch(5,9,0,fail)
+    a.li(8,TAIL);a.lw(9,8);a.li(11,TAIL_MAGIC);a.branch(5,9,11,fail)
+    a.lw(9,8,4);a.lw(11,28,-22364);a.branch(5,9,11,fail);a.branch(4,9,0,fail)
+    # TICK runs before the native frame, so a move can start between its
+    # cleanup and this render. Yield immediately to that newly owned camera,
+    # and invalidate the receipt so the old shot cannot return afterward.
+    for address in (CONTROL+4,core.MODE+8):
+        a.li(11,address);a.lw(11,11);a.branch(5,9,11,fail)
+    a.lw(11,9);a.addiu(11,11,-2);a.branch(5,11,0,fail)
+    a.lw(11,9,628);a.branch(5,11,0,fail)
+    a.lw(9,8,8);a.li(11,core.MODE+4);a.lw(11,11);a.branch(5,9,11,fail)
+    for address in (CONTROL+8,core.MODE+12):
+        a.li(11,address);a.lw(11,11);a.branch(5,9,11,fail)
+    a.li(9,core.MODE);a.lw(9,9);a.addiu(9,9,-1);a.branch(5,9,0,fail)
+    a.li(9,start.CONTROL);a.lw(9,9);a.branch(5,9,0,fail)
+    a.li(9,A(0x3337B8));a.lw(9,9);a.i(12,9,9,0x2100);a.branch(5,9,0,fail)
+    a.lw(9,8,ACTIVE);a.addiu(9,9,-1);a.i(11,11,9,TAIL_TICKS);a.branch(4,11,0,fail)
+    a.jr();a.label('no')
+    a.li(8,TAIL);a.lw(9,8);a.li(11,TAIL_MAGIC);a.branch(5,9,11,'unowned')
+    a.sw(0,8);a.label('unowned');a.move(8,0);a.jr();data=a.finish()
+    assert TAIL_GUARD+len(data)<=UPDATE
+    return data
 
 
 def emit_shared(a,yes,tag):
@@ -69,7 +118,9 @@ def emit_camera(a,out,physical,fail,tag):
     shared presentation rejects a stale/out-of-range subject.
     """
     assert out not in (8,9,11) and physical not in (8,9,11)
-    emit_active(a,tag+'_approach')
+    emit_active(a,tag+'_tail');a.jump(tag+'_private')
+    a.label(tag+'_tail');emit_tail(a,tag+'_approach')
+    a.label(tag+'_private')
     a.lw(9,8,8);a.r(0x2B,11,physical,9);a.branch(4,11,0,fail)
     a.lw(9,8,SHARED);a.branch(5,9,0,tag+'_yes')
     a.lw(9,8,MEMBERS);a.li(11,1);a.r(4,11,physical,11);a.r(0x24,9,9,11);a.branch(4,9,0,fail)
@@ -182,7 +233,11 @@ def fit_view_code():
     a.li(8,CAMERA);a.branch(5,17,8,'done');a.branch(4,16,17,'done')
     # The original Sadistic Dance cuts are already authored for this game.
     # Only our custom ending shots opt into portrait-view fitting.
-    a.li(18,tag.MEMBERS_SAVE);a.lw(8,18);a.li(9,0x54534331);a.branch(5,8,9,'done')
+    a.li(18,tag.MEMBERS_SAVE);a.lw(8,18);a.li(9,0x54534331);a.branch(4,8,9,'owned')
+    # The routing pass already authenticated this source. Its camera-only
+    # receipt keeps the final focus/descriptor available after scene release.
+    a.li(8,TAIL);a.lw(9,8);a.li(10,TAIL_MAGIC);a.branch(5,9,10,'done')
+    a.label('owned')
     a.lw(8,18,20);a.li(9,assets.BASE);a.r(0x2B,10,8,9);a.branch(5,10,0,'done')
     a.li(9,assets.END-64);a.r(0x2B,10,9,8);a.branch(5,10,0,'done')
     a.i(12,9,8,15);a.branch(5,9,0,'done')
@@ -247,7 +302,36 @@ def fit_weight_code():
     fp.fconst(a,1,3.);fp.fop(a,1,0,1,0);fp.fop(a,2,0,2,0)
     a.jump('done');a.label('close');fp.fconst(a,0,0.);a.jump('done')
     a.label('wide');fp.fconst(a,0,1.)
-    a.label('done');a.jr();data=a.finish();assert FIT_WEIGHT+len(data)<=QUERY
+    a.label('done');a.jr();data=a.finish();assert FIT_WEIGHT+len(data)<=TAIL_TICK
+    return data
+
+
+def tail_tick_code():
+    """Once per game update, before battle gates; never prolong gameplay ownership.
+
+    User pause holds the cosmetic tail while native effects are paused. A new
+    cinematic, match end, stage transition or replacement scene cancels it.
+    No renderer binding or actor/input field is written here.
+    """
+    import tag_team_rush as runtime
+    import fusion_partner_lifecycle as full
+    import team_start_gate as start
+    a=Assembler(TAIL_TICK);save(a);a.li(16,TAIL)
+    a.lw(8,16);a.li(9,TAIL_MAGIC);a.branch(5,8,9,'done')
+    emit_tail(a,'cancel');core.gate(a,'cancel')
+    a.li(8,CONTROL);a.lw(9,8,4);a.lw(11,16,4);a.branch(5,9,11,'cancel')
+    a.lw(9,8,8);a.lw(11,16,8);a.branch(5,9,11,'cancel')
+    a.lw(8,28,-22364);a.lw(9,8,628);a.branch(5,9,0,'cancel')
+    a.li(8,start.CONTROL);a.lw(8,8);a.branch(5,8,0,'cancel')
+    a.li(8,A(0x2FEB38));a.lw(8,8);full.pointer(a,8,0x108,'cancel',temp=11,test=9)
+    a.lw(9,8);a.li(11,3);a.branch(5,9,11,'cancel')
+    a.li(8,A(0x3337B8));a.lw(8,8);a.i(12,8,8,0x2100);a.branch(5,8,0,'cancel')
+    a.li(8,A(0x333700));a.lw(8,8);a.branch(5,8,0,'done')
+    a.li(8,A(0x3337C0));a.lw(8,8);a.li(9,1);a.branch(5,8,9,'cancel')
+    a.lw(8,16,ACTIVE);a.addiu(8,8,-1);a.sw(8,16,ACTIVE);a.branch(5,8,0,'done')
+    a.label('cancel');a.sw(0,16)
+    a.label('done');restore(a);a.jr();data=a.finish()
+    assert TAIL_TICK+len(data)<=QUERY,len(data)
     return data
 
 
@@ -274,7 +358,8 @@ def select_code():
 
 
 def pieces():
-    out=[(INIT,init_code()),(UPDATE,update_code()),(SELECT,select_code()),(FIT_WEIGHT,fit_weight_code()),(QUERY,query_code()),
+    out=[(INIT,init_code()),(TAIL_GUARD,tail_guard_code()),(UPDATE,update_code()),(SELECT,select_code()),(FIT_WEIGHT,fit_weight_code()),
+         (TAIL_TICK,tail_tick_code()),(QUERY,query_code()),
          (FIT_VIEW,fit_view_code())]
     for (p,b),(q,_) in zip(out,out[1:]):assert p+len(b)<=q
     assert out[-1][0]+len(out[-1][1])<=FIT_END<=CAMERA

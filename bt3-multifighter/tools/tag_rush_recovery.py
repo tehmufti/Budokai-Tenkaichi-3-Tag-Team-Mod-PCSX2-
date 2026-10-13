@@ -42,9 +42,28 @@ def code():
     import tag_rush_scene as scene
     a=Assembler(BEGIN);tag.save(a);a.move(21,4);a.move(20,5)
     camera.emit_active(a,'no');a.li(8,scene.ROWS+2*scene.STRIDE)
-    a.branch(5,21,8,'no');scene.identity(a,21,'no','victim')
+    a.branch(5,21,8,'special_goku');scene.identity(a,21,'no','victim')
     a.li(8,tag.CONTROL);a.lw(8,8,tag.C['victim']);a.lw(9,21,scene.R['index'])
-    a.branch(5,8,9,'no')
+    a.branch(5,8,9,'no');a.jump('admitted')
+    # Only the selected Early Goku/Piccolo sacrifice may admit an attacker.
+    # Require the exact body/bank and recorded damage from the completed move;
+    # other attackers and ordinary tags retain the victim-only contract.
+    a.label('special_goku')
+    import tag_rush_damage as damage
+    import tag_rush_special_pair as special
+    a.li(8,scene.ROWS);a.branch(5,21,8,'no');scene.identity(a,21,'no','goku')
+    a.lw(8,21,scene.R['character']);a.branch(5,8,0,'no')
+    a.li(8,tag.CONTROL);a.lw(9,8,tag.C['variant']);a.li(10,special.VARIANT);a.branch(5,9,10,'no')
+    a.lw(9,8,tag.C['initiator']);a.lw(10,21,scene.R['index']);a.branch(5,9,10,'no')
+    a.li(18,damage.STATE);a.lw(9,18);a.li(10,damage.MAGIC);a.branch(5,9,10,'no')
+    for off in (4,8):
+        a.lw(9,18,off);a.lw(10,8,off);a.branch(5,9,10,'no')
+    a.li(10,1)
+    for field in ('sacrifice','finalized'):
+        a.lw(9,18,damage.C[field]);a.branch(5,9,10,'no')
+    a.lw(9,18,damage.C['goku_loss']);a.branch(6,9,0,'no')
+    a.lw(9,18,damage.C['goku_bank']);a.lw(10,22,0x994);a.branch(5,9,10,'no')
+    a.label('admitted')
     # The restored own animation directory must precede the native entry.
     a.lw(8,21,scene.R['clip0']);a.lw(9,23,192);a.branch(5,8,9,'no')
     # Native low-HP recovery status is recomputed every frame. Keep a receipt
@@ -75,13 +94,17 @@ def code():
     # root+128 direction, while +152 speed decelerates naturally to zero.
     # Seed a single horizontal away impulse; native collision/arena handling
     # then owns travel. Never move the victim directly or add another hit.
-    a.move(17,22);a.move(16,23);a.li(19,scene.ROWS)
+    # The victim leaves the holder; a sacrifice Goku leaves Piccolo's beam.
+    a.move(17,22);a.move(16,23);a.li(19,scene.ROWS);a.branch(5,21,19,'slam_row')
+    a.li(19,scene.ROWS+scene.STRIDE);a.label('slam_row')
     scene.identity(a,19,'accepted','slam_source')
     for f,off in ((0,2384),(2,2392)):
         a.i(49,f,16,off);a.i(49,f+1,23,off);fp.fop(a,1,f,f,f+1)
     fp.fop(a,2,4,0,0);fp.fop(a,2,5,2,2);fp.fop(a,0,4,4,5)
     fp.fconst(a,5,.001);fp.fop(a,0x34,0,5,4);a.branch(17,8,0,'accepted')
-    fp.fop(a,4,4,4,0);fp.fop(a,3,0,0,4);fp.fop(a,3,2,2,4)
+    # EE SQRT reads Ft, unlike the usual MIPS Fs spelling. Normalize the
+    # horizontal vector itself, not whichever value remains in f0.
+    fp.fop(a,4,4,0,4);fp.fop(a,3,0,0,4);fp.fop(a,3,2,2,4)
     a.i(57,0,17,0x90);a.sw(0,17,0x94);a.i(57,2,17,0x98);a.sw(0,17,0x9C)
     fp.fconst(a,0,480.0/ACTOR_HZ);a.i(57,0,17,0xA8)
     a.label('accepted');a.li(2,1);a.jump('done')

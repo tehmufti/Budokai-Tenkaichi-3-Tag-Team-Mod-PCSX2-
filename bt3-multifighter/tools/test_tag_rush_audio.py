@@ -53,7 +53,7 @@ def machine(hz=30,data=None):
             c.w(row+scene.R[key],value)
         bone=0x3600000+role*0x100;c.w(model+3436+3*4,bone)
         c.write(bone+64,struct.pack('<4f',10.*role,-25.,100.*role,1.))
-    for phase in range(5):
+    for phase in range(12):
         c.write(assets.BASE+phase*64,struct.pack('<16I',100,0x6D20000,0x6D21000,0x6D22000,0,0,0,0,1,2,3,100,100,100,60,0))
     native=elf_reader(elf_path(ROOT))[2]
     c.write(deferred.SOUND,native(deferred.SOUND,0x28))
@@ -85,6 +85,41 @@ def tick(c,phase,ticks):
 
 
 class AudioTests(unittest.TestCase):
+    def test_disc_relay_pose_contacts_play_once_at_the_attacker_and_hit_the_victim(self):
+        import math
+        import tag_rush_choreography as choreography
+        name=('SLUS_219.78.DBZBT4B14REV2ENG.iso' if 'bt4' in str(Path(__file__).parent)
+              else 'Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso')
+        iso=Path(__file__).resolve().parents[2]/'games'/name
+        if not iso.is_file():self.skipTest('Local reviewed disc unavailable')
+        data=assets.build_assets(iso)
+        rows=audio.cue_rows(data)
+        self.assertLessEqual(len(rows)*24,audio.STATE-audio.TABLE)
+        for variant,name in enumerate(choreography.VARIANTS):
+            expected=[(phase,role,frame) for phase in range(4,len(assets.timeline(name)))
+                      for role,frame in choreography.phase_contacts(name,phase)]
+            actual=[(phase,role,frame) for mask,phase,role,frame,sound,_ in rows
+                    if mask&(1<<variant) and phase>=4 and sound==73]
+            self.assertEqual(sorted(actual),sorted(expected),name)
+            if not expected:continue
+            for hz in (25,30):
+                c=machine(hz,data);c.w(tag.CONTROL+tag.C['variant'],variant)
+                for phase,p in enumerate(assets.timeline(name)):
+                    c.w(assets.BASE+phase*64,p.source_frames)
+                    c.w(assets.BASE+phase*64+28,p.flags)
+                    for role in range(3):c.w(assets.BASE+phase*64+44+role*4,p.ends[role])
+                for phase,role,frame in expected:
+                    before=len(c.requests)
+                    tick(c,phase,(frame*hz-1)//60)
+                    self.assertEqual(len(c.requests),before,(name,hz,phase,frame))
+                    tick(c,phase,math.ceil(frame*hz/60))
+                    self.assertEqual(len(c.requests),before+1)
+                    self.assertEqual(c.requests[-1][2],73)
+                    self.assertEqual(c.requests[-1][5],(10.*role,-25.,100.*role,1.))
+                    self.assertEqual(c.impacts[-1][0],2)
+                    tick(c,phase,math.ceil(frame*hz/60))
+                    self.assertEqual(len(c.requests),before+1)
+
     def test_explosion_cue_matches_native_primary_beam_final_hit(self):
         import model_assets as models
         import tag_rush_install as installer
@@ -121,32 +156,36 @@ class AudioTests(unittest.TestCase):
             self.assertEqual(requests,[(hit+32,0,audio.EXPLOSION_SOUND,200.,1500.)],character)
 
     def test_final_beam_explosion_is_one_victim_cue_even_with_two_beams(self):
-        data={'audio_cues':{name:((),(),(),(),())for name in audio.VARIANTS}}
-        data['variants']={name:dict(phases=[dict(flags=0)]*4+[dict(
-            flags=assets.FINISHER|(0 if name=='two_melee' else
-                assets.BEAM_PARTNER if name=='mixed_ki_partner' else
-                assets.BEAM_LEAD|assets.BEAM_PARTNER if name=='two_ki' else assets.BEAM_LEAD),
-            source_frames=180)])for name in audio.VARIANTS}
-        for hz in (30,25):
-            for variant in range(4):
-                c=machine(hz,data);c.w(tag.CONTROL+tag.C['variant'],variant)
-                for off in (0,44,48,52):c.w(assets.BASE+4*64+off,180)
-                before=(150*hz-1)//60;after=(150*hz+59)//60
-                tick(c,4,before);self.assertFalse(c.requests)
-                c.w(A(0x333700),1);tick(c,4,after);self.assertFalse(c.requests)
-                c.w(A(0x333700),0)
-                for frame in (after+2,after+2,after+5):tick(c,4,frame)
-                self.assertEqual([r[2]for r in c.requests],[] if variant==1 else [audio.EXPLOSION_SOUND])
-                if variant!=1:self.assertEqual(c.requests[0][5],(20.,-25.,200.,1.))
+        import tag_rush_choreography as choreography
+        for custom in (False,True):
+            data={'audio_cues':{name:((),(),(),(),())for name in audio.VARIANTS}}
+            data['variants']={name:dict(phases=[dict(flags=0)]*4+[dict(
+                flags=assets.FINISHER|(assets.CUSTOM_FINISHER if custom else 0)|(0 if name=='two_melee' else
+                    assets.BEAM_PARTNER if name in ('mixed_ki_partner','early_goku_piccolo') else
+                    assets.BEAM_LEAD|assets.BEAM_PARTNER if name=='two_ki' else assets.BEAM_LEAD),
+                source_frames=180)])for name in audio.VARIANTS}
+            burst=choreography.beam_burst_frame(180,custom=custom)
+            self.assertEqual(burst,96 if custom else 150)
+            for hz in (30,25):
+                for variant in range(len(audio.VARIANTS)):
+                    c=machine(hz,data);c.w(tag.CONTROL+tag.C['variant'],variant)
+                    for off in (0,44,48,52):c.w(assets.BASE+4*64+off,180)
+                    before=(burst*hz-1)//60;after=(burst*hz+59)//60
+                    tick(c,4,before);self.assertFalse(c.requests)
+                    c.w(A(0x333700),1);tick(c,4,after);self.assertFalse(c.requests)
+                    c.w(A(0x333700),0)
+                    for frame in (after+2,after+2,after+5):tick(c,4,frame)
+                    self.assertEqual([r[2]for r in c.requests],[] if variant==1 else [audio.EXPLOSION_SOUND])
+                    if variant!=1:self.assertEqual(c.requests[0][5],(20.,-25.,200.,1.))
 
     def test_own_clash_charge_onset_is_once_per_beam_role_and_never_a_loop(self):
         data=pack()
         data['variants']={name:dict(phases=[dict(flags=0)]*4+[dict(flags=assets.OWN_CLASH_POSE|
-            (assets.BEAM_PARTNER if name=='mixed_ki_partner' else assets.BEAM_LEAD))])
+            (assets.BEAM_PARTNER if name in ('mixed_ki_partner','early_goku_piccolo') else assets.BEAM_LEAD))])
             for name in audio.VARIANTS}
         data['variants']['two_ki']['phases'][4]=dict(flags=assets.OWN_CLASH_POSE|assets.BEAM_LEAD|assets.BEAM_PARTNER)
         data['variants']['two_melee']['phases'][4]=dict(flags=assets.CUSTOM_FINISHER)
-        for variant,roles in ((0,(0,1)),(1,()),(2,(0,)),(3,(1,))):
+        for variant,roles in ((0,(0,1)),(1,()),(2,(0,)),(3,(1,)),(4,(1,))):
             c=machine(data=data);c.w(tag.CONTROL+tag.C['variant'],variant)
             probes=[]
             def one_shot(m):
@@ -171,7 +210,7 @@ class AudioTests(unittest.TestCase):
         self.assertNotEqual(list(data['audio_cues']),list(cached['audio_cues']))
         self.assertEqual(audio.cue_rows(data),audio.cue_rows(cached))
         self.assertEqual(audio.pieces(data),audio.pieces(cached))
-        for variant in range(4):
+        for variant in range(len(audio.VARIANTS)):
             event=[row for row in audio.cue_rows(cached) if row[3]==10+variant]
             self.assertEqual(len(event),1)
             self.assertEqual(event[0][0],1<<variant)

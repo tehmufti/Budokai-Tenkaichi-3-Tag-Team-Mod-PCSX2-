@@ -7,6 +7,7 @@ if not _test_elf_path(_TestPath(__file__).resolve().parents[1]).is_file():
     raise _TestUnit.SkipTest('An extracted game executable is required for native tag tests')
 
 import unittest
+import struct
 from dataclasses import replace
 import tag_team_rush as tag
 
@@ -52,6 +53,14 @@ class ConsentTests(unittest.TestCase):
         c.tick(fs,[0]);self.assertEqual(c.tick(fs),(0,2,1,'mixed'))
         c.finish();self.assertIsNone(c.active)
 
+    def test_cpu_initiates_from_native_ultimate_decision_but_human_must_accept(self):
+        c=self.ready();fs=fighters();fs[0]=replace(fs[0],cpu=True)
+        for _ in range(5):c.tick(fs)
+        self.assertEqual(c.offers,{})
+        c.tick(fs,cpu_ultimates=[0]);self.assertIn(0,c.offers)
+        self.assertIsNone(c.tick(fs,cpu_ultimates=[0]))
+        self.assertEqual(c.tick(fs,[2],cpu_ultimates=[0]),(0,2,1,'dual_beam'))
+
     def test_offer_expires_without_spending(self):
         c=self.ready();c.tick(fighters(),[0])
         for _ in range(c.ttl):c.tick(fighters())
@@ -84,9 +93,24 @@ class ConsentTests(unittest.TestCase):
         c=tag.Coordinator(charge_seconds=1,hz=10)
         for _ in range(c.limit):c.tick(fs)
         c.tick(fs,[0]);self.assertEqual(c.tick(fs,[2])[:3],(0,2,1))
+        self.assertEqual(c.charge,{0:0,1:10,2:10,3:10,4:10,5:10})
+        c.contact()
         self.assertEqual(c.charge,{0:0,1:10,2:0,3:10,4:10,5:10})
         c.finish();c.tick(fs)
         self.assertEqual((c.charge[0],c.charge[2],c.charge[4]),(1,1,10))
+
+    def test_miss_cost_is_only_initiator_and_optional_cost_waits_for_contact(self):
+        for keep in (False,True):
+            c=tag.Coordinator(charge_seconds=1,hz=10,keep_meter_on_miss=keep)
+            for _ in range(c.limit):c.tick(fighters())
+            c.tick(fighters(),[0]);c.tick(fighters(),[2])
+            self.assertEqual((c.charge[0],c.charge[2]),(10 if keep else 0,10))
+            c.finish()
+            self.assertEqual((c.charge[0],c.charge[2]),(10 if keep else 0,10))
+            # The option only changes a failed attempt; a landed attack
+            # always spends both full meters.
+            c.charge[0]=c.limit;c.tick(fighters());c.tick(fighters(),[0]);c.tick(fighters(),[2]);c.contact()
+            self.assertEqual((c.charge[0],c.charge[2]),(0,0))
 
     def test_an_undercharged_teammate_cannot_accept_even_as_cpu(self):
         for cpu in (False,True):
@@ -106,6 +130,18 @@ class ConsentTests(unittest.TestCase):
         for builder in (tag.gate_code,tag.eligible_code,tag.input_code,tag.tick_code):
             self.assertTrue(builder())
         self.assertTrue(tag.frame_code(0x100000))
+
+    def test_miss_preference_serializes_to_its_own_control_word(self):
+        options=dict(tag_team_rush_enabled=True,tag_team_rush_shared_camera=False,
+                     tag_team_rush_charge_seconds=25,tag_team_rush_damage=15000,
+                     tag_team_rush_training_full=False)
+        original=tag.control_bytes(0x1900000,4,options)
+        changed=tag.control_bytes(0x1900000,4,{**options,'tag_team_rush_keep_meter_on_miss':True})
+        offset=tag.C['keep_meter_on_miss']
+        self.assertEqual(struct.unpack_from('<I',original,offset)[0],0)
+        self.assertEqual(struct.unpack_from('<I',changed,offset)[0],1)
+        self.assertEqual(original[:offset],changed[:offset])
+        self.assertEqual(original[offset+4:],changed[offset+4:])
 
 
 if __name__=='__main__':unittest.main()

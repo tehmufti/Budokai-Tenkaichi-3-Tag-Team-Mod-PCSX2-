@@ -96,7 +96,8 @@ NOT_APPLICABLE = (
     'emulated_cpu_speed',
     # Offline tag cinematics do not yet participate in network scheduling.
     'tag_team_rush_damage', 'tag_team_rush_charge_seconds', 'tag_team_rush_training_full',
-    'tag_team_rush_shared_camera',
+    'tag_team_rush_shared_camera', 'tag_team_rush_keep_meter_on_miss',
+    'tag_team_rush_sacrifice_enabled', 'tag_team_rush_sacrifice_multiplier',
 )
 # Online values of not-applicable keys (none differ from the mod's defaults: the default controller check-in,
 # 'connection_order', never arms the hub's P1/P2 override; the conversion disarms that override anyway).

@@ -29,7 +29,7 @@ BONE=0x2A00000
 def machine(variant=0,phase=4):
     c=cpu();c.__class__=SceneCpu
     for p,b in staging.pieces():c.write(p,b)
-    names=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+    names=choreography.VARIANTS
     data,_=choreography.pack_records(names,TABLE);c.write(TABLE,data)
     c.w(tag.CONTROL+staging.TABLE_OFFSET,TABLE);c.w(tag.CONTROL+tag.C['variant'],variant)
     c.w(STATE+4,phase);c.w(STATE+8,1)
@@ -70,6 +70,27 @@ def apply(c,role):
 
 
 class ChoreographyTests(unittest.TestCase):
+    def test_beam_burst_uses_firing_time_for_clearance_without_changing_opening(self):
+        import tag_rush_scene as scene
+        native_marks=[(0,0,0,0,choreography.ZERO,choreography.ZERO,choreography.ZERO)]*4
+        for name in choreography.VARIANTS:
+            timeline=assets.timeline(name)
+            if name!='early_goku_piccolo':
+                self.assertEqual([p.source_frames for p in timeline[:4]],[68,99,149,119])
+                self.assertEqual(choreography.records(name)[:4],native_marks)
+            if name=='two_melee':continue
+            self.assertEqual(timeline[-1].source_frames,choreography.BEAM_FRAMES)
+            burst=choreography.beam_burst_frame(timeline[-1].source_frames,custom=True)
+            self.assertEqual(burst-choreography.BEAM_START,6)
+            for hz in (25,30):
+                clearance=(choreography.BEAM_FRAMES-burst)/60+scene.burst_settle_ticks(hz,custom=True)/hz
+                self.assertGreaterEqual(clearance,2.1-1e-9)
+                self.assertLess(clearance,2.14)
+                self.assertGreaterEqual(scene.burst_settle_ticks(hz)/hz-scene.burst_settle_ticks(hz,custom=True)/hz,.87)
+        self.assertEqual(choreography.beam_burst_frame(262),232)
+        for duration in (None,True,30,90,96,1001):
+            with self.assertRaises(ValueError):choreography.beam_burst_frame(duration,custom=True)
+
     def test_native_set_root_faces_each_attacker_toward_the_victim(self):
         # Execute the real native setter, not the preview quaternion. The
         # live mixed capture showed hand45 extending away under the old yaw0.
@@ -86,14 +107,20 @@ class ChoreographyTests(unittest.TestCase):
                 for fn in (0x1DABE8,0x24DD20):c.callbacks[A(fn)]=lambda m:None
                 for role in range(3):self.assertEqual(apply(c,role),1)
                 victim=struct.unpack('<3f',c.read(ACTOR+0x4000+16,12))
-                for role in (0,1):
+                entry=assets.timeline(name)[phase]
+                attackers={role for role,source in enumerate(entry.roles[:2])
+                           if source.animation in choreography.PHRASE_IDS.values()
+                           or entry.flags&(assets.BEAM_LEAD<<role)}
+                if name=='two_ki':attackers.update((0,1))
+                # Waiting partners and departing fighters have their own
+                # marks; only a fighter actually striking must aim at the hit.
+                for role in attackers:
                     actor=ACTOR+role*0x2000
                     origin=struct.unpack('<3f',c.read(actor+16,12))
                     forward=struct.unpack('<3f',c.read(actor+16+128,12))
                     dx,dz=victim[0]-origin[0],victim[2]-origin[2]
                     alignment=(forward[0]*dx+forward[2]*dz)/math.hypot(dx,dz)
-                    retreat=(name.startswith('mixed_') and phase==6 and role==(1 if name=='mixed_ki_lead' else 0))
-                    self.assertGreater(-alignment if retreat else alignment,.98,(name,phase,role,origin,forward,victim))
+                    self.assertGreater(alignment,.98,(name,phase,role,origin,forward,victim))
 
     def test_cache_key_sorting_preserves_runtime_variant_order(self):
         variants={name:dict(phases=[]) for name in choreography.VARIANTS}
@@ -111,8 +138,8 @@ class ChoreographyTests(unittest.TestCase):
         c=machine();run(c,staging.BEGIN)
         globals_before=[c.u(c.r[28]+off) for off in staging.fp.terrain.QUERY_GLOBALS]
         for role in range(3):self.assertEqual(apply(c,role),1)
-        self.assertEqual(struct.unpack('<3f',c.read(MODEL+2384,12)),(100.,-200.,242.))
-        self.assertEqual(struct.unpack('<3f',c.read(MODEL+0x2000+2384,12)),(100.,-200.,158.))
+        self.assertEqual(struct.unpack('<3f',c.read(MODEL+2384,12)),(100.,-200.,263.))
+        self.assertEqual(struct.unpack('<3f',c.read(MODEL+0x2000+2384,12)),(100.,-200.,137.))
         self.assertAlmostEqual(c.fr(MODEL+2404),math.pi,places=6)
         self.assertAlmostEqual(c.fr(MODEL+0x2000+2404),0.,places=6)
         self.assertEqual(c.fr(STATE+116),-200.)
@@ -121,7 +148,7 @@ class ChoreographyTests(unittest.TestCase):
     def test_role_spacing_rotates_with_shared_yaw(self):
         c=machine();c.fw(STATE+132,math.pi/2)
         self.assertEqual(apply(c,0),1)
-        self.assertAlmostEqual(c.fr(MODEL+2384),142.,places=5)
+        self.assertAlmostEqual(c.fr(MODEL+2384),163.,places=5)
         self.assertAlmostEqual(c.fr(MODEL+2392),200.,places=5)
 
     def test_settle_moves_real_hips_smoothly_without_restarting_unchanged_marks(self):
@@ -130,38 +157,39 @@ class ChoreographyTests(unittest.TestCase):
         c.w(STATE+8,6);run(c,staging.TICK)
         # 12/24sourceframes ->smoothstep .5; actualhip approaches fromair.
         self.assertAlmostEqual(c.fr(BONE+68),(-110.+(-210.))/2,places=4)
-        self.assertAlmostEqual(c.fr(BONE+72),221.,places=4)
+        self.assertAlmostEqual(c.fr(BONE+72),231.5,places=4)
         c.w(STATE+8,12);run(c,staging.TICK)
         self.assertAlmostEqual(c.fr(MODEL+2388),-200.,places=4)
         c.w(STATE+4,5);run(c,staging.BEGIN)
         self.assertEqual([c.u(ROWS+r*0x200+staging.SETTLE) for r in range(3)],[0,0,0])
 
     def test_final_slam_moves_victim_down_and_away_for_its_entire_phase(self):
-        c=machine(variant=1,phase=5)
+        c=machine(variant=1,phase=7)
         for role in range(3):apply(c,role)
         victim=MODEL+0x4000;before=struct.unpack('<3f',c.read(victim+2384,12))
-        c.w(STATE+4,6);run(c,staging.BEGIN)
+        c.w(STATE+4,8);run(c,staging.BEGIN)
         for role in range(3):self.assertEqual(apply(c,role),1)
         positions=[]
-        for tick in (0,3,6,9,12):
+        for tick in (0,3,6,9,12,15):
             c.w(STATE+8,tick);run(c,staging.TICK)
             positions.append(struct.unpack('<3f',c.read(victim+2384,12)))
         self.assertEqual(positions[0],before)
-        self.assertAlmostEqual(positions[-1][1]-before[1],48.)
-        self.assertAlmostEqual(positions[-1][2]-before[2],-36.)
+        self.assertAlmostEqual(positions[-1][1]-before[1],66.)
+        self.assertAlmostEqual(positions[-1][2]-before[2],-44.)
         self.assertTrue(all(a[1]<b[1] and a[2]>b[2] for a,b in zip(positions,positions[1:])))
 
     def test_beam_charge_closeup_pulls_back_continuously_before_firing(self):
         for shot in (2,6):
             eye,focus=shots.custom_sample(shot,0.)
-            self.assertAlmostEqual(focus[2],42.)
+            own_focus=(0.,-10.,63.) if shot==2 else (-42.,-38.,0.)
+            self.assertEqual(focus,own_focus)
             self.assertLess(math.dist(eye[12:15],focus),50.)
             for frame in (60.,90.):
                 before,_=shots.custom_sample(shot,(frame-.001)/180.)
                 after,_=shots.custom_sample(shot,(frame+.001)/180.)
                 self.assertLess(math.dist(before[12:15],after[12:15]),.001)
             wide,_=shots.custom_sample(shot,.5)
-            self.assertGreater(math.dist(wide[12:15],(0.,-9.,42.)),60.)
+            self.assertGreater(math.dist(wide[12:15],own_focus),60.)
 
     def test_unavailable_floor_or_invalid_record_never_places_actor(self):
         c=machine();before=c.read(MODEL+2384,32)
@@ -195,12 +223,12 @@ class ChoreographyTests(unittest.TestCase):
                 self.assertTrue(forward<=0 or abs(right)>forward*math.tan(math.radians(50)))
 
     def test_mixed_beam_camera_leaves_room_around_both_full_bodies(self):
-        # The previous eye atZ52 was only ten units behind the shooter'sZ42
-        # root and cropped their near-side body. Keep generous perspective
-        # depth for a full humanoid plus the two-handed forward pose.
+        # The mixed finisher uses a separate side-on lane above the melee
+        # exchange. Fit the actual shooter/victim marks, not the old crossfire.
+        record=choreography.records('mixed_ki_lead')[-1]
         for fraction in (.5,.65,.75,1.):
             matrix,_=shots.custom_sample(6,fraction)
-            for root in ((0.,0.,0.),(0.,0.,42.)):
+            for root in (record[4][:3],record[6][:3]):
                 for point in ((root[0]+x,root[1]+y,root[2]+z)
                               for x in (-10.,10.) for y in (-25.,5.) for z in (-10.,10.)):
                     delta=tuple(p-e for p,e in zip(point,matrix[12:15]))
@@ -209,16 +237,64 @@ class ChoreographyTests(unittest.TestCase):
                     self.assertLess(abs(projected[0]),projected[2]*math.tan(math.radians(34)))
                     self.assertLess(abs(projected[1]),projected[2]*math.tan(math.radians(24)))
 
+    def test_widened_crossfire_keeps_both_attackers_and_center_victim_in_frame(self):
+        record=choreography.records('two_ki')[-1]
+        self.assertEqual(math.dist(record[4][:3],record[5][:3]),126.)
+        for fraction in (.5,.65,.8,1.):
+            matrix,_=shots.custom_sample(2,fraction)
+            for root in (row[:3] for row in record[4:]):
+                for point in ((root[0]+x,root[1]+y,root[2]+z)
+                              for x in (-10.,10.) for y in (-25.,5.) for z in (-10.,10.)):
+                    delta=tuple(p-e for p,e in zip(point,matrix[12:15]))
+                    projected=[sum(x*y for x,y in zip(delta,matrix[off:off+3]))for off in (0,4,8)]
+                    self.assertGreater(projected[2],25.)
+                    self.assertLess(abs(projected[0]),projected[2]*math.tan(math.radians(34)))
+                    self.assertLess(abs(projected[1]),projected[2]*math.tan(math.radians(24)))
+
+    def test_mixed_firing_lane_is_a_side_on_intercept_not_half_of_the_crossfire(self):
+        crossfire=choreography.records('two_ki')[-1]
+        self.assertEqual(crossfire[1:3],(2,90))
+        self.assertEqual([row[:3] for row in crossfire[4:]],
+                         [(0.,0.,63.),(0.,0.,-63.),(0.,0.,0.)])
+        for variant in ('mixed_ki_lead','mixed_ki_partner'):
+            ki=0 if variant=='mixed_ki_lead' else 1
+            records=choreography.records(variant)
+            launch,relay,beam=records[5:8]
+            self.assertEqual(beam[1:3],(6,90))
+            shooter,victim=beam[4+ki],beam[6]
+            self.assertEqual(shooter,(-42.,-28.,0.,90.))
+            self.assertEqual(victim,(0.,-28.,0.,270.))
+            # The shooter is already waiting at the interception point while
+            # the victim rises into its lane; no last-frame beam teleport.
+            self.assertEqual(launch[4+ki],shooter)
+            self.assertEqual(relay[4+ki],shooter)
+            self.assertEqual(relay[6],victim)
+            self.assertLess(relay[6][1],launch[6][1])
+            self.assertGreater(math.dist(beam[4+1-ki][:3],victim[:3]),100.)
+            close,focus=shots.custom_sample(6,0.)
+            self.assertAlmostEqual(focus[0],shooter[0])
+            self.assertAlmostEqual(focus[2],shooter[2])
+            self.assertNotEqual(close,shots.custom_sample(2,0.)[0])
+
     def test_beam_reaction_hits_once_then_sustains_hurt_until_native_fall(self):
         recipe=choreography.DERIVED['beam_reaction'][2]
-        self.assertTrue(all(source in choreography.BEAM_HURT_SOURCES and 8<=min(start,end)<=max(start,end)<=24
+        self.assertTrue(all(source==175 and 0<=start<=end<=46
                             for source,start,end,_ in recipe))
-        self.assertEqual(recipe,((174,24,24,90),(174,24,10,4),(174,10,24,14),(174,24,24,72)))
+        self.assertEqual(recipe,((175,0,0,90),(175,0,10,4),(175,10,40,56),(175,40,46,30)))
         self.assertEqual(sum(row[3]for row in recipe),180)
+        self.assertEqual([row[2] for row in recipe[:-1]],[row[1] for row in recipe[1:]])
+
+    def test_crossfire_positioning_does_not_invent_a_hit_before_the_beams(self):
+        wait=choreography.DERIVED['crossfire_wait']
+        self.assertEqual(wait[1],24)
+        self.assertTrue(all(start==end for _,start,end,_ in wait[2]))
+        self.assertEqual(wait[2][-1][:3],(175,0,0))
+        self.assertEqual(assets.timeline('two_ki')[4].roles[2].animation,wait[0])
 
     def test_victim_sources_are_selected_by_real_native_hurt_and_fall_handlers(self):
         from extra_throws import NATIVE
-        cases=((192,0x1E8178,1,0,162),(192,0x1E8178,1,2,164),
+        cases=((192,0x1E8178,1,0,162),(192,0x1E8178,1,1,163),
+               (192,0x1E8178,1,2,164),(192,0x1E8178,1,3,165),
                (203,0x1E8438,0,0,174),(204,0x1E8438,1,0,175),
                (217,0x1EA298,0,0,198))
         for action,handler,posture,variation,expected in cases:
@@ -233,13 +309,13 @@ class ChoreographyTests(unittest.TestCase):
             self.assertEqual(c.r[5],expected,(action,posture,variation))
         victim_sources={r[0]for name in ('recoil','fall','beam_reaction','air_fall')
                         for r in choreography.DERIVED[name][2]}
-        self.assertEqual(victim_sources,{162,164,174,198})
+        self.assertEqual(victim_sources,{162,164,175,198})
 
     def test_custom_camera_pans_track_focus_with_orthonormal_basis(self):
-        self.assertEqual(len(shots.custom_shot_data()),448)
-        for shot in range(1,7):
+        self.assertEqual(len(shots.custom_shot_data()),15*64)
+        for shot in range(1,16):
             first,_=shots.custom_sample(shot,0.);last,_=shots.custom_sample(shot,1.)
-            self.assertGreater(math.dist(first[12:15],last[12:15]),10.)
+            self.assertGreater(math.dist(first[12:15],last[12:15]),4.)
             for fraction in (0.,.25,.5,.75,1.):
                 row,target=shots.custom_sample(shot,fraction);axes=(row[:3],row[4:7],row[8:11])
                 for axis in axes:self.assertAlmostEqual(sum(v*v for v in axis),1.,places=6)
@@ -250,10 +326,19 @@ class ChoreographyTests(unittest.TestCase):
                 self.assertAlmostEqual(sum(x*y for x,y in zip(direction,axes[1])),0.,places=5)
 
     def test_emitted_custom_camera_uses_common_air_frame_and_restores_view_binding(self):
-        c=machine(phase=5)
+        for variant,phase,shot in ((0,5,2),(2,7,6),(3,7,6),
+                                   (1,5,8),(1,6,9),(1,7,10),(2,6,11),
+                                   (4,0,13),(4,1,13),(4,2,13),(4,3,13),(4,4,15)):
+            with self.subTest(variant=variant,phase=phase,shot=shot):
+                self._assert_emitted_custom_camera(variant,phase,shot)
+
+    def _assert_emitted_custom_camera(self,variant,phase,shot):
+        c=machine(variant=variant,phase=phase)
         for p,b in shots.pieces():c.write(p,b)
         c.fw(STATE+116,-200.);descriptor=assets.BASE+0x2000
-        c.w(descriptor,180);c.w(descriptor+28,assets.CUSTOM_FINISHER|assets.BEAM_LEAD|assets.BEAM_PARTNER)
+        entry=assets.timeline(choreography.VARIANTS[variant])[phase]
+        duration=entry.source_frames
+        c.w(descriptor,duration);c.w(descriptor+28,entry.flags)
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         def read(m,p):return struct.unpack('<16f',m.read(p,64))
         def write(m,p,v):m.write(p,struct.pack('<16f',*v))
@@ -278,15 +363,18 @@ class ChoreographyTests(unittest.TestCase):
         def project(m):m.w(m.r[28]-22176,camera.CAMERA)
         c.callbacks[A(0x23E598)]=project;c.callbacks[A(0x23E6A0)]=lambda m:None
         old=c.u(c.r[28]-22176)
-        for source_frame in (12,58,60,74,88,90,150,180):
+        samples=((12,58,60,74,88,90,150,180) if shot in (2,6,15)
+                 else (0,2,12,2*(duration//4),duration))
+        for source_frame in samples:
             yaw=.7 if source_frame%4 else 0.
             uniform,height=(1.5,1.2) if source_frame>90 else (1.,1.)
             c.fw(STATE+132,yaw);c.fw(STATE+104,uniform);c.fw(STATE+108,height)
-            c.r[4:10]=[5,source_frame//2,MODEL,STATE+104,descriptor,MODEL+0x2000]
+            c.r[4:10]=[phase,source_frame//2,MODEL,STATE+104,descriptor,MODEL+0x2000]
             before=c.r.copy();run(c,shots.UPDATE)
             self.assertEqual(c.r[2],1);self.assertEqual(c.r[4:31],before[4:31])
             self.assertEqual(c.u(c.r[28]-22176),old)
-            row,focus=shots.custom_sample(2,source_frame/180)
+            fraction=shots.special_hold_fraction(phase,source_frame//2) if variant==4 and shot==13 else (2*(source_frame//2))/duration
+            row,focus=shots.custom_sample(shot,fraction)
             def world(point):
                 x,y,z=point;x*=uniform;y*=height;z*=uniform
                 return (100.+x*math.cos(yaw)+z*math.sin(yaw),-200.+y,
@@ -327,43 +415,61 @@ class ChoreographyTests(unittest.TestCase):
         self.assertLess(pack['bytes_used'],assets.END-assets.BASE)
 
         native=choreography.read_sources(iso)
-        for name in ('duo_lead','duo_partner','solo_combo','downkick'):
+        for name,phrase in choreography.STRIKE_PHRASES.items():
             number,_,recipe=choreography.DERIVED[name]
             clip=animation.AnimationClip.from_decoded(number,clips[assets.ClipSource(101,number)])
             cursor=0
-            for source,start,end,duration in recipe:
-                if source in choreography.STRIKE_CONTACT:
-                    donor=animation.AnimationClip.from_decoded(source,native[source])
-                    contact=18 if duration==24 else 12
-                    actual=clip.evaluate(cursor+contact)
-                    expected=donor.evaluate(choreography.STRIKE_CONTACT[source])
-                    for bone in (3,5,11,17,31,45):
-                        dot=sum(x*y for x,y in zip(actual[bone].rotation,expected[bone].rotation))
-                        self.assertGreater(abs(dot),.9998,(name,cursor+contact,bone))
+            for (source,start,end,duration),(strike,span,contact) in zip(recipe,phrase):
+                self.assertEqual((source,duration),(strike,span))
+                donor=animation.AnimationClip.from_decoded(source,native[source])
+                actual=clip.evaluate(cursor+contact)
+                expected=donor.evaluate(choreography.STRIKE_CONTACT[source])
+                for bone in (3,5,11,17,31,45):
+                    dot=sum(x*y for x,y in zip(actual[bone].rotation,expected[bone].rotation))
+                    self.assertGreater(abs(dot),.9998,(name,cursor+contact,bone))
                 cursor+=duration
-        lead=choreography.DERIVED['duo_lead'][2];partner=choreography.DERIVED['duo_partner'][2]
-        self.assertTrue(all(bool(a[0])!=bool(b[0]) for a,b in zip(lead,partner)))
-        for name,contacts in (('recoil',(18,42,66,90,114,138)),
-                              ('fall',(12,30)),('beam_reaction',(94,))):
+        # Each physical hit begins its own native directional reaction at the
+        # contact, peaks two source frames later, then recovers continuously.
+        directions={'body_combo':(162,163,165),'relay_kick':(164,),
+                    'chase_strike':(165,)}
+        for phrase,sources in directions.items():
+            name=choreography.REACTION_NAMES[phrase]
             number,frames,recipe=choreography.DERIVED[name]
             self.assertEqual(sum(row[3]for row in recipe),frames)
             clip=animation.AnimationClip.from_decoded(number,clips[assets.ClipSource(101,number)])
-            for index,contact in enumerate(contacts):
-                source=(choreography.BEAM_HURT_SOURCES if name=='beam_reaction' else choreography.HURT_SOURCES)[index%2]
+            for contact,source in zip(choreography.phrase_contacts(phrase),sources):
                 donor=animation.AnimationClip.from_decoded(source,native[source])
-                actual=clip.evaluate(contact);expected=donor.evaluate(choreography.HURT_PEAK[source])
+                actual=clip.evaluate(contact+2);expected=donor.evaluate(choreography.HURT_PEAK[source])
                 for bone in (3,5,11,17,31,45):
                     dot=sum(x*y for x,y in zip(actual[bone].rotation,expected[bone].rotation))
-                    self.assertGreater(abs(dot),.9998,(name,contact,bone))
-        # Every pose sample after the initial recoil settles stays in the same
-        # native hurt pose; sustained beams no longer retrigger the flinch.
+                    self.assertGreater(abs(dot),.9998,(name,contact+2,bone))
+                    # The held pre-impact pose must not anticipate the blow.
+                    before=clip.evaluate(contact-1)[bone]
+                    onset=clip.evaluate(contact)[bone]
+                    self.assertGreater(abs(sum(x*y for x,y in zip(before.rotation,onset.rotation))),.9999999)
+        # The last kick and recipient are a matched native pair, not a generic
+        # jab recoil; the recipient tumbles once through the end of the crop.
+        slam=animation.AnimationClip.from_decoded(1018,clips[assets.ClipSource(101,1018)])
+        donor=animation.AnimationClip.from_decoded(360,native[360])
+        for frame,source_frame in ((0,75),(24,95),(36,119)):
+            actual=slam.evaluate(frame);expected=donor.evaluate(source_frame)
+            for bone in (3,5,11,17,31,45):
+                self.assertGreater(abs(sum(x*y for x,y in zip(actual[bone].rotation,expected[bone].rotation))),.9998)
+        self.assertEqual(choreography.DERIVED['air_fall'][2],((198,0,19,30),))
+        # A single forward-playing frontal impact carries on through the
+        # explosion, rather than rewinding or freezing a standing hurt pose.
         beam=animation.AnimationClip.from_decoded(1009,clips[assets.ClipSource(101,1009)])
-        held=beam.evaluate(108)
-        for frame in range(109,181):
-            for bone,value in beam.evaluate(frame).items():
-                self.assertEqual(value.translation,held[bone].translation)
-                dot=sum(x*y for x,y in zip(value.rotation,held[bone].rotation))
-                self.assertGreater(abs(dot),.9999999,(frame,bone))
+        donor=animation.AnimationClip.from_decoded(175,native[175])
+        wait=animation.AnimationClip.from_decoded(1021,clips[assets.ClipSource(101,1021)])
+        for frame,source_frame in ((0,0),(90,0),(94,10),(150,40),(180,46)):
+            actual=beam.evaluate(frame);expected=donor.evaluate(source_frame)
+            for bone in (3,5,11,17,31,45):
+                self.assertGreater(abs(sum(x*y for x,y in zip(actual[bone].rotation,expected[bone].rotation))),.9998)
+        for bone,value in wait.evaluate(24).items():
+            self.assertEqual(value.translation,beam.evaluate(0)[bone].translation)
+            self.assertGreater(abs(sum(x*y for x,y in zip(value.rotation,beam.evaluate(0)[bone].rotation))),.9999999)
+        self.assertGreater(sum(abs(sum(x*y for x,y in zip(beam.evaluate(108)[bone].rotation,
+                                 beam.evaluate(150)[bone].rotation)))<.9998 for bone in (3,5,11,17,31,45)),0)
 
     def test_entrance_victim_recovers_without_changing_contact_roots_or_next_hit(self):
         from prototype import ROOT

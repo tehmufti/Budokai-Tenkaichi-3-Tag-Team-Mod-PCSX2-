@@ -16,24 +16,42 @@ import tag_rush_choreography as choreography
 import tag_rush_staging as staging
 import tag_rush_safety as safety
 import tag_rush_effects as effects
+import tag_rush_special_pair as special
+import tag_rush_authored_hold as authored
 from test_tag_rush_scene import fixture,start
 from test_tag_rush_camera import run
 
 
 def machine(variant):
-    names=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
-    ki=((True,True),(False,False),(True,False),(False,True))[variant]
+    names=choreography.VARIANTS
+    ki=((True,True),(False,False),(True,False),(False,True),(True,True))[variant]
     c=fixture(ki=ki);tables={}
+    if variant==4:
+        c.w(c.models[2]+12,22);c.write(c.u(scene.ADMISSION)+22,bytes([3]))
+        # This variant applies the real authored helper from its first tick.
+        # The ordinary director fixture only needs six world markers, so give
+        # the held actors the full, valid local rig required by that helper.
+        for index in (0,1):
+            model=c.models[index]
+            for bone in (0,*authored.JOINTS):
+                node=0x3B00000+index*0x10000+bone*0x100
+                c.w(model+3436+bone*4,node)
+                for column,values in enumerate(((1.,0.,0.),(0.,1.,0.),(0.,0.,1.))):
+                    c.write(node+16+16*column,struct.pack('<4f',*values,0.))
+                c.write(node+160,struct.pack('<4f',0.,0.,0.,1.))
+            c.fw(c.u(model+3436+19*4)+144,-2.1538)
+            c.fw(c.u(model+3436+33*4)+144,2.1538)
     cursor=0x3110000
     for index,name in enumerate(names):
         phases=assets.timeline(name);base=0x06D14000+index*0x800
-        c.w(scene.TABLE+8*index,base);c.w(scene.TABLE+8*index+4,len(phases));tables[name]=phases
+        table=tag.CONTROL+special.TABLE_OFFSET if name==special.NAME else scene.TABLE+8*index
+        c.w(table,base);c.w(table+4,len(phases));tables[name]=phases
         for phase,p in enumerate(phases):
             roles=[0x06D20000,0x06D21000,0x06D22000]
-            if phase<2:roles[1]=0
+            if p.roles[1]is None:roles[1]=0
             c.write(base+phase*64,struct.pack('<16I',p.source_frames,*roles,0,0,0,p.flags,
                     352+phase,414+phase,357+phase,*p.ends,60,0x06D25000))
-            c.write(cursor,struct.pack('<4f',0,-160 if phase<4 else 0,0,0));cursor+=16
+            c.write(cursor,struct.pack('<4f',0,-160 if phase<4 and name!=special.NAME else 0,0,0));cursor+=16
     data,info=choreography.pack_records(tables,0x06D30000)
     c.write(0x06D30000,data);c.w(tag.CONTROL+staging.TABLE_OFFSET,info['table_address'])
     # FLOOR is only a buried-root correction; airborne placement uses QUERY.
@@ -63,9 +81,10 @@ def machine(variant):
 
 class EndingTests(unittest.TestCase):
     def test_all_new_endings_run_their_full_phases_and_expected_beam_roles(self):
-        for variant,roles in enumerate(((0,1),(),(0,),(1,))):
+        for variant,roles in enumerate(((0,1),(),(0,),(1,),(1,))):
             c=machine(variant);start(c);self.assertEqual(c.r[2],1)
-            self.assertEqual(c.u(scene.STATE+scene.S['count']),6 if variant==0 else 7)
+            phase_count=(6,9,8,8,5)[variant]
+            self.assertEqual(c.u(scene.STATE+scene.S['count']),phase_count)
             seen=set();fire=[];old=0
             for _ in range(650):
                 phase=c.u(scene.STATE+scene.S['phase']);seen.add(phase)
@@ -76,14 +95,14 @@ class EndingTests(unittest.TestCase):
             self.assertEqual(c.u(tag.CONTROL+tag.C['completed']),1,variant)
             self.assertEqual(c.u(tag.CONTROL+tag.C['cancelled']),0,variant)
             self.assertEqual([r for r,_ in c.beams],list(roles),variant)
-            phase=5 if variant==0 else 6
+            phase=phase_count-1
             self.assertEqual(c.charges,[(role,phase,1) for role in roles])
             if roles:self.assertEqual(fire,[(phase,math.ceil(choreography.BEAM_START*scene.ACTOR_HZ/60))])
-            self.assertEqual(c.explosions,[(2,17,phase,math.ceil((choreography.BEAM_FRAMES-30)*scene.ACTOR_HZ/60))] if roles else [])
+            self.assertEqual(c.explosions,[(2,17,phase,math.ceil(choreography.BEAM_BURST*scene.ACTOR_HZ/60))] if roles else [])
             self.assertEqual(len(c.damage),1);self.assertEqual(c.damage[0][1],15000)
             self.assertEqual({actor for actor,_ in c.placements},{c.actors[i]for i in (0,2,1)})
             self.assertTrue(all(c.u(scene.ROWS+i*scene.STRIDE+scene.R['recovering'])==0 for i in range(3)))
-            self.assertTrue(set(range(6 if variant==0 else 7))<=seen)
+            self.assertTrue(set(range(phase_count))<=seen)
             self.assertEqual(c.u(c.actors[1]+2376),217)
 
     def test_missing_custom_placement_cancels_without_finisher(self):

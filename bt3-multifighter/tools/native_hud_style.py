@@ -34,6 +34,7 @@ TRAMPS = BASE + 0xE00         # the classic entries' first two instructions, the
 TRAMP = dict(text=TRAMPS, small=TRAMPS + 0x10, caption=TRAMPS + 0x20)
 NART = BASE + 0x1000          # a0 -> ART parameter block (see emit_art)
 HELPERS = BASE + 0x27000      # element helpers (gauges, markers) reached from patched classic call sites
+SAMPLING = BASE + 0x2A000     # native_hud_sampling page; ends before the sink at +0x2C000
 SITES = BASE + 0x2800          # count, then (address, classic word) of every re-pointed classic instruction
 SITES_MAX = 255
 CONTROL = BASE + 0x3000
@@ -855,7 +856,7 @@ def _helpers():
         entries[name] = a.pc
         _passthrough(a, target, name, BIT[group])
         a.jr()
-    data = a.finish(); assert len(data) <= SINK_BUFFER - HELPERS, len(data)
+    data = a.finish(); assert len(data) <= SAMPLING - HELPERS, len(data)
     return data, entries
 
 
@@ -1130,10 +1131,24 @@ def build_memory(ram, settings=None, source='<prepared>'):
     preparation."""
     if len(ram) != 0x8000000:
         return dict(blocks=[], skipped='no captured 128 MiB RAM')
+    import native_hud_sampling as sampling
+    assert sampling.BASE == SAMPLING and sampling.END <= SINK_BUFFER
     if _u32(ram, CONTROL) == MAGIC and installed_sites(ram):
         # Already installed (a re-preparation of the same match): keep the kit, its runtime words and the site
         # table recorded from the classic code; recomputing from the patched RAM would lose the classic words.
-        return dict(blocks=[], status='NATIVE HUD STYLE (already installed)')
+        # Older prepared matches can acquire the isolated atlas clamp without
+        # rebuilding their fonts, resetting their settings or changing any art.
+        extra = sampling.plan(ram, reservation_owned=True)
+        blocks = extra['pieces'] + extra['patches']
+        if extra.get('installed'):
+            previous = installed_sites(ram)
+            addresses = {p for p, _word in previous}
+            missing = [(sampling.HOOK + 4*k, word) for k, word in
+                       enumerate(struct.unpack('<2I', sampling.ORIGINAL)) if sampling.HOOK + 4*k not in addresses]
+            if missing:
+                blocks.append((SITES, sites_table(ram, [], previous + missing)))
+        return dict(blocks=_blocks(ram, blocks), status='NATIVE HUD STYLE (already installed)',
+                    sampling=extra.get('skipped', 'atlas cells isolated'))
     if any(ram[BASE:END]):
         raise ValueError('Native HUD style reservation occupied')
     try:
@@ -1143,6 +1158,9 @@ def build_memory(ram, settings=None, source='<prepared>'):
         return dict(blocks=[], skipped=str(error) or type(error).__name__)
     chosen = available_patches(ram, info['art'])
     patches = [(p, d) for p, d, _element in chosen]
+    extra = sampling.plan(ram, reservation_owned=True)
+    kit += extra['pieces']; patches += extra['patches']
+    info['sampling'] = extra.get('skipped', 'atlas cells isolated')
     table = sites_table(ram, patches)
     return dict(blocks=_blocks(ram, kit + patches + [(SITES, table)]), status='NATIVE HUD STYLE',
                 elements=sorted({e for _p, _d, e in chosen}), info=info)

@@ -19,6 +19,7 @@ import feature_preferences
 import fonts
 import input_binding
 import mod_settings
+import settings_preview
 
 CODE, CONTROL, END = 0x06910000, 0x06910F00, 0x06911000
 MAGIC = 0x53455431
@@ -59,6 +60,7 @@ BACK = 0x10000            # the configured menu switch button, when a screen has
 USED = {
     'index': UP|DOWN|CROSS|CIRCLE|SQUARE|TRIANGLE,
     'page': UP|DOWN|LEFT|RIGHT|CROSS|L1|R1|L2|R2|CIRCLE|SQUARE|TRIANGLE,
+    'preview': UP|DOWN|LEFT|RIGHT|CROSS|L1|R1|L2|R2|SELECT|TRIANGLE|SQUARE,
     'help': CIRCLE|CROSS|TRIANGLE,
     'exceptions': UP|DOWN|LEFT|RIGHT|CROSS|L1|R1|L2|R2|SELECT|SQUARE|TRIANGLE,
     'confirm': CROSS|SQUARE|TRIANGLE,
@@ -76,8 +78,11 @@ POLICY_LABELS = {None: 'Default', True: 'Allow', False: 'Block'}
 DEPENDS = {
     'tag_team_rush_damage': ('tag_team_rush_enabled', True),
     'tag_team_rush_charge_seconds': ('tag_team_rush_enabled', True),
+    'tag_team_rush_keep_meter_on_miss': ('tag_team_rush_enabled', True),
     'tag_team_rush_training_full': ('tag_team_rush_enabled', True),
     'tag_team_rush_shared_camera': ('tag_team_rush_enabled', True),
+    'tag_team_rush_sacrifice_enabled': ('tag_team_rush_enabled', True),
+    'tag_team_rush_sacrifice_multiplier': ('tag_team_rush_sacrifice_enabled', True),
 
     'lockoff_button': ('lockoff_enabled', True),
     'lockoff_hold_seconds': ('lockoff_enabled', True),
@@ -188,6 +193,7 @@ TEXTS = (
     'Your changes could not be saved.', 'Saved.', 'Saved. Launch options apply after restarting Play.',
     'Defaults restored. Save to keep them.', '{n} unsaved changes', '1 unsaved change',
     'Character {cid}', 'Restore defaults', *(text for pair in ROW_HELP.values() for text in pair),
+    *settings_preview.TEXTS,
 )
 # Colours. Small text is drawn without antialiasing; the title and the value
 # line keep it and are mapped to a fixed palette with two blend steps.
@@ -269,8 +275,10 @@ class Canvas:
             result[-1] = self.fit(result[-1]+' …', limit, size, bold, trim_ok=True)
         return [self.fit(line, limit, size, bold, trim_ok=True) for line in result]
 
-    def finish(self):
+    def finish(self, preview=False):
         from PIL import Image
+        if preview:
+            return self.image.quantize(32,method=Image.Quantize.MEDIANCUT,dither=Image.Dither.NONE).convert('RGB')
         return self.image.quantize(palette=_palette(), dither=Image.Dither.NONE).convert('RGB')
 
 
@@ -297,6 +305,8 @@ class Controller:
         self.filtered = []; self.help_topic = None   # a ROW_HELP key, or None for the page note
         self.confirming = None; self.failure = None; self.held = {}; self.trimmed = []
         self.report = None        # the file's settings after this visit's last save or repair
+        self.preview_players=2;self.preview_phase=0;self.preview_job=None;self.preview_art=None
+        self.preview_coop=False
 
     # ---- model -------------------------------------------------------------
     def tr(self, text, **values):
@@ -334,7 +344,9 @@ class Controller:
     def back_button(self):
         """The configured menu switch button, when this screen has no other use for it."""
         mask = input_binding.MASKS.get((self.saved or {}).get('menu_toggle_button', 'select'), 0)
-        return 0 if mask & USED[self.view] else mask
+        used=USED[self.view]
+        if self.view=='page' and settings_preview.available(self.groups[self.group]):used|=SELECT
+        return 0 if mask & used else mask
 
     def value_text(self, key):
         value = self.values[key]
@@ -352,7 +364,16 @@ class Controller:
         canvas = Canvas()
         getattr(self, '_draw_'+self.view)(canvas)
         self.trimmed = canvas.trimmed
-        return canvas.finish()
+        image=canvas.finish(preview=self.view=='preview')
+        if self.view=='preview':
+            # Native artwork has far more colors than our settings palette.
+            # Reduce its thumbnail palette only when necessary, staying inside
+            # the same host-picture/guest GIF budget without new reservations.
+            from PIL import Image
+            for colors in (24,16,12):
+                if len(rectangles(image))<=BUDGET:break
+                image=canvas.image.quantize(colors,method=Image.Quantize.MEDIANCUT,dither=Image.Dither.NONE).convert('RGB')
+        return image
 
     def _frame(self, c, header, right=''):
         c.draw.rectangle((0, 0, WIDTH-1, 4), fill=ACCENT)
@@ -410,6 +431,8 @@ class Controller:
         fields = self.fields(); changed = self.changes()
         name = self.groups[self.group]
         self._frame(c, f'{self.tr(name)}  ({self.group+1}/{len(self.groups)})', f'{self.row+1}/{len(fields)}')
+        if settings_preview.available(name):
+            c.right(490,25,self.tr('Select: visual preview'),size=11)
         page = self.row//ROWS
         for index, (key, meta) in enumerate(fields[page*ROWS:page*ROWS+ROWS], page*ROWS):
             y = 80+(index % ROWS)*41; selected = index == self.row; dim = self.dimmed(key)
@@ -427,6 +450,25 @@ class Controller:
                'float': 'Up/Down: select    Left/Right: change    L2/R2: ×10'}.get(
                    kind, 'Up/Down: select    Left/Right: change    L2/R2: first/last')
         self._footer(c, self.tr(big), self.tr('L1/R1: category    Circle: help    Square: save    Triangle: back'))
+
+    def _draw_preview(self,c):
+        group=self.groups[self.group];key,meta=self.fields()[self.row]
+        self._frame(c,self.tr(group),str(self.preview_players)+'P')
+        c.text((22,70),self.tr(meta[5]),size=12,limit=TEXT_WIDTH)
+        c.text((22,87),'<  '+self.value_text(key)+'  >',size=13,bold=True,fill=VALUE,smooth=True)
+        c.text((22,104),self.tr(settings_preview.PHASES[self.preview_phase]),size=10,fill=FOOTER)
+        wide=settings_preview.aspect_wide(self.values);height=200;width=round(height*(16/9 if wide else 4/3))
+        art=self.preview_art
+        if self.preview_job and self.preview_job['done'].is_set():
+            art=self.preview_job['art']
+        picture=settings_preview.render(self.values,players=self.preview_players,
+            phase=settings_preview.PHASES[self.preview_phase],group=group,art=art,coop=self.preview_coop,size=(width,height))
+        c.image.paste(picture,((WIDTH-width)//2,116))
+        if art is None:c.text((22,321),self.tr('Disc art unavailable; showing a layout diagram.'),size=10,fill=FOOTER)
+        elif self.preview_phase==4:c.text((22,321),self.tr('Locked-off example has several enemies.'),size=10,fill=FOOTER)
+        c.text((22,345),self.tr('Select/Triangle: back    Cross: team/co-op'),size=11,fill=FOOTER)
+        self._footer(c,self.tr('L1/R1: players    L2/R2: example'),
+                     self.tr('Up/Down: setting    Left/Right: change'))
 
     def _draw_help(self, c):
         if self.help_topic is not None:
@@ -619,6 +661,8 @@ class Controller:
             self.press(edges, repeats)
         if self.closing:
             self.close(p); return
+        if self.view=='preview' and self.preview_job and self.preview_job['done'].is_set():
+            self.preview_art=self.preview_job['art'];self.preview_job=None;self.dirty=True
         if self.dirty: self.publish(p)
         else: self.screen.sync(client=p)
 
@@ -681,6 +725,8 @@ class Controller:
 
     def _press_page(self, edges, repeats):
         fields = self.fields()
+        if edges & SELECT and settings_preview.available(self.groups[self.group]):
+            self.preview_job=settings_preview.art_job();self.view='preview';return None
         if edges & SQUARE:
             return self.save(exit=False)
         if edges & (TRIANGLE | BACK):
@@ -701,6 +747,22 @@ class Controller:
         steps = edges | (repeats if numeric else 0)
         if steps & (LEFT | RIGHT | CROSS):
             return self.change(key, -1 if steps & LEFT else 1)
+        return None
+
+    def _press_preview(self,edges,repeats):
+        if edges & (SELECT|TRIANGLE|BACK):
+            self.view='page';return None
+        if edges & CROSS:self.preview_coop=not self.preview_coop;return None
+        if edges & SQUARE:return self.save(exit=False)
+        if edges & (L1|R1):
+            self.preview_players=(self.preview_players-1+(1 if edges & R1 else -1))%4+1;return None
+        if edges & (L2|R2):
+            self.preview_phase=(self.preview_phase+(1 if edges & R2 else -1))%len(settings_preview.PHASES);return None
+        fields=self.fields();moves=edges|repeats
+        if moves & (UP|DOWN):
+            self.row=(self.row+(1 if moves & DOWN else -1))%len(fields);return None
+        key,meta=fields[self.row];moves=edges|(repeats if meta[1] in ('int','float') else 0)
+        if moves & (LEFT|RIGHT):return self.change(key,-1 if moves & LEFT else 1)
         return None
 
     def change(self, key, direction, big=False):

@@ -21,8 +21,8 @@ def query_code():
     """a0 phase -> v0 immutable64byte record, or0. All other GPRs preserved."""
     a=Assembler(QUERY);camera.save(a)
     a.i(11,8,4,choreography.MAX_PHASES);a.branch(4,8,0,'no')
-    a.li(8,tag.CONTROL);a.lw(16,8,tag.C['variant']);a.i(11,10,16,4);a.branch(4,10,0,'no')
-    a.lw(17,8,TABLE_OFFSET);full.pointer(a,17,32,'no')
+    a.li(8,tag.CONTROL);a.lw(16,8,tag.C['variant']);a.i(11,10,16,len(choreography.VARIANTS));a.branch(4,10,0,'no')
+    a.lw(17,8,TABLE_OFFSET);full.pointer(a,17,8*len(choreography.VARIANTS),'no')
     a.li(10,assets.BASE);a.r(0x2B,11,17,10);a.branch(5,11,0,'no')
     a.li(10,assets.END-32);a.r(0x2B,11,10,17);a.branch(5,11,0,'no')
     a.r(0,9,0,16,3);a.r(0x21,8,17,9);a.lw(9,8,4)

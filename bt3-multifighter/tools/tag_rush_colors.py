@@ -19,12 +19,20 @@ STRIDES = (520,264,136,72)
 BLUE=(64,160,255); GOLD=(255,180,32); GREEN=(88,255,48); PURPLE=(178,72,255); PINK=(255,80,180)
 
 
-def character_color(info):
+def character_color(info, character=None, *, bt4=None):
     """Explicit local tag colors; unknown fighters use neutral gold.
 
     This is a tag-attack palette choice, not a claim to replace every native
     move's individual color. Name lookup follows the selected disc's roster.
     """
+    if character is None and isinstance(info,dict):character=info.get('character_id')
+    if type(character)is int and 0<=character<256:
+        import tag_beam_profiles
+        if bt4 is None:
+            from native_map import SERIAL
+            bt4=SERIAL=='SLUS-21978'
+        chosen=tag_beam_profiles.profile(character,bt4=bt4)['color']
+        if chosen is not None:return chosen
     text=' '.join(str(info.get(k,'')) for k in ('name','base_name','form')) if isinstance(info,dict) else str(info)
     name=''.join(x for x in unicodedata.normalize('NFKD',text).casefold() if x.isalnum())
     if any(x in name for x in ('gokublack','blackgoku','zamasu','zamas','freeza','frieza','freezer','cooler','kingcold','cold','beerus','bills','janemba','hit')):return PURPLE
@@ -63,7 +71,7 @@ def recipe(resource, resource_address, names):
     table=bytearray(256*4)
     for character,info in names.items():
         if type(character)is int and 0<=character<256:
-            r,g,b=character_color(info);struct.pack_into('<I',table,4*character,r|(g<<8)|(b<<16))
+            r,g,b=character_color(info,character);struct.pack_into('<I',table,4*character,r|(g<<8)|(b<<16))
     return dict(textures=tuple(result),colors=bytes(table))
 
 

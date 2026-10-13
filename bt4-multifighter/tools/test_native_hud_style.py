@@ -107,20 +107,29 @@ class Layout(unittest.TestCase):
         self.assertLessEqual(nhs.NTEXT + len(nhs.ntext_code()), nhs.TRAMPS)
         self.assertLessEqual(nhs.NART + len(nhs.nart_code()), nhs.CONTROL)
         data, entries = nhs._helpers()
-        self.assertLessEqual(nhs.HELPERS + len(data), nhs.SINK_BUFFER)
+        self.assertLessEqual(nhs.HELPERS + len(data), nhs.SAMPLING)
         self.assertLessEqual(nhs.ART_TABLE + 64*len(nhs.ART), nhs.ART_DATA)
         self.assertEqual(set(entries), {'beam_caption', 'bar_back', 'bar_track', 'bar_fill', 'gauge120', 'revive_gauge',
                                         'arrow_begin', 'ring_begin', 'threat_pair', 'threat_edge', 'sink_lockon', 'sink_threat', 'sink_text', 'tag_back', 'tag_track', 'tag_fill'})
 
     def test_reservation_is_owned(self):
-        """No other module names an address inside the kit's reservation."""
+        """Only the kit and its bounded sampling subpage name this reservation."""
+        import native_hud_sampling as sampling
+        self.assertEqual(sampling.BASE, nhs.SAMPLING)
+        self.assertEqual(sampling.END, sampling.BASE + sampling.SIZE)
+        self.assertLess(nhs.HELPERS, sampling.BASE)
+        self.assertLessEqual(sampling.END, nhs.SINK_BUFFER)
+        self.assertTrue(sampling.BASE <= sampling.TRAMP < sampling.TRAMP + 16 <= sampling.END)
         pattern = re.compile(r'0x0?(7[0-9A-Fa-f]{6})\b')
         for path in Path(nhs.__file__).parent.glob('*.py'):
             if path.name in ('native_hud_style.py', 'test_native_hud_style.py'):
                 continue
             for m in pattern.finditer(path.read_text(encoding='utf-8', errors='ignore')):
                 value = int(m.group(1), 16)
-                self.assertFalse(nhs.BASE <= value < nhs.END, (path.name, hex(value)))
+                if path.name == 'native_hud_sampling.py' and nhs.BASE <= value < nhs.END:
+                    self.assertTrue(sampling.BASE <= value < sampling.END, (path.name, hex(value)))
+                else:
+                    self.assertFalse(nhs.BASE <= value < nhs.END, (path.name, hex(value)))
 
     def test_arrow_corners_stay_in_the_texture(self):
         for angle in (0, 90, 180, 270):

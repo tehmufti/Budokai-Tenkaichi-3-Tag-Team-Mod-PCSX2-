@@ -132,5 +132,8 @@
   "fusion_non_potara_buffs_enabled": false,
   "fusion_non_potara_health_multiplier": 1.0,
   "fusion_non_potara_damage_multiplier": 1.0,
-  "fusion_non_potara_defense_multiplier": 1.0
+  "fusion_non_potara_defense_multiplier": 1.0,
+  "tag_team_rush_keep_meter_on_miss": false,
+  "tag_team_rush_sacrifice_enabled": true,
+  "tag_team_rush_sacrifice_multiplier": 2.0
 }

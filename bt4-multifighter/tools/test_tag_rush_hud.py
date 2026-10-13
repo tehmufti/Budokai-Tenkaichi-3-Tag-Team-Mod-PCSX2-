@@ -154,8 +154,9 @@ class TagRushHudTests(unittest.TestCase):
         # One full view: below the subject's own main gauge, under its middle third and right of the ki bars
         # (Version 12); a right-hand (team 2) subject gets the mirror image.
         full = (0, 511, 0, SCISSOR_Y1)
-        self.assertEqual(h.placement(full)[:2], (123, h.screen_y(56 if h._settings.ADAPTER == 'BT4' else 38)))
-        self.assertEqual(h.placement(full, subject=1)[0], 511-123-h.WIDTH)
+        expected_x, expected_y = (111, 66) if h._settings.ADAPTER == 'BT4' else (123, 38)
+        self.assertEqual(h.placement(full)[:2], (expected_x, h.screen_y(expected_y)))
+        self.assertEqual(h.placement(full, subject=1)[0], 511-expected_x-h.WIDTH)
         for subject in (0, 1):
             c = machine(subject=subject); draw(c)
             x, y, bar = h.placement(full, subject=subject)
@@ -184,13 +185,39 @@ class TagRushHudTests(unittest.TestCase):
         parts = {'portrait': (5, 8, 62, 63), 'main gauge': (65, 15, 228, 30), 'ki bars': (63, 33, 111, 51),
                  'stocks': (112, 33, 128, 51), 'small gauge': (130, 33, 192, 51), 'partner panel': (10, 66, 109, 83),
                  'timer': (228, 13, 283, 35), 'kills': (8, 86, 62, 96)}
-        with mock.patch.object(h, 'FULL_LABEL', 56):
+        with mock.patch.multiple(h, FULL_X=111, FULL_LABEL=66):
             for subject in (0, 1):
                 bounds = h.rectangles((0, 511, 0, SCISSOR_Y1), subject=subject)
                 for name, (a, b, c, d) in parts.items():
                     theirs = (a, b, c, d) if not subject else (511-c, b, 511-a, d)
                     for ours in bounds.values():
                         self.assertFalse(intersects(ours, theirs), (subject, name, ours))
+
+    @unittest.skipUnless(h._settings.ADAPTER == 'BT4', 'BT4 status frame')
+    def test_bt4_reposition_is_panel_scaled_and_mirrored_without_moving_prompts(self):
+        # The requested 31px left / 29px down in the screenshot is twelve / ten
+        # native pixels. Smaller native status panels retain that same offset.
+        for humans in (1, 2, 3, 4):
+            views = ((0, 511, 0, SCISSOR_Y1),) if humans == 1 else quad.rectangles(humans)
+            for seat, view in enumerate(views):
+                for name, words in self.LAYOUTS.items():
+                    for coop in (False, True):
+                        where = dict(subject=seat) if humans == 1 else dict(
+                            split=seat, settings=words, coop=coop, views=humans)
+                        actual = h.placement(view, **where)
+                        with mock.patch.multiple(h, FULL_X=123, FULL_LABEL=56, PANEL_X=130, PANEL_LABEL=58):
+                            previous = h.placement(view, **where)
+                        if humans == 1:
+                            dx, dy = -12, h.screen_y(66)-h.screen_y(56)
+                        elif words[0] != 1:
+                            dx, dy = 0, 0  # Text-only HUD has no native status frame to move beneath.
+                        else:
+                            _, _, width, _ = h.split_panel(view, seat & 1, words, coop, humans)
+                            dx = (width*118 >> 8)-(width*130 >> 8)
+                            dy = min(width*68 >> 8, h.PANEL_LABEL_MAX)-min(width*58 >> 8, h.PANEL_LABEL_MAX)
+                        self.assertEqual(tuple(a-b for a, b in zip(actual, previous)),
+                                         (-dx if seat & 1 else dx, dy, dy), (humans, seat, name, coop))
+                        self.assertEqual(actual[2]-actual[1], h.LABEL_GAP)
 
     def test_meter_clears_status_art_and_captions_in_all_layouts_and_video_heights(self):
         # Compact fusion captions use 75% glyphs; the older generic layout
@@ -211,7 +238,8 @@ class TagRushHudTests(unittest.TestCase):
         def native_full(left, right):
             """The native one-view status of each side (logical 512 x 448, measured from the game's frame)."""
             parts = {'gauge frame': (14, 6, 240, 32), 'ki bars': (60, 30, 116, 52), 'stocks': (14, 30, 62, 64),
-                     'partner panel': (12, 64, 114, 86), 'timer': (232, 6, 280, 34)}
+                     'partner panel': (10, 66, 109, 83) if h._settings.ADAPTER == 'BT4' else (12, 64, 114, 86),
+                     'timer': (232, 6, 280, 34)}
             out = {}
             for name, (a, b, c_, d) in parts.items():
                 out['own '+name] = (left+a, b, left+c_, d)

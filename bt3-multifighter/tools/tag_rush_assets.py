@@ -79,21 +79,26 @@ def timeline(variant: str) -> tuple[Phase, ...]:
     animation bank instead of decoding that marker as a borrowed beam pose.
     """
     import tag_rush_choreography as choreography
+    import tag_rush_special_pair as special
+    if variant==special.NAME:return special.timeline()
     sources={name:ClipSource(101,row[0]) for name,row in choreography.DERIVED.items()}
     def phase(name,frames,roles,flags=0):
         return Phase(name,frames,tuple(sources[r] for r in roles),(frames,)*3,flags|CUSTOM_FINISHER)
     if variant == 'two_ki':
-        ending=(phase('opposing airborne stances',24,('idle','idle','recoil')),
+        ending=(phase('opposing airborne stances',24,('idle','idle','crossfire_wait')),
                 phase('airborne crossfire beams',180,('idle','idle','beam_reaction'),BEAM_LEAD|BEAM_PARTNER|FINISHER|OWN_CLASH_POSE|CHARGE_BEAM))
     elif variant == 'two_melee':
-        ending=(phase('alternating close combination',144,('duo_lead','duo_partner','recoil')),
-                phase('double knockdown',36,('downkick','downkick','fall')),
-                phase('airborne slam aftermath',24,('idle','idle','air_fall'),FINISHER|SLAM_DOWN))
+        ending=(phase('lead body combination',62,('body_combo','idle','body_reactions')),
+                phase('partner return kick',32,('retreat','relay_kick','kick_reaction')),
+                phase('sideways chase strike',30,('chase_strike','idle','chase_reaction')),
+                phase('paired overhead slam',36,('slam_strike','slam_strike','slam_reaction')),
+                phase('airborne slam aftermath',30,('idle','idle','air_fall'),FINISHER|SLAM_DOWN))
     elif variant in ('mixed_ki_lead','mixed_ki_partner'):
         lead=variant=='mixed_ki_lead'
-        ending=(phase('partner punch combination',96,('idle','solo_combo','recoil') if lead else ('solo_combo','idle','recoil')),
-                phase('knockdown',36,('idle','downkick','fall') if lead else ('downkick','idle','fall')),
-                phase('airborne beam finish',180,('idle','retreat','beam_reaction') if lead else ('retreat','idle','beam_reaction'),
+        ending=(phase('melee body combination',62,('idle','body_combo','body_reactions') if lead else ('body_combo','idle','body_reactions')),
+                phase('launch into the firing lane',32,('idle','relay_kick','kick_reaction') if lead else ('relay_kick','idle','kick_reaction')),
+                phase('aerial relay',30,('idle','retreat','tossed') if lead else ('retreat','idle','tossed')),
+                phase('side-on interception beam',180,('idle','retreat','intercept_reaction') if lead else ('retreat','idle','intercept_reaction'),
                       (BEAM_LEAD if lead else BEAM_PARTNER)|FINISHER|OWN_CLASH_POSE|CHARGE_BEAM))
     else:
         raise ValueError(f'Unknown tag rush variant: {variant}')
@@ -541,12 +546,15 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
     """
     if type(base) is not int or type(end) is not int or base % 16 or end <= base:
         raise ValueError('Invalid tag rush asset reservation')
-    variants = {name: timeline(name) for name in ('two_ki', 'two_melee', 'mixed_ki_lead', 'mixed_ki_partner')}
+    import tag_rush_choreography as choreography
+    import tag_rush_special_pair as special
+    variants = {name: timeline(name) for name in choreography.VARIANTS}
+    special_pack=special.build(iso)
     decoded = prepared_clips(iso)
     source_audio = {source: source_audio_cues(raw) for source, raw in decoded.items()}
     descriptor_size = sum(len(phases) for phases in variants.values()) * DESCRIPTOR_STRIDE
     clip_base = (base + descriptor_size + 15) & ~15
-    data, pointers, provenance = bytearray(), {}, []
+    data, pointers, provenance = bytearray(), dict(special_pack['pointers']), list(special_pack['clips'])
     for source, raw in decoded.items():
         data.extend(bytes((-len(data)) % 16))
         pointers[source] = clip_base + len(data)
@@ -561,6 +569,9 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
     data.extend(bytes((-len(data)) % 16))
     custom_donors=clip_base+len(data)
     data.extend(struct.pack('<3I',*(donor_models[101],)*3))
+    data.extend(bytes((-len(data)) % 16))
+    special_donors=clip_base+len(data)
+    data.extend(struct.pack('<3I',special_pack['donor_model'],donor_models[101],special_pack['donor_model']))
     data.extend(bytes((-len(data)) % 16))
     approach_address=clip_base+len(data)
     data.extend(struct.pack('<4I',APPROACH_MAGIC,donor_models[101],len(APPROACH_FRAMES),0))
@@ -586,14 +597,17 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
     data.extend(bytes((-len(data)) % 16))
     staging_address = clip_base + len(data)
     staging = read_native_staging(iso)
-    for phases in variants.values():
-        for placement in staging[:4]+((0.,0.,0.,0.),)*(len(phases)-4):
+    for name,phases in variants.items():
+        placements=(((0.,0.,0.,0.),)*len(phases) if name==special.NAME else
+                    staging[:4]+((0.,0.,0.,0.),)*(len(phases)-4))
+        for placement in placements:
             data.extend(struct.pack('<4f', *placement))
     import tag_rush_choreography as choreography
     data.extend(bytes((-len(data)) % 16))
     choreography_data,choreography_info=choreography.pack_records(variants,clip_base+len(data))
     data.extend(choreography_data)
     beam_info = None
+    special_beam_info, special_beam_blocks = None, []
     if include_beam:
         beam = read_native_beam_asset(iso)
         data.extend(bytes((-len(data)) % 16))
@@ -605,6 +619,11 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
         beam_info = dict(resource_address=resource_address, metadata_address=metadata_address,
             resource_size=len(beam['resource']), metadata_size=len(beam['metadata']),
             **{key: beam[key] for key in ('descriptor_counts','descriptor_raw_bytes','resource_sha256','mutable_ranges','reviewed')})
+        import tag_rush_special_beam as special_beam
+        special_beam_pack=special_beam.build_assets(iso)
+        special_beam_info={key:value for key,value in special_beam_pack.items() if key!='blocks'}
+        special_beam_blocks=special_beam_pack['blocks']
+        beam_info['special_beam']=special_beam_info
     camera_info = None
     if include_camera:
         import tag_rush_shots as shots
@@ -618,31 +637,33 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
     for name, phases in variants.items():
         start = base + len(descriptors)
         phase_rows = []
-        for phase in phases:
+        for phase_index,phase in enumerate(phases):
             addr = base + len(descriptors)
             words = (phase.source_frames, *(pointers.get(role, 0) for role in phase.roles),
                 *phase.starts, phase.flags, *(role.animation if role else 0 for role in phase.roles),
-                *phase.ends, SOURCE_FPS, custom_donors if phase.flags&CUSTOM_FINISHER else role_donors)
+                *phase.ends, SOURCE_FPS, special_donors if name==special.NAME else
+                custom_donors if phase.flags&CUSTOM_FINISHER else role_donors)
             descriptors.extend(struct.pack('<16I', *words))
             audio = tuple(dict(cue, role=role) for role, source in enumerate(phase.roles)
                 for cue in source_audio.get(source, ())
                 if phase.starts[role] <= cue['frame'] <= phase.ends[role])
-            if phase.flags&CUSTOM_FINISHER and ('combination' in phase.name or 'knockdown' in phase.name):
-                contacts=(18,42,66,90,114,138) if phase.source_frames==144 else (18,42,66,90) if phase.source_frames==96 else (12,30)
-                roles=(0,1) if name=='two_melee' else ((1,) if name=='mixed_ki_lead' else (0,))
-                audio=tuple(dict(frame=frame,role=roles[i%len(roles)],bank=0,sound_id=73,bone=3,
+            contacts=choreography.phase_contacts(name,phase_index)
+            if contacts:
+                audio=tuple(dict(frame=frame,role=role,bank=0,sound_id=73,bone=3,
                     near=200.,far=1500.,alternate_sound_id=None,parameter_flag=0,
-                    effect_kind=16,impact_bone=31 if i%2==0 else 11) for i,frame in enumerate(contacts))
+                    effect_kind=16,impact_bone=31 if i%2==0 else 11) for i,(role,frame) in enumerate(contacts))
             phase_rows.append(dict(name=phase.name, address=addr, source_frames=phase.source_frames,
                 clips=tuple(pointers.get(role, 0) for role in phase.roles), starts=phase.starts,
                 ends=phase.ends, flags=phase.flags, audio_cues=audio))
         mapping[name] = dict(address=start, count=len(phases), phases=phase_rows,
             source_frames=sum(phase.source_frames for phase in phases))
-    return dict(blocks=[(base, bytes(descriptors)), (clip_base, bytes(data))], variants=mapping,
+    return dict(blocks=[(base, bytes(descriptors)), (clip_base, bytes(data)),*special_pack['blocks'],*special_beam_blocks], variants=mapping,
         clips=provenance, donor_models=donor_models, role_donors_address=role_donors, beam_asset=beam_info,
-        camera_asset=camera_info,choreography_asset=choreography_info,
+        camera_asset=camera_info,choreography_asset=choreography_info,special_beam_asset=special_beam_info,
         approach=approach_info,
         custom_role_donors_address=custom_donors,
+        special_role_donors_address=special_donors,
+        special_pair=dict(bytes_used=special_pack['bytes_used'],reviewed=True,donor_model=special_pack['donor_model']),
         staging_address=staging_address, staging=staging,
         staging_height=max(-row[1] for row in staging),
         audio_cues={name:tuple(phase['audio_cues'] for phase in row['phases']) for name,row in mapping.items()},

@@ -218,6 +218,89 @@ class TagEffectsTests(unittest.TestCase):
         c.r[4]=row;run(c,fx.IGNITE);self.assertEqual(len(calls),2)
         self.assertEqual(before,[c.read(p,0x1700) for p in c.models])
 
+    def test_sbc_initializer_completes_before_ready_and_failure_stays_disarmed(self):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000)
+        for success in (0,1):
+            c=machine(prepared=False);old=c.read(REGISTRY,156);original=c.u(c.models[0]+2348)
+            with patch.dict(sys.modules,{'tag_rush_special_beam':sbc}):
+                c.write(fx.INIT,fx.init_code(dict(BEAM,special_beam={'reviewed':True})))
+            c.callbacks[A(0x14B108)]=lambda m:None
+            def parse(m):
+                arena=m.u(REGISTRY+80);m.w(m.r[5]+796,m.r[4])
+                m.write(m.r[5]+780,struct.pack('<4I',1,6,0,1))
+                for off,delta in ((764,0),(768,544),(776,2144)):m.w(m.r[5]+off,arena+delta)
+                m.w(REGISTRY+92,2304)
+            c.callbacks[A(0x14CEB0)]=parse;calls=[]
+            def initialize(m):
+                self.assertEqual(m.u(fx.CONTROL+fx.C['ready']),0)
+                self.assertEqual(m.u(fx.CONTROL+fx.C['init_status']),1)
+                self.assertEqual(m.read(REGISTRY,156),old)
+                self.assertEqual(m.u(c.models[0]+2348),original)
+                for row in (fx.ROWS,fx.ROWS+fx.STRIDE):
+                    self.assertEqual(m.u(row+fx.R['prepared']),fx.PREPARED)
+                calls.append('sbc');m.r[2]=success
+            c.callbacks[sbc.INIT]=initialize
+            run(c,fx.INIT)
+            self.assertEqual(c.r[2],success);self.assertEqual(calls,['sbc'])
+            self.assertEqual(c.u(fx.CONTROL+fx.C['ready']),success)
+            self.assertEqual(c.u(fx.CONTROL+fx.C['init_status']),2 if success else 100)
+            run(c,fx.INIT);self.assertEqual(c.r[2],0);self.assertEqual(calls,['sbc'])
+
+    def test_optional_sbc_selection_preserves_native_palette_and_switches_each_idle_role(self):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import tag_rush_colors as colors
+        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000)
+        for charging in (False,True):
+            c=machine();calls=[]
+            with patch.dict(sys.modules,{'tag_rush_special_beam':sbc}):
+                c.write(fx.CHARGE_SPAWN if charging else fx.SPAWN,
+                        fx.spawn_code(color=True,charging=charging,special=True))
+            def select(m):
+                calls.append(('select',m.r[4],m.r[5]))
+                m.r[2]=1;m.r[3]=int(m.r[5]in(22,23))
+            def color(m):calls.append(('color',m.r[4]));m.r[2]=1
+            c.callbacks[sbc.SELECT]=select;c.callbacks[colors.APPLY]=color
+            for character in (22,23,0):
+                c.w(c.models[0]+12,character);c.r[4:6]=[0,60]
+                run(c,fx.CHARGE_SPAWN if charging else fx.SPAWN)
+                self.assertEqual(c.r[2],1)
+                self.assertEqual(c.u(fx.ROWS+fx.R['flavor']),int(character in(22,23)))
+                if character in(22,23):self.assertNotIn(('color',fx.ROWS),calls)
+                else:self.assertEqual(calls[-1],('color',fx.ROWS))
+                # Finish actual ownership before the next source uses this row.
+                run(c,fx.STOP);body=c.u(fx.ROWS+fx.R['body']);c.w(body+1408,0);run(c,fx.STOP)
+            self.assertEqual([x[2]for x in calls if x[0]=='select'],[22,23,0])
+
+    def test_sbc_selection_failure_or_unknown_flavor_precedes_emitter_creation(self):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000)
+        for success,flavor in ((0,0),(1,2)):
+            c=machine()
+            with patch.dict(sys.modules,{'tag_rush_special_beam':sbc}):
+                c.write(fx.SPAWN,fx.spawn_code(special=True))
+            def select(m):m.r[2]=success;m.r[3]=flavor
+            c.callbacks[sbc.SELECT]=select
+            self.assertEqual(spawn(c),0);self.assertFalse(c.requests)
+
+    def test_sbc_manual_fire_accepts_25_rules_but_preserves_smaller_standard_bound(self):
+        for flavor,count,expected in ((0,19,1),(0,20,0),(1,25,1),(1,26,0),(2,19,0)):
+            c=machine();self.assertEqual(spawn(c),1);row=fx.ROWS;d=row+fx.DESC
+            c.w(row+fx.R['ignited'],0);c.w(row+fx.R['flavor'],flavor)
+            rules,group=0x3600000,0x3610000;c.w(d+8,rules);c.w(d+12+18*16,group)
+            c.write(group,bytes((18,1,0,0)));c.write(d+20+18*16,bytes((count-1,)))
+            c.write(rules+64*(count-1)+8,bytes((1,3,1)));calls=[]
+            c.callbacks[A(0x14FF50)]=lambda m:calls.append((m.r[9],m.r[10]))
+            c.r[4]=row;run(c,fx.IGNITE)
+            self.assertEqual(c.r[2],expected,(flavor,count))
+            self.assertEqual(calls,[(18,0)]if expected else [])
+
     def test_manual_fire_rejects_corrupt_private_rule_count(self):
         c=machine();row=fx.ROWS;d=row+fx.DESC;group=0x3610000
         c.w(d+12,group);c.write(group,bytes((0,20,0,0)))

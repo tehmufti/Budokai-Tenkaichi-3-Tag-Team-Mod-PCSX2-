@@ -26,6 +26,7 @@ import tag_rush_native_pose as native_pose
 import tag_rush_recovery as fall_recovery
 import tag_rush_damage as damage_schedule
 import tag_rush_retarget as retarget
+import tag_rush_special_pair as special
 
 START, STEP, FINISH = tag.START, tag.STEP, tag.FINISH
 START_BODY,STEP_BODY,BODIES_END=0x06D89800,0x06D8B800,0x06D8D800
@@ -46,8 +47,20 @@ S = dict(magic=0, phase=4, ticks=8, base=12, count=16, descriptor=20,
          radius=80, total_ticks=84, saved_camera=88, saved_renderer=92,
          saved_binding=96, staging=100, uniform_scale=104, height_scale=108,
          phase_origin=112, phase_rotation=128, retiring=144, fx_started=148,
-         retirement_ticks=152, cleanup_pending=156, placement=160, exploded=164)
+         retirement_ticks=152, cleanup_pending=156, placement=160, exploded=164,
+         settle_ticks=168)
+assert STATE+max(S.values())+4<=camera.TAIL and camera.TAIL+28<=ROWS
 RETIREMENT_LIMIT = 2*ACTOR_HZ
+
+
+def burst_settle_ticks(hz=None, *, custom=False):
+    """Only the burst clearance not already covered by the firing phase."""
+    source_tail = (choreography.BURST_CLEARANCE_FRAMES -
+                   (choreography.BEAM_FRAMES-choreography.BEAM_BURST)
+                   if custom else 96)
+    return (source_tail*(ACTOR_HZ if hz is None else hz)+59)//60
+
+
 # Keep the authored phase roots inside the arena. Native cinematic poses may
 # extend beyond gameplay limits; reserving a guessed full-body envelope here
 # made ordinary Wasteland's ceiling incompatible with its actual ground.
@@ -183,7 +196,10 @@ def start_code():
     a.r(0,8,0,20,2);a.addiu(9,29,0x300);a.r(0x21,8,8,9);a.lw(21,8)
     a.lw(9,19,8);a.r(0x2B,8,21,9);a.branch(4,8,0,'reject')
     a.r(0,8,0,21,2);a.li(9,core.POINTERS);a.r(0x21,8,8,9);a.lw(22,8)
-    a.move(4,22);a.call(safety.PREFLIGHT);a.branch(4,2,0,'reject')
+    a.move(4,22);a.li(8,2);a.branch(4,20,8,'victim_preflight')
+    a.call(safety.PREFLIGHT);a.jump('preflight_answer')
+    a.label('victim_preflight');a.call(safety.VICTIM_PREFLIGHT)
+    a.label('preflight_answer');a.branch(4,2,0,'reject')
     actors.model(a,22,23,'reject')
     a.move(4,23);a.call(retarget.CHECK);a.branch(4,2,0,'reject')
     a.li(25,ADMISSION);a.lw(10,25);full.pointer(a,10,4096,'reject')
@@ -214,8 +230,25 @@ def start_code():
     # Ki bits 00->melee, 01->lead beam, 10->partner beam, 11->two beams.
     a.lw(24,29,0x30C);a.li(20,1);a.branch(4,24,0,'variant');a.li(20,0);a.li(8,3)
     a.branch(4,24,8,'variant');a.addiu(20,24,1);a.label('variant')
+    # Fix the two story roles regardless of which player requested the tag.
+    # This is a descriptor choice after both ordinary consent/preflight checks;
+    # the coordinator's approach and meter accounting remain unchanged.
+    for k,out in ((0,24),(1,25)):
+        a.lw(8,29,0x300+k*4);a.r(0,8,0,8,2);a.li(9,core.POINTERS)
+        a.r(0x21,8,8,9);a.lw(8,8);a.lw(8,8,12);a.r(0,8,0,8,2)
+        a.li(9,core.MODELS);a.r(0x21,8,8,9);a.lw(8,8);a.lw(out,8,12)
+    a.branch(5,24,0,'special_reverse');a.li(8,special.PICCOLO)
+    a.branch(5,25,8,'ordinary_variant');a.jump('special_variant')
+    a.label('special_reverse');a.li(8,special.PICCOLO);a.branch(5,24,8,'ordinary_variant')
+    a.branch(5,25,0,'ordinary_variant');a.lw(8,29,0x300);a.lw(9,29,0x304)
+    a.sw(9,29,0x300);a.sw(8,29,0x304)
+    a.label('special_variant');a.li(20,special.VARIANT)
+    a.label('ordinary_variant')
     a.lw(8,19,tag.C['scene_table']);a.li(9,TABLE);a.branch(5,8,9,'reject')
-    a.r(0,9,0,20,3);a.r(0x21,8,8,9);a.lw(21,8);a.lw(25,8,4)
+    a.li(9,special.VARIANT);a.branch(5,20,9,'ordinary_table')
+    a.li(8,CONTROL+special.TABLE_OFFSET);a.jump('selected_table')
+    a.label('ordinary_table');a.r(0,9,0,20,3);a.r(0x21,8,8,9)
+    a.label('selected_table');a.lw(21,8);a.lw(25,8,4)
     a.addiu(9,25,-5);a.i(11,9,9,choreography.MAX_PHASES-4);a.branch(4,9,0,'reject');a.sw(25,29,0x318)
     a.li(8,assets.BASE);a.r(0x2B,9,21,8);a.branch(5,9,0,'reject')
     a.r(0,9,0,25,6);a.r(0x21,9,21,9);a.li(8,assets.END);a.r(0x2B,9,8,9);a.branch(5,9,0,'reject')
@@ -252,12 +285,13 @@ def start_code():
         a.li(9,effects.PREPARED);a.branch(5,8,9,'reject')
     a.call(ANCHOR);a.branch(4,2,0,'reject')
     a.call(camera.INIT);a.branch(4,2,0,'reject')
+    a.li(8,camera.TAIL);a.sw(0,8)
     a.li(18,STATE);a.li(8,SCENE_MAGIC);a.sw(8,18,S['magic'])
     a.lw(8,29,0x314);a.sw(8,18,S['staging'])
     a.lw(8,29,0x350);a.sw(8,18,S['uniform_scale']);a.lw(8,29,0x354);a.sw(8,18,S['height_scale'])
     a.lw(8,28,-22176);a.sw(8,18,S['saved_camera'])
     a.lw(8,28,-22172);a.sw(8,18,S['saved_renderer']);a.lw(9,8,0xC40);a.sw(9,18,S['saved_binding'])
-    for off in (S['phase'],S['ticks'],S['cancelled'],S['total_ticks'],S['retiring'],S['fx_started'],S['retirement_ticks'],S['cleanup_pending'],S['exploded']):a.sw(0,18,off)
+    for off in (S['phase'],S['ticks'],S['cancelled'],S['total_ticks'],S['retiring'],S['fx_started'],S['retirement_ticks'],S['cleanup_pending'],S['exploded'],S['settle_ticks']):a.sw(0,18,off)
     a.sw(21,18,S['base']);a.lw(8,29,0x318);a.sw(8,18,S['count']);a.sw(21,18,S['descriptor'])
     a.li(8,-1);a.sw(8,18,S['entered']);a.sw(20,19,tag.C['variant'])
     a.move(20,0);a.li(21,ROWS);a.move(24,0)
@@ -378,7 +412,9 @@ def step_code():
     a.label('pose_next');a.addiu(20,20,1);a.addiu(21,21,STRIDE);a.li(8,3);a.branch(5,20,8,'pose')
     a.lw(8,19,28);a.i(12,8,8,assets.CUSTOM_FINISHER);a.branch(5,8,0,'aligned')
     a.call(ALIGN);a.branch(4,2,0,'cancel');a.jump('placement_finished')
-    a.label('aligned');a.call(staging.TICK);a.branch(4,2,0,'cancel');a.label('placement_finished')
+    a.label('aligned');a.call(staging.TICK);a.branch(4,2,0,'cancel')
+    a.lw(8,19,28);a.i(12,8,8,special.RESTRAIN);a.branch(4,8,0,'placement_finished')
+    a.call(ALIGN);a.branch(4,2,0,'cancel');a.label('placement_finished')
     a.call(FX_STEP);a.branch(4,2,0,'cancel')
     a.call(audio.TICK)
     a.call(damage_schedule.TICK);a.branch(4,2,0,'cancel')
@@ -427,13 +463,39 @@ def step_code():
     data=a.finish();assert STEP_BODY+len(data)<=BODIES_END,len(data);return data
 
 
+def sacrifice_hold(a,fail):
+    """Fall through only for the restraint variant whose Goku took sacrifice HP.
+
+    Uses the simulated damage receipt alone (lockstep-safe); t0..t2 scratch.
+    """
+    a.li(8,CONTROL);a.lw(8,8,tag.C['variant']);a.li(9,special.VARIANT);a.branch(5,8,9,fail)
+    a.li(8,damage_schedule.STATE);a.lw(9,8);a.li(10,damage_schedule.MAGIC);a.branch(5,9,10,fail)
+    a.lw(9,8,damage_schedule.C['sacrifice']);a.li(10,1);a.branch(5,9,10,fail)
+    a.lw(9,8,damage_schedule.C['goku_loss']);a.branch(6,9,0,fail)
+
+
+def goku_idle_fallback(a,done,prefix):
+    """Give a held sacrifice Goku his own idle when no native fall was admitted.
+
+    A native down/fall action chosen meanwhile is kept.
+    """
+    import tag_rush_recovery as fall_recovery
+    a.li(21,ROWS);identity(a,21,done,prefix)
+    a.lw(8,22,2376)
+    for action in fall_recovery.DOWN_ACTIONS:a.li(9,action);a.branch(4,8,9,done)
+    native_idle(a,22);a.move(4,22);a.lw(5,21,R['idle_animation'])
+    a.emit((17<<26)|(4<<21)|(12<<11));a.call(A(0x1C3E60))
+
+
 def finish_code():
     """a0 cancellation; release ACTIVE only after every valid actor is safe."""
     a=Assembler(FINISH_BODY);tag.save(a);a.move(18,4);a.li(16,CONTROL);a.li(17,STATE)
     a.lw(8,16,tag.C['active']);a.li(9,1);a.branch(5,8,9,'done')
     a.lw(8,16,4);a.lw(9,28,-22364);a.branch(5,8,9,'stale_world')
     a.lw(8,17,S['cancelled']);a.r(0x25,18,18,8);a.sw(18,17,S['cancelled'])
-    a.li(8,1);a.sw(8,17,S['retiring']);a.call(effects.STOP)
+    a.li(8,1);a.sw(8,17,S['retiring'])
+    a.lw(8,17,S['settle_ticks']);a.addiu(8,8,1);a.sw(8,17,S['settle_ticks'])
+    a.call(effects.STOP)
     a.branch(4,2,0,'retired')
     # Return to the normal game loop while native children retire. No busy
     # wait and no unsafe descriptor free while the renderer still owns a node.
@@ -443,6 +505,25 @@ def finish_code():
     # release player control, and let the coordinator retry STOP outside GATE.
     a.li(18,1);a.sw(18,17,S['cleanup_pending']);a.sw(18,17,S['cancelled']);a.sw(0,16,tag.C['ready'])
     a.label('retired')
+    # Keep the final shot and participant input hold together while the native
+    # impact burst clears. The old camera-only tail returned control first and
+    # left players steering under a distant cinematic view. Native effect
+    # retirement counts toward this interval; it never adds a second wait.
+    # Pause.CHECK holds this clock with native effects, and cancellation skips
+    # it so stage changes and replacement actors cannot inherit a frozen scene.
+    a.branch(5,18,0,'settled');a.lw(8,17,S['exploded']);a.branch(4,8,0,'settled')
+    a.lw(8,17,S['descriptor']);a.lw(8,8,28)
+    a.i(12,8,8,assets.BEAM_LEAD|assets.BEAM_PARTNER);a.branch(4,8,0,'settled')
+    a.li(21,ROWS);a.move(20,0)
+    a.label('settle_identity');identity(a,21,'settle_cancel','settle')
+    a.addiu(20,20,1);a.addiu(21,21,STRIDE);a.li(8,3);a.branch(5,20,8,'settle_identity')
+    a.lw(8,17,S['settle_ticks']);a.lw(9,17,S['descriptor']);a.lw(9,9,28)
+    a.i(12,9,9,assets.CUSTOM_FINISHER);a.branch(4,9,0,'legacy_burst_wait')
+    a.i(11,9,8,burst_settle_ticks(custom=True)+1);a.jump('burst_wait_checked')
+    a.label('legacy_burst_wait');a.i(11,9,8,burst_settle_ticks()+1)
+    a.label('burst_wait_checked');a.branch(5,9,0,'done')
+    a.jump('settled');a.label('settle_cancel');a.li(18,1);a.sw(18,17,S['cancelled'])
+    a.label('settled')
     a.li(21,ROWS);a.move(20,0)
     # Capture current rendered roots before replacing any borrowed pose.
     a.label('endpoints');identity(a,21,'end_next','end')
@@ -467,7 +548,13 @@ def finish_code():
     a.lw(8,21,R['clip0']);a.sw(8,23,192)
     # A successful victim stays in its hit pose until damage and native fall
     # admission below. Attackers and aborted scenes restore their own idle.
-    a.li(8,2);a.branch(5,20,8,'restore_idle');a.branch(4,18,0,'restore_place')
+    a.li(8,2);a.branch(4,20,8,'restore_victim')
+    # A sacrifice-damaged Goku likewise keeps his held action until the
+    # native fall below. Native idle would drop him (not flying) into the
+    # ordinary airborne action, whose update replaces the fall request.
+    a.branch(5,20,0,'restore_idle');a.branch(5,18,0,'restore_idle')
+    sacrifice_hold(a,'restore_idle');a.jump('restore_place')
+    a.label('restore_victim');a.branch(4,18,0,'restore_place')
     a.label('restore_idle')
     # Idle's entry/cleanup reinstates the fighter's own model, pose, flags and
     # move events. Old attacking animation fields are deliberately not replayed.
@@ -502,7 +589,20 @@ def finish_code():
     a.label('victim_idle');native_idle(a,22);a.move(4,22);a.lw(5,21,R['idle_animation'])
     a.emit((17<<26)|(4<<21)|(12<<11));a.call(A(0x1C3E60))
     a.label('completed')
-    a.lw(8,16,tag.C['completed']);a.addiu(8,8,1);a.sw(8,16,tag.C['completed']);a.jump('camera_cleanup')
+    # The restraint variant can deliberately take Goku's HP as well. Give
+    # only that authenticated, actually damaged body the same native fall;
+    # an invulnerable or replaced Goku and the no-sacrifice option stay idle.
+    sacrifice_hold(a,'count_completed')
+    a.li(8,damage_schedule.STATE);a.lw(9,8,damage_schedule.C['finalized'])
+    a.li(10,1);a.branch(5,9,10,'goku_unfallen')
+    a.li(4,ROWS);a.lw(8,17,S['descriptor']);a.lw(5,8,28);a.call(fall_recovery.BEGIN)
+    a.branch(5,2,0,'count_completed')
+    a.label('goku_unfallen');goku_idle_fallback(a,'count_completed','goku_unfallen')
+    a.label('count_completed')
+    a.lw(8,16,tag.C['completed']);a.addiu(8,8,1);a.sw(8,16,tag.C['completed'])
+    # Controls and the normal camera resume together, after burst clearance.
+    # Invalidate any old presentation receipt left by a live code replacement.
+    a.li(8,camera.TAIL);a.sw(0,8);a.jump('camera_cleanup')
     # A refused finishing portion leaves no native fall to replace the loaned
     # pose. Decode the same idle victim's own pose before releasing ownership;
     # a scenario-selected action or changed body must retain its new state.
@@ -510,7 +610,13 @@ def finish_code():
     a.lw(8,22,2376);a.li(9,11);a.branch(5,8,9,'cancelled')
     native_idle(a,22);a.move(4,22);a.lw(5,21,R['idle_animation'])
     a.emit((17<<26)|(4<<21)|(12<<11));a.call(A(0x1C3E60))
-    a.label('cancelled');a.lw(8,16,tag.C['cancelled']);a.addiu(8,8,1);a.sw(8,16,tag.C['cancelled'])
+    a.label('cancelled')
+    # A refused/changed victim after a successful scene still releases a
+    # held sacrifice Goku through his own idle (true cancels idled him above).
+    a.branch(5,18,0,'goku_released');sacrifice_hold(a,'goku_released')
+    goku_idle_fallback(a,'goku_released','goku_cancel_idle')
+    a.label('goku_released');a.li(8,camera.TAIL);a.sw(0,8)
+    a.lw(8,16,tag.C['cancelled']);a.addiu(8,8,1);a.sw(8,16,tag.C['cancelled'])
     # A full-screen pass can leave our private camera selected until the next
     # renderer pass. Release only those bindings still owned by this scene;
     # never overwrite another player's camera or a new renderer/world.
@@ -523,7 +629,7 @@ def finish_code():
     a.addiu(9,20,16);a.branch(5,8,9,'release')
     a.label('restore_binding');a.lw(8,17,S['saved_binding']);a.sw(8,19,0xC40)
     a.jump('release')
-    a.label('stale_world');a.call(effects.STOP)
+    a.label('stale_world');a.li(8,camera.TAIL);a.sw(0,8);a.call(effects.STOP)
     a.r(0x2B,8,0,2);a.sw(8,17,S['cleanup_pending']);a.sw(0,16,tag.C['ready'])
     a.label('release');a.sw(0,16,tag.C['members']);a.sw(0,17,S['magic']);a.sw(0,16,tag.C['active'])
     a.label('done');tag.restore(a);a.jr()
@@ -564,13 +670,17 @@ def fx_step_code():
         a.branch(4,2,0,'no');a.label(f'role{role}_done')
     a.li(8,1);a.sw(8,17,S['fx_started'])
     a.label('update');a.call(effects.UPDATE)
-    # One copied-position native impact at the beam's victim, leaving half a
-    # second in the shot before restoring normal views and falling physics.
+    # Custom beams impact just after ignition. Their native burst can clear
+    # during the firing shot, avoiding a long motionless hold after the move.
+    # Preserve the original donor's final-half-second impact schedule.
     # Cosmetic pool exhaustion never cancels an otherwise completed attack.
     a.i(12,8,18,assets.BEAM_LEAD|assets.BEAM_PARTNER);a.branch(4,8,0,'updated')
     a.lw(8,17,S['exploded']);a.branch(5,8,0,'updated')
     a.lw(8,17,S['fx_started']);a.li(9,1);a.branch(5,8,9,'updated')
-    a.lw(8,19);a.addiu(8,8,-30);a.li(9,ACTOR_HZ)
+    a.i(12,8,18,assets.CUSTOM_FINISHER);a.branch(4,8,0,'native_burst_time')
+    a.li(8,choreography.BEAM_BURST);a.jump('burst_time_ready')
+    a.label('native_burst_time');a.lw(8,19);a.addiu(8,8,-30)
+    a.label('burst_time_ready');a.li(9,ACTOR_HZ)
     a.r(0x19,0,8,9);a.r(0x12,10,0,0)
     a.lw(8,17,S['ticks']);a.li(9,60);a.r(0x19,0,8,9);a.r(0x12,8,0,0)
     a.r(0x2B,8,8,10);a.branch(5,8,0,'updated')
@@ -587,9 +697,13 @@ def align_code():
     authored contact anchor; native animation decoding selects victim bone3.
     No synthetic attack flags, global actor scan or unrelated pair is touched.
     """
-    a=Assembler(ALIGN);a.sw(31,29,0x34C)
+    a=Assembler(special.ALIGN_BODY);a.sw(31,29,0x34C)
     for reg,off in ((20,0x350),(21,0x354),(22,0x358),(23,0x35C)):a.sw(reg,29,off)
     a.li(20,ROWS);a.li(21,ROWS+2*STRIDE);a.lw(22,20,R['model']);a.lw(23,21,R['model'])
+    import tag_rush_full_nelson_native as nelson
+    a.li(8,CONTROL);a.lw(8,8,tag.C['variant']);a.li(9,special.VARIANT)
+    a.branch(5,8,9,'native_contact');a.move(4,20);a.move(5,21);a.call(nelson.FIT);a.jump('done')
+    a.label('native_contact')
     # Once the melee attacker exits the mixed ending, keep the victim at its
     # last authored contact mark. An idle bone52 is not a cinematic anchor.
     a.lw(8,20,R['recovering']);a.li(9,ROWS+STRIDE);a.lw(9,9,R['recovering'])
@@ -618,7 +732,7 @@ def align_code():
     a.label('no');a.move(2,0)
     a.label('done')
     for reg,off in ((20,0x350),(21,0x354),(22,0x358),(23,0x35C)):a.lw(reg,29,off)
-    a.lw(31,29,0x34C);a.jr();data=a.finish();assert len(data)<=0x400,len(data);return data
+    a.lw(31,29,0x34C);a.jr();data=a.finish();assert special.ALIGN_BODY+len(data)<=special.ALIGN_END,len(data);return data
 
 
 def recovery_code():
@@ -667,11 +781,12 @@ def recovery_code():
 
 def pieces():
     import tag_rush_approach as approach
+    import tag_rush_full_nelson_native as nelson
     assert audio.END<=RECOVERY and RECOVERY_END<=safety.STATE
     jump=lambda destination:struct.pack('<2I',0x08000000|(destination>>2),0)
     result=[(START,jump(START_BODY)),(START_BODY,start_code()),(STEP,jump(STEP_BODY)),(STEP_BODY,step_code()),
             (ANCHOR,anchor_code()),(FINISH,jump(FINISH_BODY)),(FINISH_BODY,finish_code()),(FX_STEP,jump(FX_BODY)),(FX_BODY,fx_step_code()),
-            (ALIGN,align_code()),(STATE,bytes(END-STATE)),(RECOVERY,recovery_code())]+shots.pieces()+staging.pieces()+native_pose.pieces()+fall_recovery.pieces()+damage_schedule.pieces()+retarget.pieces()
+            (ALIGN,jump(special.ALIGN_BODY)),(special.ALIGN_BODY,align_code()),(STATE,bytes(END-STATE)),(RECOVERY,recovery_code())]+shots.pieces()+staging.pieces()+native_pose.pieces()+fall_recovery.pieces()+damage_schedule.pieces()+retarget.pieces()+nelson.pieces()
     result.sort()
     for (p,b),(q,_) in zip(result,result[1:]):assert p+len(b)<=q,(hex(p),len(b),hex(q))
     return result+approach.pieces()
@@ -679,7 +794,7 @@ def pieces():
 
 def installation(pack, roster=None, settings=None, *, local_playtest=False, reviewed_assets=False):
     """Installer contract; unreviewed presentation cannot arm a live match."""
-    variants=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+    variants=choreography.VARIANTS
     words={tag.C['scene_table']:TABLE,0xA0:pack.get('staging_address',0)}
     placement=pack.get('choreography_asset')
     if placement is not None:
@@ -698,7 +813,8 @@ def installation(pack, roster=None, settings=None, *, local_playtest=False, revi
         words[shots.TABLE_OFFSET]=camera_asset['table_address'];words[shots.MAGIC_OFFSET]=shots.MAGIC
     for index,name in enumerate(variants):
         row=pack['variants'][name]
-        words[0x80+8*index]=row['address'];words[0x84+8*index]=row['count']
+        at=special.TABLE_OFFSET if name==special.NAME else 0x80+8*index
+        words[at]=row['address'];words[at+4]=row['count']
     import tag_rush_approach as approach
     import tag_rush_voices as voices
     import tag_rush_audio_queue as audio_queue

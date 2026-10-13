@@ -20,10 +20,20 @@ import guest_killfeed as feed
 
 BASE, END = 0x06D00000, 0x06DC0000
 FRAME, GATE, ELIGIBLE, INPUT, TICK = (BASE, BASE+0x400, BASE+0x800, BASE+0x1000, BASE+0x1800)
+VICTIM_ELIGIBLE = BASE+0xC00
+BUFFER_INPUT, INPUT_GATE = BASE+0x2300, BASE+0x2D00
 START, STEP, FINISH = BASE+0x3000, BASE+0x4000, BASE+0x5000
 FRAME_NATIVE = BASE+0x2F00
 CONTROL = BASE+0x8000
 METERS, METER_STRIDE = CONTROL+0x100, 32
+# A short, authenticated mod input buffer. Freeze its lifetime during native
+# manager hit-stop, matching the native input-history clock (not its capacity).
+INPUT_BUFFERS, INPUT_BUFFER_STRIDE, INPUT_BUFFER_TICKS = 0x06DDFE00, 32, 7
+INPUT_BUFFERS_END = INPUT_BUFFERS + modes.ENGINE_ACTORS*INPUT_BUFFER_STRIDE
+BUFFER_TARGET = 0x06DD7C00
+SMASH_BUFFER_TICKS = math.ceil(1.25*ACTOR_HZ)
+assert METERS+modes.ENGINE_ACTORS*METER_STRIDE<=CONTROL+0x280
+assert INPUT_BUFFERS_END<=0x06DE0000
 MEMBERS_SAVE = CONTROL+0x400
 FX_CLEANUP = MEMBERS_SAVE+156  # Director's asynchronous retirement receipt.
 MAGIC = 0x54414731
@@ -40,8 +50,9 @@ C = dict(magic=0, manager=4, count=8, enabled=12, active=16, members=20, shared=
          initiator=28, partner=32, victim=36, frame=40, variant=44,
          charge_ticks=48, damage=52, training_full=56, ready=60,
          last_held=64, consumed=68, clock=72, requested=76, start_requests=80,
-         completed=84, cancelled=88, training=92, scene_table=96, approaching=100)
-T = dict(charge=0, inviter=4, target=8, expiry=12, allies=16)
+         completed=84, cancelled=88, training=92, scene_table=96, approaching=100,
+         keep_meter_on_miss=104,sacrifice_enabled=108,sacrifice_multiplier=112)
+T = dict(charge=0, inviter=4, target=8, expiry=12, allies=16, cpu_held=20, cpu_consumed=24, cpu_ticket=28)
 PRESS_WORDS = (328, 336, 340)
 
 
@@ -69,7 +80,8 @@ class Coordinator:
     Input edges are sampled even while paused/busy. Resuming must not turn a
     button held through a pause or another cinematic into fresh consent.
     """
-    def __init__(self, charge_seconds=25, damage=15000, hz=ACTOR_HZ, training_full=False):
+    def __init__(self, charge_seconds=25, damage=15000, hz=ACTOR_HZ, training_full=False,
+                 keep_meter_on_miss=False):
         if not math.isfinite(charge_seconds) or not 1 <= charge_seconds <= 600:
             raise ValueError('Tag charge must take 1..600 seconds')
         if type(damage) is not int or not 0 <= damage <= 100000:
@@ -80,16 +92,21 @@ class Coordinator:
         self.ttl = math.ceil(REQUEST_SECONDS*hz)
         self.damage = damage
         self.training_full = training_full
+        self.keep_meter_on_miss = bool(keep_meter_on_miss)
         self.charge = {}
         self.offers = {}
         self.down = set()
+        self.cpu_down = set()
         self.clock = 0
         self.active = None
 
-    def tick(self, fighters, held=(), *, paused=False, training=False, enabled=True, ready=True, teams=True):
+    def tick(self, fighters, held=(), *, cpu_ultimates=(), paused=False, training=False, enabled=True, ready=True, teams=True):
         roster = {f.index: f for f in fighters}
         held = set(held)
         pressed, self.down = held-self.down, held
+        # These are actual native ultimate-decision outputs, not a new RNG.
+        cpu_ultimates=set(cpu_ultimates)
+        cpu_pressed,self.cpu_down=cpu_ultimates-self.cpu_down,cpu_ultimates
         if not enabled or not teams or not ready:
             self.offers.clear()
             return None
@@ -130,12 +147,20 @@ class Coordinator:
                         requester = roster[offer[0]]
                         self.active = (requester.index,other.index,offer[1],variant(requester.ki,other.ki))
                         self.offers.clear()
-                        self.charge[requester.index] = self.charge[other.index] = 0
+                        if not self.keep_meter_on_miss:self.charge[requester.index] = 0
                         return self.active
             else:
-                if who.index in pressed and eligible(who):
+                cpu_offer=(who.cpu and who.index in cpu_pressed and any(
+                    f.index!=who.index and eligible(f) and f.target==who.target
+                    and self.charge.get(f.index,0)>=self.limit for f in allies))
+                if (who.index in pressed or cpu_offer) and eligible(who):
                     self.offers[who.index] = (who.index,who.target,self.clock+self.ttl)
         return None
+
+    def contact(self):
+        """Successful cinematic admission pays the deferred participant costs."""
+        if self.active:
+            self.charge[self.active[0]] = self.charge[self.active[1]] = 0
 
     def finish(self):
         self.active = None
@@ -154,8 +179,8 @@ def restore(a, result=None):
     full.restore(a)
 
 
-def gate_code():
-    a=Assembler(GATE);core.gate(a,'no')
+def gate_code(base=GATE, *, allow_manager_pause=False):
+    a=Assembler(base);core.gate(a,'no')
     a.li(8,CONTROL);a.lw(9,8);a.li(11,MAGIC);a.branch(5,9,11,'no')
     a.lw(9,8,4);a.lw(11,28,-22364);a.branch(5,9,11,'no')
     a.lw(9,8,8);a.branch(5,9,10,'no')
@@ -167,35 +192,55 @@ def gate_code():
     a.li(8,A(0x3337C0));a.lw(9,8);a.li(11,1);a.branch(5,9,11,'no')
     a.li(8,A(0x2FEB38));a.lw(8,8);full.pointer(a,8,0x108,'no',temp=11,test=9)
     a.lw(9,8);a.li(11,3);a.branch(5,9,11,'no')
-    a.lw(8,28,-22364);a.lw(9,8,628);a.branch(5,9,0,'no')
+    if not allow_manager_pause:
+        a.lw(8,28,-22364);a.lw(9,8,628);a.branch(5,9,0,'no')
     a.li(2,1);a.jr();a.label('no');a.move(2,0);a.jr()
-    data=a.finish();assert GATE+len(data)<=ELIGIBLE;return data
+    data=a.finish();assert len(data)<=ELIGIBLE-GATE;return data
 
 
-def eligible_code():
+def eligible_code(base=ELIGIBLE, *, ai_alias=False, victim=False, buffered=False):
     """a0 physical -> v0 registered free actor, v1 target index; else v0=0.
 
     Never interrupts a native bound move, reload, corpse, hit reaction, or a
     pending transition. The caller separately checks ally/enemy relationships.
     """
     import tag_rush_safety as safety
-    a=Assembler(ELIGIBLE);a.li(8,CONTROL);a.lw(10,8,8)
+    a=Assembler(base);a.li(8,CONTROL);a.lw(10,8,8)
     a.r(0x2B,9,4,10);a.branch(4,9,0,'no')
     a.li(8,participation.CONTROL);a.lw(9,8,12);a.lw(11,8,16);a.r(0x27,11,11,0);a.r(0x24,9,9,11)
     a.li(11,1);a.r(4,11,4,11);a.r(0x24,9,9,11);a.branch(4,9,0,'no')
     a.li(8,core.POINTERS);a.r(0,9,0,4,2);a.r(0x21,8,8,9);a.lw(2,8)
-    full.pointer(a,2,0x1600,'no');a.lw(9,2);a.branch(5,9,4,'no')
+    full.pointer(a,2,0x1600,'no');a.lw(9,2)
+    if ai_alias:
+        # The private AI slice temporarily labels its two actors 0/1. Only
+        # accept that exact pointer+saved physical identity; do not mutate it.
+        a.branch(4,9,4,'identity_ok');a.i(11,8,9,2);a.branch(4,8,0,'no')
+        a.li(8,core.PAIR);a.lw(10,8);a.branch(4,10,0,'no')
+        a.lw(10,8,4);a.branch(4,10,0,'no');a.r(0,9,0,9,2);a.r(0x21,8,8,9)
+        a.lw(10,8,8);a.branch(5,10,2,'no');a.lw(10,8,16);a.branch(5,10,4,'no')
+        a.label('identity_ok')
+    else:a.branch(5,9,4,'no')
     actors.hp(a,2,'no')
     actors.model(a,2,12,'no');safety.emit_non_giant_model(a,12,'no');emit_admitted_model(a,12,'no')
     # Broad ordinary actions include movement, charge, punching and taunting;
     # the outgoing native cleanup is run before the director borrows any clip.
-    a.lw(8,2,2376);a.addiu(8,8,-11);a.i(11,9,8,169);a.branch(4,9,0,'no')
-    for off in actors.ACTION_FIELDS[1:]:
-        a.lw(8,2,off);a.li(9,-1);a.branch(5,8,9,'no')
+    a.lw(8,2,2376)
+    if victim:
+        for action in safety.LAUNCHED_ACTIONS:a.li(9,action);a.branch(4,8,9,'ordinary_or_launched')
+    a.addiu(8,8,-11);a.i(11,9,8,169);a.branch(4,9,0,'no')
+    a.label('ordinary_or_launched')
+    if not buffered:
+        for off in actors.ACTION_FIELDS[1:]:
+            a.lw(8,2,off);a.li(9,-1);a.branch(5,8,9,'no')
+    else:
+        for flag in map(safety.FLAG,(0xB,0xBE,0x125,0x126,0x135)):
+            for bank in (0x1085,0x10AD):
+                a.i(36,8,2,bank+(flag>>3));a.i(12,8,8,1<<(flag&7));a.branch(5,8,0,'no')
     for off in (3480,3500,3512):a.lw(8,2,off);a.branch(5,8,0,'no')
     a.li(8,core.TABLE);a.r(0,9,0,4,2);a.r(0x21,8,8,9);a.lw(3,8)
+    if buffered:a.move(3,12)
     a.jr();a.label('no');a.move(2,0);a.move(3,0);a.jr()
-    data=a.finish();assert ELIGIBLE+len(data)<=INPUT;return data
+    data=a.finish();assert len(data)<=VICTIM_ELIGIBLE-ELIGIBLE;return data
 
 
 def emit_admitted_model(a,model,fail):
@@ -209,6 +254,30 @@ def emit_admitted_model(a,model,fail):
     a.lw(8,model,12);a.lw(9,13,4);a.addiu(11,9,-1);a.i(11,11,11,4096)
     a.branch(4,11,0,fail);a.r(0x2B,9,8,9);a.branch(4,9,0,fail)
     a.r(0x21,10,10,8);a.i(36,8,10,0);a.i(12,9,8,1);a.branch(4,9,0,fail)
+
+
+def emit_rush_window(a,actor,fail,label,*,cpu_decision=False):
+    """Native handlers that dispatch 2013E0's 0x100000 special-input bit.
+
+    11/13/14 admit it directly. Charge55 excludes entry/recovery animation54.
+    Smash71..76 never enables that input bit; wait for its normal recovery.
+    t0/t1/t2 only. This applies to the initiator, not a consenting helper.
+    """
+    assert actor not in (8,9,10)
+    if cpu_decision:
+        # CPU action63 is approved by the real native decision pipeline and
+        # can wait in its prior charge action62. Keep that one-shot approval;
+        # a bare CPU flag cannot bypass the human initiation window.
+        a.lw(8,actor,0x1278);a.branch(4,8,0,label+'_human')
+        a.lw(8,actor);a.i(11,9,8,modes.ENGINE_ACTORS);a.branch(4,9,0,fail)
+        a.r(0,8,0,8,5);a.li(9,METERS);a.r(0x21,8,8,9)
+        a.lw(9,8,T['cpu_consumed']);a.li(10,1);a.branch(4,9,10,label)
+        a.label(label+'_human')
+    a.lw(8,actor,2376)
+    for action in (11,13,14):a.li(9,action);a.branch(4,8,9,label)
+    a.li(9,55);a.branch(5,8,9,fail);a.li(9,54)
+    for off in (2420,2424):a.lw(8,actor,off);a.branch(4,8,9,fail)
+    a.label(label)
 
 
 def input_code():
@@ -245,7 +314,7 @@ def input_code():
     a.jump('next')
     a.label('held');a.lw(8,16,C['last_held']);a.r(0x24,9,8,23)
     a.r(0x25,8,8,23);a.sw(8,16,C['last_held']);a.branch(5,9,0,'masked')
-    a.call(GATE);a.branch(4,2,0,'next');a.lw(8,16,C['active']);a.branch(5,8,0,'masked')
+    a.call(INPUT_GATE);a.branch(4,2,0,'next');a.lw(8,16,C['active']);a.branch(5,8,0,'masked')
     a.lw(8,16,C['approaching']);a.branch(5,8,0,'masked')
     a.r(0,8,0,20,5);a.li(9,METERS);a.r(0x21,8,8,9)
     a.lw(9,8,T['allies']);a.i(11,9,9,2);a.branch(5,9,0,'next')
@@ -265,14 +334,101 @@ def input_code():
     a.label('digital_only');a.li(9,~CONSUME_INPUT)
     for off in PRESS_WORDS:a.lw(8,22,off);a.r(0x24,8,8,9);a.sw(8,22,off)
     a.label('next');a.addiu(20,20,1);a.jump('scan')
-    a.label('done');restore(a);a.jr();data=a.finish();assert INPUT+len(data)<=TICK;return data
+    a.label('done');a.call(BUFFER_INPUT);restore(a);a.jr();data=a.finish();assert INPUT+len(data)<=TICK;return data
+
+
+def buffer_input_code():
+    """Keep a fresh human chord through smash recovery, never a later scene.
+
+    Each record authenticates actor, model, character and selected opponent.
+    Publication still needs the normal strict combat/action gates. No native
+    input/queue, hit-stop, damage, or transformation flag is cleared.
+    """
+    import tag_rush_safety as safety
+    a=Assembler(BUFFER_INPUT);save(a);a.li(16,CONTROL)
+    a.lw(18,16,C['requested']);a.sw(0,16,C['requested'])
+    a.call(INPUT_GATE);a.branch(4,2,0,'clear_all')
+    for off in (C['active'],C['approaching']):a.lw(8,16,off);a.branch(5,8,0,'clear_all')
+    a.move(17,0);a.li(19,INPUT_BUFFERS);a.lw(20,16,C['count'])
+    a.label('next_actor');a.branch(4,17,20,'done')
+    a.li(8,core.POINTERS);a.r(0,9,0,17,2);a.r(0x21,8,8,9);a.lw(21,8)
+    full.pointer(a,21,0x1600,'discard');a.lw(8,21);a.branch(5,8,17,'discard')
+    a.lw(8,21,0x1278);a.branch(5,8,0,'discard');actors.hp(a,21,'discard')
+    actors.model(a,21,22,'discard');safety.emit_non_giant_model(a,22,'discard');emit_admitted_model(a,22,'discard')
+    a.li(8,participation.CONTROL);a.lw(9,8,12);a.lw(10,8,16);a.r(0x27,10,10,0);a.r(0x24,9,9,10)
+    a.li(23,1);a.r(4,23,17,23);a.r(0x24,9,9,23);a.branch(4,9,0,'discard')
+    a.lw(8,21,2376);a.addiu(8,8,-11);a.i(11,8,8,169);a.branch(4,8,0,'discard')
+    for flag in map(safety.FLAG,(0xB,0xBE,0x125,0x126,0x135)):
+        for bank in (0x1085,0x10AD):
+            a.i(36,8,21,bank+(flag>>3));a.i(12,8,8,1<<(flag&7));a.branch(5,8,0,'discard')
+    a.li(8,core.TABLE);a.r(0,9,0,17,2);a.r(0x21,8,8,9);a.lw(24,8)
+    a.r(0x2B,8,24,20);a.branch(4,8,0,'discard');a.r(0x26,8,17,24);a.i(12,8,8,1);a.branch(4,8,0,'discard')
+    a.li(8,METERS);a.r(0,9,0,17,5);a.r(0x21,8,8,9);a.lw(9,8);a.lw(10,16,C['charge_ticks'])
+    a.r(0x2B,9,9,10);a.branch(5,9,0,'discard')
+    a.move(4,24);a.call(BUFFER_TARGET);a.branch(4,2,0,'discard')
+    a.r(0x24,8,18,23);a.branch(4,8,0,'old_intent')
+    a.sw(2,19,20);a.sw(3,19,24);a.lw(8,3,12);a.sw(8,19,28)
+    a.sw(21,19);a.sw(22,19,4);a.lw(8,22,12);a.sw(8,19,8);a.sw(24,19,12)
+    a.li(8,INPUT_BUFFER_TICKS);a.sw(8,19,16);a.jump('intent')
+    a.label('old_intent');a.lw(8,19,16);a.i(12,8,8,255);a.branch(4,8,0,'next')
+    for reg,off in ((21,0),(22,4),(24,12),(2,20),(3,24)):a.lw(8,19,off);a.branch(5,8,reg,'discard')
+    a.lw(8,3,12);a.lw(9,19,28);a.branch(5,8,9,'discard')
+    a.lw(8,22,12);a.lw(9,19,8);a.branch(5,8,9,'discard')
+    # A connected charged smash has a longer authored follow-through than
+    # ordinary input recovery. Extend once, only while this exact target is
+    # in native launched flight; never refresh it each frame or cancel early.
+    a.label('intent');a.lw(8,19,16);a.li(9,0x10000);a.r(0x24,10,8,9)
+    a.branch(5,10,0,'check_launched')
+    a.lw(8,21,2376);a.addiu(8,8,-71);a.i(11,8,8,6);a.branch(4,8,0,'strict_gate')
+    a.label('check_launched');a.li(8,core.POINTERS);a.r(0,9,0,24,2);a.r(0x21,8,8,9);a.lw(8,8)
+    full.pointer(a,8,0x1600,'discard',temp=9,test=11);a.lw(8,8,2376)
+    for action in safety.LAUNCHED_ACTIONS:a.li(9,action);a.branch(4,8,9,'launched')
+    a.branch(5,10,0,'discard');a.jump('strict_gate')
+    a.label('launched');a.branch(5,10,0,'strict_gate')
+    a.lw(8,19,16);a.i(12,8,8,0xFF00);a.li(9,0x10000|SMASH_BUFFER_TICKS)
+    a.r(0x25,8,8,9);a.sw(8,19,16)
+    a.label('strict_gate');a.call(GATE);a.branch(4,2,0,'age')
+    a.move(4,17);a.call(ELIGIBLE);a.branch(4,2,0,'age')
+    a.move(4,2);a.call(safety.PREFLIGHT);a.branch(4,2,0,'age')
+    # Accepting another fighter's existing invitation can interrupt ordinary
+    # helper actions as before. Starting our own dash uses native rush timing.
+    a.i(12,25,17,1)
+    a.label('find_offer');a.r(0x2B,8,25,20);a.branch(4,8,0,'request_window')
+    a.branch(4,25,17,'offer_next');a.r(0,8,0,25,5);a.li(9,METERS);a.r(0x21,8,8,9)
+    a.lw(9,8,T['inviter']);a.branch(5,9,25,'offer_next')
+    a.lw(9,8,T['target']);a.branch(5,9,24,'offer_next')
+    a.lw(9,8,T['expiry']);a.lw(10,16,C['clock']);a.r(0x2B,9,10,9);a.branch(4,9,0,'offer_next')
+    a.li(8,core.POINTERS);a.r(0,9,0,25,2);a.r(0x21,8,8,9);a.lw(4,8)
+    a.call(safety.PREFLIGHT);a.branch(4,2,0,'age');a.jump('check_target')
+    a.label('offer_next');a.addiu(25,25,2);a.jump('find_offer')
+    a.label('request_window');emit_rush_window(a,21,'age','native_rush_window')
+    a.label('check_target')
+    a.move(4,24);a.call(VICTIM_ELIGIBLE);a.branch(4,2,0,'age')
+    a.move(4,2);a.call(safety.VICTIM_PREFLIGHT);a.branch(4,2,0,'age')
+    a.lw(8,16,C['requested']);a.r(0x25,8,8,23);a.sw(8,16,C['requested']);a.jump('discard')
+    a.label('age');a.lw(8,16,C['manager']);a.lw(8,8,628);a.branch(4,8,0,'age_running')
+    # Bits8+ bound even a long native pause: never leave an old human intent
+    # waiting indefinitely behind an unrelated cinematic.
+    a.lw(8,19,16);a.addiu(8,8,256);a.r(2,9,0,8,8);a.i(12,9,9,255);a.i(11,9,9,ACTOR_HZ+1)
+    a.branch(4,9,0,'discard');a.sw(8,19,16);a.jump('next')
+    a.label('age_running');a.lw(8,19,16);a.addiu(8,8,-1);a.i(12,9,8,255)
+    a.branch(4,9,0,'discard');a.sw(8,19,16);a.jump('next')
+    a.label('discard');a.sw(0,19,16)
+    a.label('next');a.addiu(17,17,1);a.addiu(19,19,INPUT_BUFFER_STRIDE);a.jump('next_actor')
+    a.label('clear_all');a.li(19,INPUT_BUFFERS);a.li(20,modes.ENGINE_ACTORS)
+    a.label('clear');a.sw(0,19,16);a.addiu(19,19,INPUT_BUFFER_STRIDE);a.addiu(20,20,-1);a.branch(5,20,0,'clear')
+    a.label('done');restore(a);a.jr();data=a.finish();assert BUFFER_INPUT+len(data)<=INPUT_GATE;return data
 
 
 def tick_code():
     import tag_rush_safety as safety
     import tag_rush_approach as approach
+    import tag_rush_camera as camera
     a=Assembler(TICK);save(a);a.li(16,CONTROL)
     a.lw(8,16);a.li(9,MAGIC);a.branch(5,8,9,'done')
+    # This bounded camera-only tail also retires when the gameplay gate closes.
+    a.li(8,camera.TAIL);a.lw(8,8);a.li(9,camera.TAIL_MAGIC);a.branch(5,8,9,'no_camera_tail')
+    a.call(camera.TAIL_TICK);a.label('no_camera_tail')
     a.lw(8,16,C['approaching']);a.branch(4,8,0,'not_approaching')
     a.call(approach.TICK);a.jump('done');a.label('not_approaching')
     # A slow native effect may outlive a cancelled cinematic. Keep retiring
@@ -330,8 +486,10 @@ def tick_code():
     a.lw(8,16,C['active']);a.branch(5,8,0,'next_team')
     a.lw(21,18,T['inviter']);a.li(9,-1);a.branch(4,21,9,'offer')
     a.lw(8,16,C['clock']);a.lw(9,18,T['expiry']);a.r(0x2B,8,8,9);a.branch(4,8,0,'cancel')
-    a.move(4,21);a.call(ELIGIBLE);a.branch(4,2,0,'cancel');a.lw(22,18,T['target']);a.branch(5,3,22,'cancel')
-    a.move(4,22);a.call(ELIGIBLE);a.branch(4,2,0,'cancel')
+    a.move(4,21);a.call(ELIGIBLE);a.branch(4,2,0,'cancel')
+    emit_rush_window(a,2,'cancel','inviter_window',cpu_decision=True)
+    a.lw(22,18,T['target']);a.branch(5,3,22,'cancel')
+    a.move(4,22);a.call(VICTIM_ELIGIBLE);a.branch(4,2,0,'cancel')
     a.i(12,20,17,1)
     a.label('accept');a.r(0x2B,8,20,19);a.branch(4,8,0,'next_team');a.branch(4,20,21,'accept_next')
     a.move(4,20);a.call(ELIGIBLE);a.branch(4,2,0,'accept_next');a.branch(5,3,22,'accept_next')
@@ -340,21 +498,23 @@ def tick_code():
     a.lw(8,2,0x1278);a.branch(5,8,0,'accepted')
     a.li(8,1);a.r(4,8,20,8);a.lw(9,16,C['requested']);a.r(0x24,8,8,9);a.branch(4,8,0,'accept_next')
     a.label('accepted');a.move(4,21);a.move(5,20);a.move(6,22);a.call(approach.BEGIN)
-    a.branch(4,2,0,'next_team');a.sw(0,18,T['charge'])
-    a.r(0,8,0,20,5);a.li(9,METERS);a.r(0x21,8,8,9);a.sw(0,8,T['charge']);a.jump('done')
+    # BEGIN owns the initiator's configured attempt cost. The partner pays
+    # only after real contact successfully admits the cinematic.
+    a.branch(4,2,0,'next_team');a.jump('done')
     a.label('accept_next');a.addiu(20,20,2);a.jump('accept')
     a.label('offer');a.move(20,17)
     a.li(8,1);a.r(4,8,20,8);a.lw(9,16,C['requested']);a.r(0x24,8,8,9);a.branch(4,8,0,'offer_next')
-    a.move(4,20);a.call(ELIGIBLE);a.branch(4,2,0,'offer_next');a.move(22,3)
+    a.move(4,20);a.call(ELIGIBLE);a.branch(4,2,0,'offer_next')
+    emit_rush_window(a,2,'offer_next','offer_window',cpu_decision=True);a.move(22,3)
     a.r(0x26,8,20,22);a.i(12,8,8,1);a.branch(4,8,0,'offer_next')
-    a.move(4,22);a.call(ELIGIBLE);a.branch(4,2,0,'offer_next')
+    a.move(4,22);a.call(VICTIM_ELIGIBLE);a.branch(4,2,0,'offer_next')
     a.sw(20,18,T['inviter']);a.sw(22,18,T['target']);a.lw(8,16,C['clock']);a.addiu(8,8,REQUEST_SECONDS*ACTOR_HZ);a.sw(8,18,T['expiry']);a.jump('next_team')
     a.label('offer_next');a.jump('next_team')
     a.label('cancel');a.li(8,-1);a.sw(8,18,T['inviter']);a.sw(0,18,T['expiry'])
     a.label('next_team');a.addiu(18,18,METER_STRIDE);a.addiu(17,17,1);a.branch(5,17,19,'team')
     a.lw(8,16,C['active']);a.branch(4,8,0,'done');a.label('scene_step');a.call(STEP);a.jump('done')
     a.label('cancel_scene');a.li(4,1);a.call(FINISH)
-    a.label('done');restore(a);a.jr();data=a.finish();assert TICK+len(data)<=FRAME_NATIVE;return data
+    a.label('done');restore(a);a.jr();data=a.finish();assert TICK+len(data)<=BUFFER_INPUT;return data
 
 
 def frame_code(previous,bootstrap=False):
@@ -373,6 +533,9 @@ def control_bytes(manager,count,settings,training=False,ready=False):
           'enabled':int(settings['tag_team_rush_enabled']),'shared':int(settings['tag_team_rush_shared_camera']),
           'charge_ticks':math.ceil(settings['tag_team_rush_charge_seconds']*ACTOR_HZ),
           'damage':settings['tag_team_rush_damage'],'training_full':int(settings['tag_team_rush_training_full']),
+          'keep_meter_on_miss':int(settings.get('tag_team_rush_keep_meter_on_miss',False)),
+          'sacrifice_enabled':int(settings.get('tag_team_rush_sacrifice_enabled',True)),
+          'sacrifice_multiplier':round(settings.get('tag_team_rush_sacrifice_multiplier',2.0)*1000),
           'training':int(training),'ready':int(ready)}
     for k,v in vals.items():struct.pack_into('<I',data,C[k],v)
     for index in range(count):struct.pack_into('<i',data,0x100+index*METER_STRIDE+T['inviter'],-1)

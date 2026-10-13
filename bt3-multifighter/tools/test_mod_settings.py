@@ -278,12 +278,18 @@ class OrganisationTests(unittest.TestCase):
 
     def test_tag_rush_page_defaults_save_and_help_are_available_in_both_languages(self):
         expected = {'tag_team_rush_enabled': True, 'tag_team_rush_damage': 15000,
-                    'tag_team_rush_charge_seconds': 25, 'tag_team_rush_training_full': False,
-                    'tag_team_rush_shared_camera': False}
+                    'tag_team_rush_charge_seconds': 25, 'tag_team_rush_keep_meter_on_miss': False,
+                    'tag_team_rush_shared_camera': False, 'tag_team_rush_sacrifice_enabled': True,
+                    'tag_team_rush_sacrifice_multiplier': 2.0}
         self.assertEqual(dict(settings.GROUPS)['Tag-team rush'], tuple(expected))
         self.assertEqual({key: settings.DEFAULTS[key] for key in expected}, expected)
+        training_key = 'tag_team_rush_training_full'
+        self.assertEqual([group for group, keys in settings.GROUPS if training_key in keys], ['Training'])
+        self.assertFalse(settings.DEFAULTS[training_key])
         choices = dict(expected, tag_team_rush_damage=18000, tag_team_rush_charge_seconds=40,
-                       tag_team_rush_training_full=True, tag_team_rush_shared_camera=True)
+                       tag_team_rush_training_full=True, tag_team_rush_shared_camera=True,
+                       tag_team_rush_keep_meter_on_miss=True, tag_team_rush_sacrifice_enabled=False,
+                       tag_team_rush_sacrifice_multiplier=3.0)
         settings.save_settings(choices, self.path)
         self.assertEqual({key: settings.load_settings(self.path)[key] for key in choices}, choices)
         self.assertNotEqual(settings.tr('Tag-team rush', {'language': 'en'}),

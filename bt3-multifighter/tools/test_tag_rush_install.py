@@ -31,7 +31,7 @@ import lockon_threat as threat
 MANAGER=0x1900000
 PREVIOUS=0x07254000
 OPTIONS={'tag_team_rush_enabled':True}
-VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
 
 
 def w(ram,address,value):struct.pack_into('<I',ram,address,value)
@@ -45,8 +45,15 @@ def assets():
                 bytes_used=0x500,limitations=[])
 
 
+
+def profile_assets():
+    import hashlib
+    p=install.pose_profiles;data=struct.pack('<4I',p.MAGIC,161,16+161*8,0)+bytes(161*8)
+    return dict(blocks=[(p.DATA,data)],table_address=p.DATA,bytes_used=len(data),sha256=hashlib.sha256(data).hexdigest())
+
 def fixture(*,four=False):
     ram=bytearray(0x8000000)
+    for address,native,_ in install.cpu_tags.hooks():put(ram,address,native)
     put(ram,install.recovery.HOOK,install.recovery.NATIVE_HOOK)
     put(ram,install.audio_queue.HOOK,install.audio_queue.NATIVE_HOOK)
     put(ram,install.beam_audio.HOOK,install.beam_audio.NATIVE_HOOK)
@@ -100,11 +107,36 @@ def ready(ram):
         w(ram,row+fx.HEADER+36,row+fx.META);w(ram,row+fx.DESC+796,row+fx.HEADER)
 
 
+def special_assets():
+    """Small real native beam pack; synthetic poses keep installer tests narrow."""
+    from test_tag_rush_effects import BEAM
+    iso=install.selected_iso()
+    if not Path(iso).is_file():raise unittest.SkipTest('Local game disc is unavailable')
+    pack=assets();sbc=install.special_beam.build_assets(iso);ordinary=install.assets.read_native_beam_asset(iso)
+    beam=dict(BEAM,resource_size=len(ordinary['resource']),metadata_size=len(ordinary['metadata']),
+        **{key:ordinary[key] for key in ('resource_sha256','mutable_ranges')})
+    info={key:value for key,value in sbc.items() if key!='blocks'}
+    beam['special_beam']=info;pack['beam_asset']=beam;pack['special_beam_asset']=info
+    pack['blocks'] += [(beam['resource_address'],ordinary['resource']),
+                      (beam['metadata_address'],ordinary['metadata']),*sbc['blocks']]
+    return pack
+
+
+def special_ready(ram,pack):
+    from test_tag_rush_special_beam import fixture as beam_fixture,ready as beam_ready,select
+    c,_=beam_fixture();beam_ready(c);select(c,0,22);select(c,1,0)
+    ready(ram);fx=install.effects;sbc=install.special_beam
+    for lo,hi in ((fx.ROWS,fx.ROWS+2*fx.STRIDE),(sbc.STATE,sbc.STATE_END),
+                  (sbc.BANKS,sbc.BANKS+2*sbc.BANK_STRIDE),(sbc.ARENAS,sbc.ARENAS+2*sbc.ARENA_SIZE)):
+        put(ram,lo,c.read(lo,hi-lo))
+
+
 class TagInstallTests(unittest.TestCase):
     def setUp(self):
         self.names={i:dict(name=name,base_name=name) for i,name in enumerate(('Goku','Vegeta','Hercule','Videl'))}
         self.patches=[patch.object(install,'cached_assets',return_value=(assets(),'test-iso')),
                       patch.object(install,'_costume_count',return_value=4),
+                      patch.object(install.pose_profiles,'build_assets',return_value=profile_assets()),
                       patch.object(install.assets,'character_admission',side_effect=admitted),
                       patch('character_names.character_table',return_value=self.names)]
         for item in self.patches:item.start();self.addCleanup(item.stop)
@@ -117,6 +149,86 @@ class TagInstallTests(unittest.TestCase):
         plan=self.build(ram)
         self.assertFalse(plan['usable']);self.assertEqual(plan['blocks'],[])
         self.assertIn('effects',' '.join(plan['limitations']));self.assertEqual(ram,before)
+
+    def test_special_beam_first_install_requires_the_whole_reservation_unowned(self):
+        sbc=install.special_beam;pack=special_assets();director=complete_plan()
+        director['blocks'].extend(sbc.pieces(pack['special_beam_asset']))
+        with patch.object(install,'cached_assets',return_value=(pack,'sbc-iso')),\
+             patch.object(scene,'installation',return_value=director):
+            for address in (sbc.BASE,sbc.STATE,sbc.BANKS,sbc.ARENAS,sbc.RESOURCE,sbc.END-1):
+                ram=fixture();ram[address]=1;before=bytes(ram)
+                with self.assertRaisesRegex(ValueError,'Special Beam Cannon reservation is occupied'):
+                    self.build(ram)
+                self.assertEqual(ram,before)
+
+    def test_special_beam_armed_reinstall_checks_banks_live_recipe_and_source_without_reset(self):
+        sbc=install.special_beam;fx=install.effects;pack=special_assets();director=complete_plan()
+        director['blocks'].extend(sbc.pieces(pack['special_beam_asset']))
+        with patch.object(install,'cached_assets',return_value=(pack,'sbc-iso')),\
+             patch.object(scene,'installation',return_value=director):
+            ram=fixture();apply(ram,self.build(ram));special_ready(ram,pack)
+            # Native texture relocation, pool/charge flags and parsed upload
+            # masks are runtime state, so a legitimate running emitter stays.
+            relocation=pack['special_beam_asset']['mutable_ranges'][0][0]
+            w(ram,sbc.RESOURCE+relocation,0x12345678)
+            w(ram,fx.ROWS+fx.R['charged'],1);w(ram,fx.ROWS+fx.R['ticks'],30)
+            w(ram,sbc.ARENAS+516,0x1357)
+            before=bytes(ram);self.assertEqual(self.build(ram)['blocks'],[]);self.assertEqual(ram,before)
+            cases=((sbc.STATE,'Special Beam Cannon'),(sbc.STATE+sbc.S['pool'],'Special Beam Cannon'),
+                (sbc.BANKS+sbc.RECEIPT,'Special Beam Cannon'),
+                (sbc.BANKS+sbc.SPECIAL_DESC+768,'Special Beam Cannon'),
+                (sbc.BANKS+sbc.STANDARD_RESOURCE,'Special Beam Cannon'),
+                (fx.ROWS+fx.HEADER+28,'Special Beam Cannon'),
+                (fx.ROWS+fx.R['flavor'],'Special Beam Cannon'),
+                (fx.ROWS+fx.DESC+16,'Special Beam Cannon'),(fx.ROWS+fx.META+60,'Special Beam Cannon'),
+                (sbc.RESOURCE+256+12,'program changed'),(sbc.RESOURCE+sbc.RESOURCE_SIZE-7,'program changed'),
+                (sbc.RESOURCE+sbc.RESOURCE_SIZE+12,'program changed'),
+                (sbc.INIT+32,'program changed'),(sbc.SELECT+32,'program changed'))
+            for address,reason in cases:
+                original=ram[address];ram[address]^=1;before=bytes(ram)
+                with self.subTest(address=hex(address)),self.assertRaisesRegex(ValueError,reason):self.build(ram)
+                self.assertEqual(ram,before);ram[address]=original
+
+    def test_user_authored_hold_table_is_immutable_on_reinstall(self):
+        hp=install.authored_hold;bank=install.beam_audio.disc_bank(str(install.selected_iso()))
+        table=hp.data()
+        self.assertEqual(len(table),hp.HEADER+12*hp.STRIDE)
+        self.assertLessEqual(hp.DATA+len(table),hp.END)
+        self.assertEqual(struct.unpack_from('<4I',table,48),
+                         (len(hp.JOINTS),4,3*hp.STRIDE,hp.ACQUISITION_FRAMES))
+        with patch.object(scene,'installation',return_value=complete_plan()),\
+             patch.object(install,'review_playtest_assets'),\
+             patch.object(install.beam_audio,'disc_bank',return_value=bank):
+            ram=fixture();apply(ram,self.build(ram,reviewed_assets=True))
+            self.assertEqual(ram[hp.DATA:hp.DATA+len(table)],table)
+            self.assertEqual(install._json(install._read_meta(ram)['authored_hold']),install._json(hp.receipt()))
+            self.assertFalse(self.build(ram,reviewed_assets=True)['blocks'])
+            for off in (0,4,8,16,52,60,hp.HEADER+hp.VICTIM_ROOT,hp.HEADER+hp.ROTATIONS,
+                        hp.HEADER+3*hp.STRIDE+hp.ROTATIONS,
+                        hp.HEADER+6*hp.STRIDE+hp.ROTATIONS,
+                        hp.HEADER+9*hp.STRIDE+hp.ROTATIONS,len(table)-1):
+                ram[hp.DATA+off]^=1
+                with self.assertRaisesRegex(ValueError,'program changed'):self.build(ram,reviewed_assets=True)
+                ram[hp.DATA+off]^=1
+            receipt=install._read_meta(ram);receipt['authored_hold']['payload_sha256']='00'*32
+            put(ram,install.META,install._meta_bytes(receipt))
+            with self.assertRaisesRegex(ValueError,'authored hold endpoints changed'):
+                self.build(ram,reviewed_assets=True)
+
+    def test_missing_or_changed_authored_hold_endpoints_publish_no_patch(self):
+        hp=install.authored_hold
+        for mode in ('missing','changed','changed acquisition','duplicated'):
+            director=complete_plan();table=hp.data()
+            director['blocks']=[(p,b) for p,b in director['blocks'] if p!=hp.DATA]
+            if mode.startswith('changed'):
+                offset=hp.HEADER+hp.ROTATIONS+(6*hp.STRIDE if mode=='changed acquisition'else 0)
+                changed=bytearray(table);changed[offset]^=1
+                director['blocks'].append((hp.DATA,bytes(changed)))
+            elif mode=='duplicated':director['blocks'].extend(((hp.DATA,table),(hp.DATA,table)))
+            ram=fixture();before=bytes(ram)
+            with self.subTest(mode=mode),patch.object(scene,'installation',return_value=director):
+                with self.assertRaisesRegex(ValueError,'authored hold endpoints changed'):self.build(ram)
+            self.assertEqual(ram,before)
 
     def test_costume_admission_uses_each_selected_members_starting_clothes(self):
         ram=fixture();actor=u(ram,install.core.POINTERS+8)
@@ -157,6 +269,23 @@ class TagInstallTests(unittest.TestCase):
         with patch.object(scene,'installation',return_value=complete_plan()):
             with self.assertRaisesRegex(ValueError,'recovery status hook changed'):self.build(ram)
         self.assertEqual(ram,before)
+
+    def test_cpu_hooks_and_separate_reservation_are_exact_and_preserved(self):
+        for address,native,_ in install.cpu_tags.hooks():
+            ram=fixture();ram[address]^=1;before=bytes(ram)
+            with patch.object(scene,'installation',return_value=complete_plan()):
+                with self.assertRaisesRegex(ValueError,'CPU decision hook changed'):self.build(ram)
+            self.assertEqual(ram,before)
+        ram=fixture();ram[install.cpu_tags.BASE]=1
+        with patch.object(scene,'installation',return_value=complete_plan()):
+            with self.assertRaisesRegex(ValueError,'CPU decision reservation is occupied'):self.build(ram)
+        ram=fixture()
+        with patch.object(scene,'installation',return_value=complete_plan()):
+            apply(ram,self.build(ram));w(ram,tag.METERS+tag.T['cpu_held'],1)
+            self.assertEqual(self.build(ram)['blocks'],[])
+            self.assertEqual(u(ram,tag.METERS+tag.T['cpu_held']),1)
+        for address,_,replacement in install.cpu_tags.hooks():
+            self.assertEqual(ram[address:address+len(replacement)],replacement)
 
     def test_sound_dispatch_hook_is_exact_and_kept_on_repeated_install(self):
         ram=fixture();ram[install.audio_queue.HOOK]^=1;before=bytes(ram)
@@ -207,13 +336,47 @@ class TagInstallTests(unittest.TestCase):
              patch.object(install,'review_playtest_assets'),\
              patch.object(install.beam_audio,'disc_bank',return_value=bank):
             plan=self.build(ram,local_playtest=True);apply(ram,plan)
+            self.assertEqual(u(ram,tag.CONTROL+install.pose_profiles.TABLE_OFFSET),install.pose_profiles.DATA)
+            self.assertEqual(ram[install.pose_profiles.DATA:install.pose_profiles.DATA+16],profile_assets()['blocks'][0][1][:16])
             self.assertEqual(ram[install.beam_audio.HOOK:install.beam_audio.HOOK+4],install.beam_audio.INSTALLED_HOOK)
             self.assertEqual(ram[install.beam_audio.DATA:install.beam_audio.DATA+len(bank['data'])],bank['data'])
             init=bootstrap.code(beam_audio=True)
             self.assertEqual(ram[bootstrap.CODE:bootstrap.CODE+len(init)],init)
             self.assertFalse(self.build(ram,local_playtest=True)['blocks'])
+            ram[install.pose_profiles.DATA+16]^=1
+            with self.assertRaisesRegex(ValueError,'program changed'):self.build(ram,local_playtest=True)
+            ram[install.pose_profiles.DATA+16]^=1
             ram[install.beam_audio.HOOK]^=1
             with self.assertRaisesRegex(ValueError,'sound cleanup hook changed'):self.build(ram,local_playtest=True)
+
+    def test_new_pose_and_special_banks_refuse_other_owners_before_any_write(self):
+        for address,reason in ((install.pose_profiles.BASE,'beam pose reservation'),
+                               (install.SPECIAL_BASE,'special pair reservation'),
+                               (install.FULL_NELSON_BASE,'full-nelson pose reservation'),
+                               (install.authored_hold.DATA,'full-nelson pose reservation'),
+                               (install.authored_hold.END-1,'full-nelson pose reservation'),
+                               (install.special_beam.BASE,'Special Beam Cannon reservation')):
+            ram=fixture();ram[address]=1;before=bytes(ram)
+            with patch.object(scene,'installation',return_value=complete_plan()):
+                with self.assertRaisesRegex(ValueError,reason):self.build(ram)
+            self.assertEqual(ram,before)
+
+    def test_full_nelson_helper_is_bounded_and_immutable_on_reinstall(self):
+        plan=complete_plan()
+        plan['blocks']=[(p,b) for p,b in plan['blocks']
+                        if not install.FULL_NELSON_BASE<=p<install.FULL_NELSON_END]
+        plan['blocks'].extend(install.authored_hold.pieces())
+        address=install.FULL_NELSON_BASE
+        plan['blocks'].append((address,bytes.fromhex('0800e00300000000')))
+        ram=fixture()
+        with patch.object(scene,'installation',return_value=plan):
+            apply(ram,self.build(ram))
+            self.assertEqual(self.build(ram)['blocks'],[])
+            ram[address]^=1
+            with self.assertRaisesRegex(ValueError,'program changed'):self.build(ram)
+        plan['blocks'][-1]=(install.FULL_NELSON_END-4,bytes(8))
+        with patch.object(scene,'installation',return_value=plan):
+            with self.assertRaisesRegex(ValueError,'escaped its reservation'):self.build(fixture())
 
     def test_complete_plan_is_transactional_and_waits_for_guest_initialization(self):
         ram=fixture();before=bytes(ram);site,previous=install.frame_predecessor(ram)
@@ -260,6 +423,9 @@ class TagInstallTests(unittest.TestCase):
             ram[tag.TICK]^=1
             with self.assertRaisesRegex(ValueError,'program changed'):self.build(ram)
             ram[tag.TICK]^=1;w(ram,tag.CONTROL+tag.C['count'],6)
+            with self.assertRaisesRegex(ValueError,'control changed'):self.build(ram)
+            w(ram,tag.CONTROL+tag.C['count'],4)
+            w(ram,tag.CONTROL+tag.C['keep_meter_on_miss'],1)
             with self.assertRaisesRegex(ValueError,'control changed'):self.build(ram)
 
     def test_armed_reinstall_checks_both_native_receipts_without_rearming_disarmed_state(self):
@@ -358,6 +524,48 @@ class TagInstallTests(unittest.TestCase):
 
 
 class AssetCacheTests(unittest.TestCase):
+    def test_special_beam_cache_rederives_recipe_and_exact_relocation_exceptions(self):
+        sbc=install.special_beam;pack=special_assets();checked=install._asset_plan(install._asset_payload(pack))
+        info=checked['special_beam_asset'];spans=install._special_beam_mutable(checked)
+        self.assertEqual(spans,sbc.mutable_ranges(info))
+        self.assertTrue(all(hi-lo==4 for lo,hi in spans[3:]))
+        for change in ('top removed','nested removed','nested mismatch','extra exception','count','script','code block'):
+            changed=copy.deepcopy(checked)
+            if change=='top removed':changed.pop('special_beam_asset')
+            elif change=='nested removed':changed['beam_asset'].pop('special_beam')
+            elif change=='nested mismatch':changed['beam_asset']['special_beam']['slot']=2
+            elif change=='code block':changed['blocks'].append((sbc.INIT,bytes(16)))
+            else:
+                for row in (changed['special_beam_asset'],changed['beam_asset']['special_beam']):
+                    if change=='extra exception':row['mutable_ranges'].append([0,4])
+                    elif change=='count':row['descriptor_counts'][0]=3
+                    else:row['script_offset']=512
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                install._asset_plan(install._asset_payload(changed))
+        for address in (sbc.RESOURCE+300,sbc.RESOURCE+sbc.RESOURCE_SIZE-7):
+            changed=copy.deepcopy(checked)
+            for i,(base,data) in enumerate(changed['blocks']):
+                if base<=address<base+len(data):
+                    b=bytearray(data);b[address-base]^=1;changed['blocks'][i]=(base,bytes(b));break
+            with self.assertRaisesRegex(ValueError,'source pixels or events'):
+                install._asset_plan(install._asset_payload(changed))
+
+    def test_special_beam_mutable_ranges_never_exempt_adjacent_code_magic_or_source_bytes(self):
+        sbc=install.special_beam;pack=special_assets();allowed=install._special_beam_mutable(pack)
+        blocks=sbc.pieces(pack['special_beam_asset'])+pack['blocks']
+        parts=list(install._immutable_parts(blocks,allowed,allowed))
+        def covered(address):return any(p<=address<p+len(b) for p,b in parts)
+        self.assertTrue(all(covered(p) for p in (sbc.INIT,sbc.SELECT,sbc.STATE,sbc.RESOURCE,sbc.RESOURCE+300)))
+        for lo,hi in allowed:
+            self.assertFalse(covered(lo));self.assertFalse(covered(hi-1))
+        for lo,hi in allowed[3:]:
+            for adjacent in (lo-1,hi):
+                if not any(a<=adjacent<b for a,b in allowed):self.assertTrue(covered(adjacent))
+        for forbidden in ((sbc.INIT,sbc.SELECT),(sbc.STATE,sbc.STATE_END),
+                          (sbc.RESOURCE,sbc.END),(install.authored_hold.DATA,install.authored_hold.END)):
+            with self.assertRaisesRegex(ValueError,'runtime data range'):
+                list(install._immutable_parts(blocks,[forbidden],allowed))
+
     def test_native_rush_resources_are_reviewed_against_the_selected_disc(self):
         iso=install.selected_iso()
         if not Path(iso).is_file():self.skipTest('Local game disc is unavailable')
@@ -379,6 +587,32 @@ class AssetCacheTests(unittest.TestCase):
                 else:self.fail('Fixture address is outside the asset block')
                 with self.assertRaisesRegex(ValueError,reason):install.review_playtest_assets(changed,iso=iso)
 
+    def test_real_disc_admission_stays_in_main_arena_with_special_sources(self):
+        iso=install.selected_iso()
+        if not Path(iso).is_file():self.skipTest('Local game disc is unavailable')
+        pack=install.assets.build_assets(iso,include_beam=True,include_camera=True)
+        roster=[dict(index=i,character=character,costume=0,damaged=False)
+                for i,character in enumerate((0,22,77))]
+        admission=install.assets.character_admission(iso,roster)
+        self.assertTrue(all(row['supported'] for row in admission))
+        (address,flags),words=install.admission_block(pack,admission)
+        self.assertTrue(any(install.SPECIAL_BASE<=p<p+len(b)<=install.SPECIAL_DATA_END
+                            for p,b in pack['blocks']))
+        expected=(max(p+len(b) for p,b in pack['blocks']
+                      if install.assets.BASE<=p<p+len(b)<=install.assets.END)+15)&~15
+        self.assertEqual(address,expected)
+        self.assertEqual(words[0x3A0],address)
+        self.assertLessEqual(address+len(flags),install.assets.END)
+        self.assertTrue(all(flags[character]==3 for character in (0,22,77)))
+        self.assertTrue(all(address+len(flags)<=p or p+len(b)<=address for p,b in pack['blocks']))
+        # Real mixed-arena packs must still refuse a full main bank; the distant
+        # special bank does not provide an escape from the admission limit.
+        full=copy.deepcopy(pack)
+        full['blocks']=[row for row in full['blocks'] if row[0]>=install.SPECIAL_BASE]
+        full['blocks'].append((install.assets.BASE,bytes(install.assets.END-install.assets.BASE)))
+        with self.assertRaisesRegex(ValueError,'admission table exceeds'):
+            install.admission_block(full,admission)
+
     def test_camera_evaluator_source_changes_invalidate_cached_samples(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);iso=root/'disc.iso';iso.write_bytes(b'local fixture')
@@ -388,6 +622,17 @@ class AssetCacheTests(unittest.TestCase):
                 missing=install._identity(iso)[2]
                 shots_source.write_text('first evaluator');present=install._identity(iso)[2]
                 shots_source.write_text('new evaluator');changed=install._identity(iso)[2]
+            self.assertEqual(len({missing,present,changed}),3)
+
+    def test_authored_hold_source_changes_invalidate_cached_preparation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);iso=root/'disc.iso';iso.write_bytes(b'local fixture')
+            asset_source=root/'tag_rush_assets.py';asset_source.write_text('assets')
+            hold_source=root/'tag_rush_authored_hold.py'
+            with patch.object(install.assets,'__file__',str(asset_source)):
+                missing=install._identity(iso)[2]
+                hold_source.write_text('first user endpoints');present=install._identity(iso)[2]
+                hold_source.write_text('edited user endpoints');changed=install._identity(iso)[2]
             self.assertEqual(len({missing,present,changed}),3)
 
     def test_real_disc_beam_relocations_are_bounded_and_cannot_exempt_pose_data(self):
@@ -414,6 +659,13 @@ class AssetCacheTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'runtime data range'):
             list(install._immutable_parts([(base,data)],[(tag.CONTROL,tag.END+4)]))
 
+    def test_input_buffer_data_is_mutable_but_cannot_exempt_cpu_code(self):
+        lo,hi=tag.INPUT_BUFFERS,tag.INPUT_BUFFERS_END
+        self.assertEqual(list(install._immutable_parts([(lo,bytes(hi-lo))],[(lo,hi)])),[])
+        for bad in ((lo-4,hi),(lo,hi+4),(tag.BUFFER_TARGET,lo)):
+            with self.subTest(span=bad),self.assertRaisesRegex(ValueError,'runtime data range'):
+                list(install._immutable_parts([(lo,bytes(hi-lo))],[bad]))
+
     def test_cache_is_per_iso_checked_and_bad_cache_is_rebuilt(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);iso=root/'disc.iso';iso.write_bytes(b'local fixture')
@@ -434,6 +686,14 @@ class AssetCacheTests(unittest.TestCase):
             elif kind=='overlap':plan['blocks'].append(plan['blocks'][0])
             else:plan['variants']['two_ki']['address']=tag.CONTROL
             with self.subTest(kind=kind),self.assertRaises(ValueError):install._asset_plan(install._asset_payload(plan))
+
+    def test_cached_special_source_data_cannot_expand_into_helpers_or_other_banks(self):
+        plan=assets();plan['blocks'].append((install.SPECIAL_BASE,bytes(32)))
+        self.assertEqual(install._asset_plan(install._asset_payload(plan))['blocks'],plan['blocks'])
+        for p in (install.SPECIAL_BASE-16,install.SPECIAL_DATA_END-16,install.SPECIAL_END,install.pose_profiles.DATA):
+            plan['blocks'][-1]=(p,bytes(32))
+            with self.assertRaisesRegex(ValueError,'cached tag animation block'):
+                install._asset_plan(install._asset_payload(plan))
 
 
 class CostumeBoundsTests(unittest.TestCase):

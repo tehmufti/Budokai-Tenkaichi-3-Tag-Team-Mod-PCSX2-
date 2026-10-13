@@ -14,6 +14,7 @@ import tag_rush_damage as damage
 import tag_rush_scene as scene
 import tag_rush_safety as safety
 import tag_rush_assets as assets
+import tag_rush_choreography as choreography
 import tag_team_rush as tag
 from test_tag_rush_scene import fixture,start
 from test_tag_rush_camera import run
@@ -25,12 +26,9 @@ def pack_fixture():
     for name in damage.VARIANTS:
         phases=[];sounds=[]
         for index,p in enumerate(assets.timeline(name)):
-            cues=list(native.get(index,()))
+            cues=[] if name=='early_goku_piccolo' else list(native.get(index,()))
             if p.flags&assets.CUSTOM_FINISHER:
-                if 'combination' in p.name or 'knockdown' in p.name:
-                    frames=(18,42,66,90,114,138) if p.source_frames==144 else (18,42,66,90) if p.source_frames==96 else (12,30)
-                    cues=[(0,f)for f in frames]
-                elif p.flags&(assets.BEAM_LEAD|assets.BEAM_PARTNER):cues=[(2,94)]
+                cues=list(choreography.phase_contacts(name,index))
             events=tuple(dict(role=r,frame=f,sound_id=73,effect_kind=16)for r,f in cues)
             phases.append(dict(source_frames=p.source_frames,starts=p.starts,ends=p.ends,flags=p.flags))
             sounds.append(events)
@@ -38,8 +36,8 @@ def pack_fixture():
     return dict(variants=mapping,audio_cues=audio)
 
 
-def machine(variant=0,hz=30,hp=30000,bank=0):
-    c=fixture(ki=((True,True),(False,False),(True,False),(False,True))[variant])
+def machine(variant=0,hz=30,hp=30000,bank=0,*,sacrifice=True,multiplier=2000):
+    c=fixture(ki=((True,True),(False,False),(True,False),(False,True),(True,True))[variant])
     pack=pack_fixture();c.write(damage.TABLE,damage.table_data(pack))
     with patch.object(damage,'ACTOR_HZ',hz):c.write(damage.TICK,damage.tick_code())
     c.write(safety.DAMAGE,safety.damage_code());c.callbacks.pop(safety.DAMAGE)
@@ -52,6 +50,15 @@ def machine(variant=0,hz=30,hp=30000,bank=0):
     c.callbacks[scene.A(0x1CE630)]=native
     victim=c.actors[1];c.w(victim+0x994,bank);c.w(victim+0x9E4+164*bank,hp)
     start(c);assert c.r[2]==1
+    if variant==4:
+        # Damage-only fixture: keep the director's authenticated actor receipts,
+        # then select the special timeline. Full paired choreography is tested
+        # independently with its real descriptors and reversed request order.
+        c.w(c.models[2]+12,22);c.w(scene.ROWS+scene.STRIDE+scene.R['character'],22)
+        c.w(tag.CONTROL+tag.C['variant'],4)
+        c.w(tag.CONTROL+tag.C['sacrifice_enabled'],int(sacrifice))
+        c.w(tag.CONTROL+tag.C['sacrifice_multiplier'],multiplier)
+        run(c,damage.RESET)
     return c,pack
 
 
@@ -62,7 +69,7 @@ def at(c,phase,frame,hz=30):
 
 class DamageTests(unittest.TestCase):
     def test_each_actual_hit_reduces_hp_exact_budget_and_largest_beam_burst(self):
-        for variant,name in enumerate(damage.VARIANTS):
+        for variant,name in enumerate(damage.VARIANTS[:4]):
             for hz in (25,30):
                 c,pack=machine(variant,hz);events=damage.schedules(pack)[name];last=30000
                 for phase,frame,weight in events:
@@ -185,7 +192,7 @@ class DamageTests(unittest.TestCase):
 
     def test_full_director_uses_schedule_and_never_charges_twice_at_cleanup(self):
         from test_tag_rush_endings import machine as ending_machine
-        for variant,name in enumerate(damage.VARIANTS):
+        for variant,name in enumerate(damage.VARIANTS[:4]):
             c=ending_machine(variant);c.write(damage.TABLE,damage.table_data(pack_fixture()))
             start(c)
             for _ in range(800):
@@ -209,14 +216,65 @@ class DamageTests(unittest.TestCase):
         if not iso.is_file() or native_map.TRANSLATED:self.skipTest('Local identity-layout disc unavailable')
         pack=assets.build_assets(iso);rows=damage.schedules(pack)
         for name,events in rows.items():
+            if name=='early_goku_piccolo':
+                self.assertEqual(events,((4,choreography.BEAM_BURST,10000),))
+                continue
             self.assertGreaterEqual(len(events),7)
             self.assertEqual(events,tuple(sorted(events)))
             self.assertEqual(events[-1][2],10000)
             self.assertTrue(all(a[2]<b[2] for a,b in zip(events,events[1:])))
+            expected_custom=({(4,14),(4,32),(4,54),(5,22),(6,20),(7,24)}
+                             if name=='two_melee' else set() if name=='two_ki'
+                             else {(4,14),(4,32),(4,54),(5,22)})
+            actual_custom={(phase,frame) for phase,frame,_ in events if phase>=4}
+            if name!='two_melee':
+                actual_custom.remove((len(pack['variants'][name]['phases'])-1,choreography.BEAM_BURST))
+            self.assertEqual(actual_custom,expected_custom,name)
             if name!='two_melee':
                 self.assertEqual(events[-2][2],4000)
-                self.assertEqual(events[-1][1],pack['variants'][name]['phases'][-1]['source_frames']-30)
+                self.assertEqual(events[-1][1],choreography.BEAM_BURST)
         damage.table_data(pack)
+
+    def test_special_sacrifice_and_normal_modes_charge_exact_selected_bodies(self):
+        for enabled,multiplier,expected in ((False,2000,15000),(True,2000,30000),(True,1250,18750)):
+            c,pack=machine(4,hp=1000000,sacrifice=enabled,multiplier=multiplier)
+            c.w(c.actors[0]+0x9E4,1000000)
+            at(c,4,choreography.BEAM_BURST-2);self.assertEqual(c.native_damage,[])
+            at(c,4,choreography.BEAM_BURST);self.assertEqual(c.r[2],1)
+            run(c,damage.FINAL);self.assertEqual(c.r[2],1)
+            for index,total in ((0,expected if enabled else 0),(1,expected),(2,0),(3,0)):
+                self.assertEqual(sum(row[1] for row in c.native_damage if row[0]==c.actors[index]),total)
+            self.assertEqual(c.u(damage.STATE+damage.C['goku_loss']),expected if enabled else 0)
+            self.assertEqual(c.u(damage.STATE+damage.C['loss']),expected)
+            before=list(c.native_damage);run(c,damage.FINAL);self.assertEqual(c.native_damage,before)
+
+    def test_sacrifice_low_hp_and_maximum_damage_do_not_overflow(self):
+        for hp,amount,multiplier in ((200,15000,2000),(1000000,100000,5000),(1000000,15001,1250)):
+            c,_=machine(4,hp=hp,multiplier=multiplier);c.w(c.actors[0]+0x9E4,hp)
+            c.w(tag.CONTROL+tag.C['damage'],amount);run(c,damage.RESET)
+            at(c,4,choreography.BEAM_BURST);self.assertEqual(c.r[2],1)
+            self.assertGreaterEqual(c.u(c.actors[0]+0x9E4),1)
+            self.assertGreaterEqual(c.u(c.actors[1]+0x9E4),1)
+            run(c,damage.FINAL);self.assertEqual(c.r[2],1)
+            expected=amount*multiplier//1000
+            for index in (0,1):
+                self.assertEqual(c.u(c.actors[index]+0x9E4),max(0,hp-expected))
+                self.assertEqual(sum(row[1] for row in c.native_damage if row[0]==c.actors[index]),expected)
+
+    def test_sacrifice_never_damages_replaced_body_or_changed_hp_bank(self):
+        for changed in ('character','bank','pointer'):
+            c,_=machine(4)
+            if changed=='character':c.w(c.models[0]+12,1)
+            elif changed=='bank':c.w(c.actors[0]+0x994,1)
+            else:c.w(tag.core.POINTERS,c.actors[3])
+            at(c,4,choreography.BEAM_BURST)
+            self.assertEqual(c.r[2],0)
+            self.assertFalse(any(row[0]==c.actors[0] for row in c.native_damage))
+
+    def test_special_cancel_before_beam_does_not_pay_either_fighter(self):
+        c,_=machine(4);c.w(scene.STATE+scene.S['cancelled'],1)
+        at(c,4,choreography.BEAM_BURST);run(c,damage.FINAL)
+        self.assertEqual(c.r[2],0);self.assertEqual(c.native_damage,[])
 
     def test_rejects_unreviewed_or_late_contact_and_respects_reserved_boundaries(self):
         pack=pack_fixture();phase=pack['audio_cues']['two_ki'][-1]

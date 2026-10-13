@@ -9,9 +9,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT/'player-installer'
-RELEASE_SHA = 'c672ed8bd8ecb18140b65cfd9abba900e39b5064eef378caae2d7aa8c30816e6'
+RELEASE_SHA = 'bfc47f2c4c821d559f7003254f7fbb89675ecdbfdb064a1d87c93e02cca8bf6c'
 RELEASE_URL = ('https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-'
-               '/releases/download/v0.1.0-beta.12/Tag.Team.Mod.0.1.0-beta.12.zip')
+               '/releases/download/v0.1.0-beta.13/Tag.Team.Mod.0.1.0-beta.13.zip')
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -30,7 +30,7 @@ def put(path, data, expected):
     temporary.replace(path)
 
 def bootstrap(zip_path=None, platform='both'):
-    cache = ROOT/f'.downloads/version12-{RELEASE_SHA[:16]}.zip'
+    cache = ROOT/f'.downloads/version13-{RELEASE_SHA[:16]}.zip'
     path = Path(zip_path) if zip_path else cache
     if not path.is_file():
         if zip_path:
@@ -38,7 +38,7 @@ def bootstrap(zip_path=None, platform='both'):
         put(cache, download(RELEASE_URL), RELEASE_SHA)
     raw = path.read_bytes()
     if digest(raw) != RELEASE_SHA:
-        raise ValueError('Expected the published Version 12 Windows installer ZIP')
+        raise ValueError('Expected the published Version 13 Windows installer ZIP')
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         prefix = 'Tag Team Mod Installer/setup/'
         if platform in ('windows','both'):

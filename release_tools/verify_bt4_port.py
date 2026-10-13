@@ -7,6 +7,7 @@ import argparse
 import ast
 import hashlib
 import json
+import re
 from pathlib import Path
 from build_player_bundle import closure,SEEDS,SHARED_ASSETS
 
@@ -74,6 +75,27 @@ def verify_cpu_parity(current,root=ROOT):
 def digest(data):return hashlib.sha256(data).hexdigest()
 
 
+REVIEWED_TEXT_SUFFIXES=frozenset(('.py','.json','.ps1','.cmd','.sh','.md','.txt'))
+
+
+def normalize_reviewed_text(name,data):
+    """Make reviewed text stable across checkout line endings; keep binary bytes."""
+    return data.replace(b'\r\n',b'\n') if Path(name).suffix.lower() in REVIEWED_TEXT_SUFFIXES else data
+
+
+def normalized_file_digest(name,data):
+    """Hash each file's own content, with only text line endings normalized."""
+    return digest(normalize_reviewed_text(name,data))
+
+
+def normalize_bt3_python(data):
+    source=data.decode('utf-8-sig').replace('\r\n','\n')
+    source=source.replace('SLUS-21678','SLUS-21978').replace('SLUS_216.78','SLUS_219.78')
+    # Only the complete PINE port literal is an adapter fact. Pose decimals,
+    # larger numbers and identifiers can also contain these five digits.
+    return re.sub(r'(?<![\w.])28011(?![\w.])','28012',source).encode()
+
+
 def inventory():
     main=ROOT/'bt3-multifighter';port=ROOT/'bt4-multifighter'
     modules=closure(main/'tools',SEEDS+('modder_gui',))
@@ -87,24 +109,28 @@ def inventory():
     result={}
     for before_name,after_name in ENTRYPOINTS.items():
         before=(main/before_name).read_bytes();after=(port/after_name).read_bytes()
-        same=before.decode('utf-8-sig').replace('\r\n','\n')==after.decode('utf-8-sig').replace('\r\n','\n')
+        same=normalize_reviewed_text(before_name,before)==normalize_reviewed_text(after_name,after)
         if not same:
             raise ValueError(f'Shared launcher behavior differs: {before_name} -> {after_name}')
-        result[after_name]=dict(bt3=digest(before),bt4=digest(after),shared=True,bt3_path=before_name)
+        result[after_name]=dict(bt3=normalized_file_digest(before_name,before),
+                               bt4=normalized_file_digest(after_name,after),shared=True,bt3_path=before_name)
     for name in sorted(names):
         before=(main/name).read_bytes();after=(port/name).read_bytes()
         # JSON payloads contain compressed hex: never substitute digit strings.
-        normalized=before
+        normalized=normalize_reviewed_text(name,before)
+        compared=normalize_reviewed_text(name,after)
         if name.endswith('.py'):
-            normalized=before.decode('utf-8-sig').replace('\r\n','\n').replace('SLUS-21678','SLUS-21978').replace('SLUS_216.78','SLUS_219.78').replace('28011','28012').encode()
-            after=after.decode('utf-8-sig').replace('\r\n','\n').encode()
-        result[name]=dict(bt3=digest(before),bt4=digest((port/name).read_bytes()),
-                          shared=normalized==after)
+            normalized=normalize_bt3_python(before)
+            compared=after.decode('utf-8-sig').replace('\r\n','\n').encode()
+        result[name]=dict(bt3=normalized_file_digest(name,before),bt4=normalized_file_digest(name,after),
+                          shared=normalized==compared)
     for name in sorted(closure(port/'tools',SEEDS+('modder_gui','bt4_preflight'))-modules):
-        result[f'tools/{name}.py']=dict(bt4=digest((port/'tools'/(name+'.py')).read_bytes()),shared=False)
+        relative=f'tools/{name}.py'
+        result[relative]=dict(bt4=normalized_file_digest(relative,(port/relative).read_bytes()),shared=False)
     # BT3's map entry point lives at the workspace root and uses a different
     # adapter. Keep BT4's intentional launcher in the review inventory too.
-    result['Build expanded maps.cmd']=dict(bt4=digest((port/'Build expanded maps.cmd').read_bytes()),shared=False)
+    result['Build expanded maps.cmd']=dict(bt4=normalized_file_digest('Build expanded maps.cmd',
+                                          (port/'Build expanded maps.cmd').read_bytes()),shared=False)
     return dict(schema=1,files=result)
 
 

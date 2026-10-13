@@ -10,16 +10,17 @@ import hashlib
 import math
 import struct
 
-REVISION = 15
-VARIANTS = ('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+REVISION = 19
+VARIANTS = ('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
 SOURCE_FRAMES = {0:59,43:39,55:11,57:12,58:16,61:12,63:10,
-                 162:24,164:24,174:112,175:112,198:19}
+                 162:24,163:24,164:24,165:24,174:112,175:112,198:19,
+                 355:119,360:119}
 # Native hit-stun192 selects162..165 in its airborne posture. Strong hurt
 # actions203/204 select174/175. Fall217 selects198/199. The former45/46/51
 # candidates belong to movement handlers and must never be victim reactions.
 HURT_SOURCES = (162,164)
 BEAM_HURT_SOURCES = (174,175)
-HURT_PEAK = {162:8,164:8,174:10,175:10}
+HURT_PEAK = {162:8,163:8,164:8,165:8,174:10,175:10}
 def hit_reactions(frames,contacts,*,sustained=False):
     """Native hurt poses peak exactly when the corresponding strike lands."""
     rows=[];cursor=0
@@ -43,19 +44,83 @@ def hit_reactions(frames,contacts,*,sustained=False):
 DERIVED = {
     'idle': (1000, 180, ((0,0,59,180),)),
     'recoil': (1002,144, hit_reactions(144,(18,42,66,90,114,138))),
-    'air_fall': (1003,144, ((198,0,19,24),(198,0,19,120))),
+    'crossfire_wait': (1021,24, ((360,119,119,1),(175,0,0,23))),
+    'air_fall': (1003,30, ((198,0,19,30),)),
     'duo_lead': (1004,144, tuple((i,0,SOURCE_FRAMES[i] if i else 0,24) for i in (55,0,58,0,61,0))),
     'duo_partner': (1005,144, tuple((i,0,SOURCE_FRAMES[i] if i else 0,24) for i in (0,57,0,55,0,63))),
     'solo_combo': (1006,96, tuple((i,0,SOURCE_FRAMES[i],24) for i in (55,57,55,58))),
     'downkick': (1007,36, ((61,0,12,18),(63,0,10,18))),
     'fall': (1008,36, hit_reactions(36,(12,30))),
-    # One beam impact, then a sustained native hurt pose until the director
-    # hands the victim to the game's fall/recovery action at the ending.
-    'beam_reaction': (1009,180, hit_reactions(180,(94,),sustained=True)),
+    # Face the lead beam and take one frontal airborne impact. Advance the
+    # native arch forward through the burst; never rewind/repeat the hit or
+    # freeze the old forward-hunched pose for the whole beam exchange.
+    'beam_reaction': (1009,180, ((175,0,0,90),(175,0,10,4),
+                               (175,10,40,56),(175,40,46,30))),
     'retreat': (1010,180, ((43,0,39,24),(0,0,59,156))),
 }
+
+# A strike's pose, hit spark, sound and HP portion share this single clock.
+# Unlike the old fixed 24-frame alternation, each phrase has its own windup,
+# impact and follow-through. The waiting partner never throws an empty punch.
+STRIKE_PHRASES = {
+    'body_combo': ((55,20,14),(57,18,12),(58,24,16)),
+    'relay_kick': ((63,32,22),),
+    'chase_strike': ((58,30,20),),
+    'slam_strike': ((355,36,24),),
+}
+PHRASE_IDS = {'body_combo':1011,'relay_kick':1012,'chase_strike':1013,'slam_strike':1014}
+REACTION_NAMES = {'body_combo':'body_reactions','relay_kick':'kick_reaction',
+                  'chase_strike':'chase_reaction','slam_strike':'slam_reaction'}
+
+
+def phrase_contacts(name):
+    cursor=0;result=[]
+    for source,duration,contact in STRIKE_PHRASES[name]:
+        result.append(cursor+contact);cursor+=duration
+    return tuple(result)
+
+
+def directed_reactions(frames,contacts,sources):
+    """Actual contact, a two-frame recoil, then a continuous recovery.
+
+    Carry the preceding pose into the next reaction instead of switching
+    abruptly to a different hurt clip at its resting frame. The victim's
+    facing is authored per exchange in records(), toward the incoming blow.
+    """
+    rows=[];cursor=0;previous=sources[0];rest=SOURCE_FRAMES[previous]
+    for index,(contact,source) in enumerate(zip(contacts,sources)):
+        if contact>cursor:rows.append((previous,rest,rest,contact-cursor))
+        peak=HURT_PEAK[source]
+        rows.extend(((source,rest,peak,2),(source,peak,peak,2)))
+        cursor=contact+4
+        next_contact=contacts[index+1] if index+1<len(contacts) else frames
+        recovery=min(10,next_contact-cursor)
+        if recovery:rows.append((source,peak,SOURCE_FRAMES[source],recovery));cursor+=recovery
+        previous=source;rest=SOURCE_FRAMES[source]
+    if cursor<frames:rows.append((previous,rest,rest,frames-cursor))
+    return tuple(rows)
+
+
+for _name,_phrase in STRIKE_PHRASES.items():
+    _frames=sum(row[1] for row in _phrase)
+    DERIVED[_name]=(PHRASE_IDS[_name],_frames,
+        tuple((source,75 if source==355 else 0,SOURCE_FRAMES[source],duration) for source,duration,_ in _phrase))
+    _contacts=phrase_contacts(_name)
+    _sources=(162,163,165) if _name=='body_combo' else (164,) if _name=='relay_kick' else (165,)
+    DERIVED[REACTION_NAMES[_name]]=(PHRASE_IDS[_name]+4,_frames,
+        directed_reactions(_frames,_contacts,_sources))
+# No looping tumble before impact: the thrown fighter travels in one native
+# airborne hurt pose, then takes one sustained beam hit at the firing boundary.
+DERIVED['tossed']=(1019,30,((174,10,24,30),))
+DERIVED['intercept_reaction']=(1020,180,((174,24,24,90),(174,24,10,4),
+                                      (174,10,24,14),(174,24,24,72)))
+DERIVED['slam_reaction']=(1018,36,((360,75,95,24),(360,95,119,12)))
 BEAM_START = 90
 BEAM_FRAMES = 180
+BEAM_BURST = BEAM_START + 6
+# Let the native impact effect finish inside the shot. Most of this clearance
+# now overlaps the authored firing phase, instead of adding a long frozen tail.
+BURST_CLEARANCE_FRAMES = 126
 CHARGE_CLOSEUP = 60
 MAX_PHASES = 12
 INDEPENDENT = 1
@@ -65,36 +130,73 @@ RECORD_SIZE = 64
 # Native ordinary-strike event0x8 opens contact at these source frames. The
 # event itself is stripped; retiming its pose to our explicit impact keeps
 # both the limb extension and victim reaction on one deterministic clock.
-STRIKE_CONTACT = {55:6,57:6,58:7,61:7,63:4}
+STRIKE_CONTACT = {55:6,57:6,58:7,61:7,63:4,355:95}
 # mode, shot, beam start, optional settle duration, then role-local XYZ/yaw.
 ZERO = (0.,0.,0.,0.)
 # Native1D7418 writes facing=(sin(yaw),0,cos(yaw)); yaw0 faces +Z.
 # The mesh preview's authored local -Z axis is not the actor-facing axis.
-OPPOSED = ((0.,0.,42.,180.),(0.,0.,-42.,0.),ZERO)
+OPPOSED = ((0.,0.,63.,180.),(0.,0.,-63.,0.),ZERO)
 CONTACT = ((0.,0.,8.,180.),(0.,0.,-8.,0.),(0.,0.,0.,90.))
 
 
+def beam_burst_frame(duration, *, custom=False):
+    """One clock for the custom beam impact, its sound and its damage."""
+    if type(duration) is not int or not 30 < duration <= 1000:
+        raise ValueError('Invalid tag beam ending duration')
+    frame = BEAM_BURST if custom else duration - 30
+    if not 0 < frame < duration:
+        raise ValueError('Tag beam burst falls outside its firing phase')
+    return frame
+
+
 def records(variant):
+    if variant=='early_goku_piccolo':
+        from tag_rush_special_pair import records as special_records
+        return special_records()
     native = [(0,0,0,0, ZERO,ZERO,ZERO)]*4
     if variant=='two_ki':
         return native+[(1,1,0,0,*OPPOSED),(1,2,BEAM_START,0,*OPPOSED)]
     if variant=='two_melee':
-        return native+[(1,3,0,0,*CONTACT),(1,4,0,0,*CONTACT),
-                       (1,5,0,24,(0.,0.,14.,180.),(0.,0.,-14.,180.),(0.,48.,-36.,0.))]
+        return native+[
+            (1,3,0,12,(0.,0.,8.,180.),(-20.,-8.,-20.,45.),(0.,0.,0.,0.)),
+            (1,8,0,10,(20.,-8.,18.,228.),(0.,0.,-9.,0.),(0.,0.,0.,180.)),
+            (1,9,0,10,(9.,-12.,0.,270.),(-22.,-12.,-18.,51.),(0.,-12.,0.,90.)),
+            (1,10,0,10,(0.,-24.,9.,180.),(0.,-24.,-9.,0.),(0.,-18.,0.,0.)),
+            (1,5,0,30,(0.,-24.,14.,180.),(0.,-24.,-14.,180.),(0.,48.,-44.,0.)),
+        ]
     if variant not in ('mixed_ki_lead','mixed_ki_partner'):raise ValueError(variant)
     ki = 0 if variant=='mixed_ki_lead' else 1
-    close = [(0.,0.,8.,180.),(0.,0.,8.,180.),ZERO]
-    close[ki]=(0.,0.,42.,180.)
-    # The melee partner physically retreats behind the camera's near plane;
-    # its real body remains present but does not block the beam composition.
-    finish=list(close);finish[1-ki]=(155.,-12.,-110.,127.281)
-    return native+[(1,3,0,0,*close),(1,4,0,0,*close),(1,6,BEAM_START,0,*finish)]
+    def roles(melee,beam,victim):
+        result=[melee,melee,victim];result[ki]=beam;return result
+    # An aerial relay: melee drives the victim upward into the ki fighter's
+    # side-on firing lane. The latter is already above/aside, never a second
+    # half of the two-beam crossfire. The melee partner exits below the shot.
+    return native+[
+        (1,3,0,12,*roles((0.,0.,8.,180.),(-42.,-28.,0.,90.),(0.,0.,0.,0.))),
+        (1,4,0,10,*roles((0.,0.,8.,180.),(-42.,-28.,0.,90.),(0.,0.,0.,0.))),
+        (1,11,0,30,*roles((30.,8.,18.,239.),(-42.,-28.,0.,90.),(0.,-28.,0.,270.))),
+        (1,6,BEAM_START,18,*roles((110.,28.,85.,52.3),(-42.,-28.,0.,90.),(0.,-28.,0.,270.))),
+    ]
+
+
+def phase_contacts(variant,phase):
+    """Explicit attacking role and exact contact frame for custom phases."""
+    if variant in ('two_ki','early_goku_piccolo') or phase<4:return ()
+    if variant=='two_melee':
+        plans=((0,'body_combo'),(1,'relay_kick'),(0,'chase_strike'),(0,'slam_strike'))
+    else:
+        role=1 if variant=='mixed_ki_lead' else 0
+        plans=((role,'body_combo'),(role,'relay_kick'))
+    index=phase-4
+    if index>=len(plans):return ()
+    role,name=plans[index]
+    return tuple((role,frame) for frame in phrase_contacts(name))
 
 
 def pack_records(variants,base):
     names=tuple(variants)
     if len(names)!=len(VARIANTS) or set(names)!=set(VARIANTS):
-        raise ValueError('Tag choreography requires the four reviewed variants exactly once')
+        raise ValueError('Tag choreography requires every reviewed variant exactly once')
     # This table is indexed by the runtime variant enum. JSON cache key sorting
     # must never reorder physical entries or their embedded addresses.
     data=bytearray(8*len(VARIANTS));rows={}
@@ -119,8 +221,8 @@ def read_sources(iso):
         if animation in STRIKE_CONTACT:
             count=struct.unpack_from('<H',raw)[0]>>8
             contacts=[struct.unpack_from('<I',raw,156+16*i)[0] for i in range(count)
-                      if struct.unpack_from('<Q',raw,148+16*i)[0]&8]
-            if contacts!=[STRIKE_CONTACT[animation]]:
+                      if struct.unpack_from('<Q',raw,148+16*i)[0]&(0x80 if animation==355 else 8)]
+            if contacts!=([39,95] if animation==355 else [STRIKE_CONTACT[animation]]):
                 raise ValueError(f'Unreviewed native strike contact 101/{animation}')
         out[animation]=raw
     return out
@@ -130,6 +232,10 @@ def _encode(frames,tracks):
     from ground_clips import encode_quat
     data=bytearray(148);struct.pack_into('<HH',data,0,0,frames)
     for bone,keys in sorted(tracks.items()):
+        # Remove only identical interior holds. Their interpolation is exact;
+        # keep the original endpoints and all actual movement keys.
+        keys=[key for i,key in enumerate(keys) if i==0 or i==len(keys)-1
+              or not (keys[i-1][1]==key[1]==keys[i+1][1])]
         data.extend(bytes((-len(data))%4));struct.pack_into('<H',data,6+bone*2,len(data)//4)
         translated=keys[0][1].translation is not None
         # Constant channels remain single-key native channels.
@@ -279,11 +385,12 @@ def derive(raw_sources,name):
         clip=clips[source];lookup={t.bone_id:t for t in clip.tracks}
         # Hurt channels deliberately peak on contact rather than blending
         # four frames after the audio/impact event.
-        blend=4 if segment and name not in ('recoil','fall','beam_reaction','air_fall') else 0
+        reaction=name in REACTION_NAMES.values()
+        blend=4 if segment and name not in ('recoil','fall','beam_reaction','air_fall','intercept_reaction') and not reaction else 0
         for bone in bones:
             track=lookup[bone];times={0,duration}
-            hit=STRIKE_CONTACT.get(source) if name in ('duo_lead','duo_partner','solo_combo','downkick') else None
-            contact=18 if duration==24 else 12
+            hit=STRIKE_CONTACT.get(source) if name in STRIKE_PHRASES or name in ('duo_lead','duo_partner','solo_combo','downkick') else None
+            contact=STRIKE_PHRASES[name][segment][2] if name in STRIKE_PHRASES else 18 if duration==24 else 12
             if end!=start:
                 if hit is None:
                     times.update(blend+round((t-start)*(duration-blend)/(end-start)) for t in track.times if min(start,end)<=t<=max(start,end))
@@ -310,6 +417,8 @@ def derive(raw_sources,name):
                     translation=(0.,0.,0.) if translation is None else translation
                     previous=BoneTransform(previous.translation or (0.,0.,0.),previous.rotation)
                 value=BoneTransform(translation,value.rotation)
+                if reaction and previous is not None and t==0:
+                    value=previous
                 if blend and t<blend:
                     fraction=t/blend
                     translation=(None if value.translation is None else tuple(

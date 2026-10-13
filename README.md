@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 12 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.12).
+Download the **Version 13 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -19,11 +19,12 @@ This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
 
-Version 12 adds offline tag-team rush attacks for BT3
-USA and BT4. When both tag meters are full, press charge ki + Triangle + Left; a teammate targeting the same
-enemy can accept with the same input. The finish changes with the fighters,
-and damage is dealt throughout the attack. Adjust it in Mod Settings →
-Tag-team rush. Giants cannot use this attack, and it is not available online.
+Version 13 expands offline tag-team rush attacks for BT3 USA and BT4, with
+character-specific beams, more varied melee endings, CPU tag attacks and an
+Early Goku / Early Piccolo grab variant. Fill both meters and press charge ki +
+Triangle + Left; a teammate targeting the same enemy accepts with the same input.
+Mod Settings includes live pictures for HUD and other visual options.
+Giants cannot use tag attacks, and tag attacks are not available online.
 
 Fusion settings also let you set separate health, damage and defense bonuses for
 Potara and non-Potara fusions. Both are off by default. They apply to fusions
@@ -70,10 +71,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 12 Windows ZIP can be used instead of downloading it:
+An existing Version 13 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.12.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -87,9 +88,9 @@ python bt3-multifighter/tools/modder_gui.py
 See [CONTRIBUTING.md](CONTRIBUTING.md) for building installers, working on region
 adapters, using an installed game's runtime, and validating changes.
 
-## Version 12 source checkpoint
+## Version 13 source checkpoint
 
-This tag contains the source used for the Version 12 installers and updaters.
+This tag contains the source used for the Version 13 installers and updaters.
 Further development remains on main. Choose a new version before distributing
 a modified build.
 
