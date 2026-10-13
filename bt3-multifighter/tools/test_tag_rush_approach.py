@@ -21,7 +21,10 @@ from test_tag_rush_camera import run, AUTHORED
 def machine():
     c=fixture();c.connections=[];c.native_contacts=[];c.retargets=[]
     c.write(tag.ELIGIBLE,tag.eligible_code());c.write(safety.PREFLIGHT,safety.preflight_code())
+    c.write(tag.VICTIM_ELIGIBLE,tag.eligible_code(tag.VICTIM_ELIGIBLE,victim=True))
+    c.write(safety.VICTIM_PREFLIGHT,safety.preflight_code(safety.VICTIM_PREFLIGHT,victim=True))
     del c.callbacks[safety.PREFLIGHT]
+    c.callbacks.pop(safety.VICTIM_PREFLIGHT,None)
     for index,(actor,model) in enumerate(zip(c.actors,c.models)):
         c.w(actor+0x998,1);c.w(actor+2376,11)
         c.w(tag.core.TABLE+index*4,1 if index%2==0 else 0)
@@ -99,6 +102,72 @@ def native_dash_effects(c):
 
 
 class ApproachTests(unittest.TestCase):
+    def test_real_launch_admission_accepts_airborne_victim_but_waits_for_smash_recovery(self):
+        for action in (213,214,223):
+            c=machine();c.w(c.actors[1]+2376,action);c.w(c.actors[0]+2376,71)
+            self.assertEqual(begin(c),0);self.assertEqual(c.u(tag.METERS),750)
+            c.w(c.actors[0]+2376,11);self.assertEqual(begin(c),1)
+            self.assertEqual(c.u(c.actors[1]+2376),action)
+            self.assertEqual(c.u(c.actors[2]+2376),11)
+            native_dash(c);hit(c);run(c,rush.TICK)
+            self.assertEqual(c.connections,[(0,2,1)])
+            self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],[0,750,0,750])
+
+    def test_attempt_spends_only_initiator_and_contact_spends_partner(self):
+        for keep in (False,True):
+            for index in range(4):
+                with self.subTest(keep=keep,index=index):
+                    c=machine();c.w(tag.CONTROL+tag.C['keep_meter_on_miss'],int(keep))
+                    victim=1 if index%2==0 else 0
+                    c.r[4:7]=[index,index^2,victim];run(c,rush.BEGIN);self.assertEqual(c.r[2],1)
+                    expected=[750]*4
+                    if not keep:expected[index]=0
+                    self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],expected)
+                    c.w(c.actors[index]+2376,285);c.w(c.actors[index]+2420,332)
+                    c.r[4:8]=[c.actors[index],c.actors[victim],4,0];run(c,launch.CONTACT)
+                    run(c,rush.TICK)
+                    self.assertEqual(c.connections,[(index,index^2,victim)])
+                    landed=[0 if i%2==index%2 else 750 for i in range(4)]
+                    self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],landed)
+                    # A later cleanup cannot repay either confirmed cost.
+                    c.r[4]=1;run(c,rush.CANCEL)
+                    self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],landed)
+
+    def test_miss_or_refused_cinematic_never_spends_partner_meter(self):
+        for keep in (False,True):
+            for reason in ('timeout','wrong_target','native_miss','damage','preflight'):
+                with self.subTest(keep=keep,reason=reason):
+                    c=machine();c.w(tag.CONTROL+tag.C['keep_meter_on_miss'],int(keep))
+                    self.assertEqual(begin(c),1);native_dash(c)
+                    if reason=='timeout':c.w(rush.STATE+rush.S['ticks'],rush.TIMEOUT)
+                    elif reason=='wrong_target':hit(c,3)
+                    elif reason=='native_miss':c.w(c.actors[0]+2376,11)
+                    elif reason=='damage':c.w(c.actors[0]+0x9E4,29999)
+                    else:
+                        hit(c);c.callbacks[tag.START]=lambda m:m.r.__setitem__(2,0)
+                    run(c,rush.TICK)
+                    self.assertFalse(c.connections);self.assertFalse(c.damage)
+                    self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],
+                                     [750 if keep else 0,750,750,750])
+                    self.assertEqual(c.u(tag.CONTROL+tag.C['approaching']),0)
+
+    def test_cancel_never_refunds_to_dead_consumed_or_replaced_actor_slots(self):
+        for keep in (False,True):
+            for cause in ('dead','consumed','new_model','new_actor','new_manager'):
+                with self.subTest(keep=keep,cause=cause):
+                    c=machine();c.w(tag.CONTROL+tag.C['keep_meter_on_miss'],int(keep))
+                    begin(c)
+                    # Emulate another legitimate owner resetting that slot's
+                    # meter. Cancellation must not invent a later refund.
+                    c.w(tag.METERS,13)
+                    if cause=='dead':c.w(c.actors[0]+0x9E4,0)
+                    elif cause=='consumed':c.w(tag.participation.CONTROL+16,1)
+                    elif cause=='new_model':c.w(c.models[0]+12,99)
+                    elif cause=='new_actor':c.w(tag.core.POINTERS,c.actors[0]+0x10000)
+                    else:c.w(c.r[28]-22364,c.u(c.r[28]-22364)+0x10000)
+                    c.r[4]=1;run(c,rush.CANCEL)
+                    self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],[13,750,750,750])
+
     def test_begin_queues_real_ultimate_prelude_then_rush_and_leaves_other_bodies(self):
         c=machine();others=[c.read(c.actors[i],0x1600) for i in (1,2,3)]
         positions=[c.pos(i) for i in range(4)];self.assertEqual(begin(c),1)
@@ -199,6 +268,28 @@ class ApproachTests(unittest.TestCase):
             run(c,rush.TICK)
             self.assertEqual(c.connections,[],kind);self.assertEqual(c.damage,[],kind)
             self.assertEqual(c.u(tag.CONTROL+tag.C['approaching']),0,kind)
+
+    def test_healing_during_native_rush_is_allowed_but_later_damage_interrupts(self):
+        for index in (0,2):
+            for bank in (0,1):
+                for subsequent in ('contact','damage'):
+                    with self.subTest(index=index,bank=bank,subsequent=subsequent):
+                        c=machine();actor=c.actors[index]
+                        c.w(actor+0x994,bank);hp=actor+0x9E4+164*bank;c.w(hp,29750)
+                        c.r[4:7]=[index,index^2,1];run(c,rush.BEGIN);self.assertEqual(c.r[2],1)
+                        c.w(actor+2376,285);c.w(actor+2420,332);c.w(actor+2388,-1)
+                        c.w(hp,30000);run(c,rush.TICK)
+                        self.assertEqual(c.u(tag.CONTROL+tag.C['approaching']),1)
+                        self.assertEqual(c.u(rush.ROWS+rush.R['hp']),30000)
+                        self.assertEqual(c.u(rush.STATE+rush.S['misses']),0)
+                        self.assertEqual(c.u(hp),30000)
+                        if subsequent=='contact':
+                            c.r[4:8]=[actor,c.actors[1],4,0];run(c,launch.CONTACT)
+                        else:c.w(hp,29999)
+                        run(c,rush.TICK)
+                        self.assertEqual(c.connections,[(index,index^2,1)] if subsequent=='contact' else [])
+                        self.assertEqual(c.u(rush.STATE+rush.S['reason']),0 if subsequent=='contact' else 7)
+                        self.assertFalse(c.damage)
 
     def test_pause_holds_watchdog_stale_manager_never_writes_captured_models(self):
         c=machine();begin(c);c.w(rush.A(0x333700),1)

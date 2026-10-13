@@ -37,6 +37,7 @@ class ReleaseAdmissionTests(unittest.TestCase):
         self.assertEqual(mod_settings.DEFAULTS['tag_team_rush_charge_seconds'],25)
         self.assertFalse(mod_settings.DEFAULTS['tag_team_rush_training_full'])
         self.assertFalse(mod_settings.DEFAULTS['tag_team_rush_shared_camera'])
+        self.assertFalse(mod_settings.DEFAULTS['tag_team_rush_keep_meter_on_miss'])
         note=mod_settings.notes['Tag-team rush']
         for language in ('en','es'):
             translated=localization.tr(note,language)
@@ -51,10 +52,17 @@ class ReleaseAdmissionTests(unittest.TestCase):
         script=('import os; import kit_settings as s; import kit_prepare_launch as launch; '
                 'from unittest.mock import patch; '
                 'keys=("tag_team_rush_enabled","tag_team_rush_damage",'
-                '"tag_team_rush_charge_seconds","tag_team_rush_training_full","tag_team_rush_shared_camera"); '
+                '"tag_team_rush_charge_seconds","tag_team_rush_training_full","tag_team_rush_shared_camera",'
+                '"tag_team_rush_keep_meter_on_miss"); '
                 'assert not s.match_settings({"tag_team_rush_enabled":True},{},"en")[keys[0]]; '
                 'assert all(k in s.CLASS for k in keys); '
                 'assert all(k not in s.GAMEPLAY for k in keys); '
+                'assert s.CLASS[keys[-1]]=="na"; '
+                'assert s.gameplay_problems({keys[-1]:True}); '
+                'assert keys[-1] not in s.gameplay_diff({keys[-1]:True}); '
+                'assert keys[-1] not in s.LOCAL; '
+                'assert s.match_settings({keys[-1]:True},{},"en")==s.match_settings({},{},"en"); '
+                'assert s.match_settings({},{},"en")[keys[-1]] is False; '
                 'os.environ["TAGTEAM_TAG_RUSH_PLAYTEST"]="1"; '
                 'os.environ["TAGTEAM_TAG_RUSH_ROOT"]="test"; '
                 'os.environ["TAGTEAM_TAG_RUSH_SETTINGS"]="test.json"; '

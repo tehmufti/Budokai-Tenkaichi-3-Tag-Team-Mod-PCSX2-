@@ -36,13 +36,13 @@ FULL_X, FULL_LABEL = 123, 38
 PANEL_X, PANEL_LABEL, LABEL_GAP = 118, 33, 9
 PANEL_LABEL_MAX = 50   # rows: a large panel's meter stays above the 3/4-view fusion captions (top + 70)
 # BT4's status has a second row under the main gauge's middle third (ki bars, stocks and its own small gauge, rows
-# 33..51): the meter goes one row lower there, still clear of the partner panel (x <= 109).
+# 33..51). Put the meter in the space beside the reserve portrait (x <= 109), twelve native pixels left and ten
+# down from its old position. Split panels use the same offset in their own 256-unit coordinates; the existing
+# vertical cap still keeps large panels clear of fusion captions.
 import mod_settings as _settings   # the tree's adapter fact ('BT3' / 'BT4'); native_map maps BT4 to bt3-usa
 if _settings.ADAPTER == 'BT4':
-    FULL_LABEL = 56
-    # BT4's split-screen frame: its ki bars reach 124/256 of the panel and rows 33..49; the meter starts right of them
-    # and below the frame's lower edge (live B14 REV2 three/four-view frames).
-    PANEL_X, PANEL_LABEL = 130, 58
+    FULL_X, FULL_LABEL = 111, 66
+    PANEL_X, PANEL_LABEL = 118, 68
 SPLIT_SLOT = 0x58     # stack word: split view index + 1 (0 = one full view)
 
 
@@ -225,6 +225,10 @@ def draw_code():
     a.r(16, 8, 0); a.i(63, 8, 29, 0x48)
     a.r(18, 8, 0); a.i(63, 8, 29, 0x50)
     a.sw(0, 29, SPLIT_SLOT)
+    # Draw the scoped beam-ending white fade before hiding cinematic meters.
+    import tag_rush_effects as effects
+    a.li(8,effects.CONTROL);a.lw(9,8);a.li(10,effects.MAGIC)
+    a.branch(5,9,10,'white_done');a.call(effects.WHITE_DRAW);a.label('white_done')
     core.gate(a, 'done')
     a.li(16, CONTROL); a.lw(9, 16); a.li(8, MAGIC); a.branch(5, 9, 8, 'done')
     a.lw(9, 16, 4); a.lw(8, 28, -22364); a.branch(5, 9, 8, 'done')

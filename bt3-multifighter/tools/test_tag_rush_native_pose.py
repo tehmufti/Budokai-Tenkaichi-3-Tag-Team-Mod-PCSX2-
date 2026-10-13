@@ -7,6 +7,7 @@ if not _test_elf_path(_TestPath(__file__).resolve().parents[1]).is_file():
     raise _TestUnit.SkipTest('An extracted game executable is required for native tag tests')
 
 import unittest
+from unittest.mock import patch
 import tag_rush_native_pose as pose
 import tag_rush_scene as scene
 import tag_rush_assets as assets
@@ -26,6 +27,39 @@ def enter(c,role=0):
 
 
 class NativePoseTests(unittest.TestCase):
+    def test_piccolo_holds_actual_two_finger_firing_endpoint_through_the_beam(self):
+        for hz in (25,30):
+            for character,fire in ((22,332),(23,264)):
+                with patch.object(pose,'ACTOR_HZ',hz):
+                    c=fixture();model=c.models[0];start(c);row=scene.ROWS
+                    c.w(model+12,character);c.w(row+scene.R['character'],character)
+                    for clip in range(fire-3,fire+1):
+                        pointer=0x3B00000+clip*4;c.w(model+192+clip*4,pointer);c.w(pointer,256)
+                    def selected(m):m.r[2]=fire;m.r[3]=0
+                    c.callbacks[pose.profiles.QUERY]=selected
+                    original=c.callbacks[scene.A(0x1C3E60)]
+                    def lengths(m):
+                        original(m);m.fw(model+2884,{fire-3:14.,fire-2:30.,fire-1:19.,fire:30.}.get(m.r[5],30.))
+                    c.callbacks[scene.A(0x1C3E60)]=lengths
+                    c.w(assets.BASE+28,pose.OWN_CLASH_POSE|pose.CHARGE_BEAM|2)
+                    self.assertEqual(enter(c),1)
+                    ignition=(90*hz+59)//60
+                    for tick in range(1,ignition+40):
+                        c.r[4:6]=[0,row];run(c,pose.TICK);self.assertEqual(c.r[2],1)
+                        if tick>=ignition:
+                            self.assertEqual(c.u(row+pose.CLIP),fire-1)
+                            self.assertEqual(c.u(c.actors[0]+2420),fire-1)
+                            self.assertEqual(c.fr(model+3192),18.)
+                            self.assertEqual(c.fr(model+3200),0.)
+                            self.assertEqual(c.u(row+pose.FIRE_CLIP),fire)
+                    self.assertFalse(any(clip==fire for _,clip,_ in c.idle_starts))
+                    self.assertEqual(c.u(c.actors[0]+2376),11)
+                    self.assertEqual(c.damage,[])
+                    c.r[4]=1;run(c,scene.FINISH)
+                    self.assertEqual(c.u(row+pose.ACTIVE),0)
+                    self.assertEqual(c.u(c.actors[0]+2420),0)
+                    self.assertNotEqual(c.fr(model+3200),0.)
+
     def test_charge_uses_the_native_startup_charge_windup_and_fire_sequence(self):
         from extra_throws import NATIVE
         import struct
@@ -65,13 +99,16 @@ class NativePoseTests(unittest.TestCase):
         c.callbacks[scene.A(0x1C3E60)]=long_windup
         c.w(assets.BASE+28,pose.OWN_CLASH_POSE|pose.CHARGE_BEAM|2)
         self.assertEqual(enter(c),1)
+        seen=[]
         for tick in range(1,46):
+            seen.append(c.u(row+pose.CLIP))
             c.r[4:6]=[0,row];run(c,pose.TICK);self.assertEqual(c.r[2],1)
             if tick==30:
                 self.assertEqual(c.u(row+pose.CLIP),263)
                 self.assertAlmostEqual(c.fr(model+3200),159./15.,places=5)
         self.assertEqual(c.u(row+pose.CLIP),264)
         self.assertEqual(c.u(row+pose.CLOCK),45)
+        self.assertIn(262,seen)  # Even a150-frame anticipation reaches its own charge loop.
 
     def test_unavailable_or_paired_charge_preserves_safe_clash_fallback(self):
         for bad in ('missing','paired','primary rush'):

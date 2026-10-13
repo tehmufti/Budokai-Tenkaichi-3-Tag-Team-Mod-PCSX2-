@@ -32,10 +32,16 @@ import tag_rush_recovery as recovery
 import tag_rush_audio_queue as audio_queue
 import tag_rush_beam_audio as beam_audio
 import tag_rush_launch as launch
+import tag_rush_cpu as cpu_tags
+import tag_rush_pose_profiles as pose_profiles
+import tag_rush_authored_hold as authored_hold
+import tag_rush_special_beam as special_beam
 
 META, META_SIZE, META_MAGIC = 0x06D0F000, 0x800, 0x54494E31
 CACHE_ROOT = ROOT/'.cache'/'tag-rush'
 CACHE_VERSION = 3
+SPECIAL_BASE, SPECIAL_DATA_END, SPECIAL_END = 0x06E60000, 0x06E7B000, 0x06E80000
+FULL_NELSON_BASE, FULL_NELSON_END = 0x06E80000, 0x06E90000
 NETPLAY_CONTROL, NETPLAY_MAGIC = 0x07B01000, 0x4E504631
 PLAYTEST_ENV, PLAYTEST_ROOT_ENV = 'TAGTEAM_TAG_RUSH_PLAYTEST', 'TAGTEAM_TAG_RUSH_ROOT'
 
@@ -64,7 +70,9 @@ def _identity(iso):
     if not path.is_file():raise ValueError('Tag-rush assets require an ISO file')
     asset_source=Path(assets.__file__)
     sources={asset_source.name:hashlib.sha256(asset_source.read_bytes()).hexdigest()}
-    for name in ('tag_rush_shots.py','tag_rush_choreography.py'):
+    for name in ('tag_rush_shots.py','tag_rush_choreography.py','tag_rush_special_pair.py',
+                 'tag_rush_full_nelson_native.py','tag_rush_authored_hold.py',
+                 'tag_rush_special_beam.py'):
         dependency=asset_source.with_name(name)
         try:sources[name]=hashlib.sha256(dependency.read_bytes()).hexdigest()
         except FileNotFoundError:sources[name]=None
@@ -84,7 +92,7 @@ def _asset_plan(payload):
     plan=copy.deepcopy(payload);blocks=[]
     for block in plan['blocks']:
         p=block['address'];data=bytes.fromhex(block['data_hex'])
-        if type(p) is not int or p%16 or not data or not assets.BASE<=p<p+len(data)<=assets.END:
+        if type(p) is not int or p%16 or not data or not (assets.BASE<=p<p+len(data)<=assets.END or SPECIAL_BASE<=p<p+len(data)<=SPECIAL_DATA_END or special_beam.RESOURCE<=p<p+len(data)<=special_beam.END):
             raise ValueError('Invalid cached tag animation block')
         blocks.append((p,data))
     blocks.sort()
@@ -94,6 +102,7 @@ def _asset_plan(payload):
             raise ValueError('Invalid cached tag animation descriptor')
     plan['blocks']=blocks
     _beam_mutable(plan)
+    _special_beam_mutable(plan)
     return plan
 
 
@@ -119,11 +128,33 @@ def _beam_mutable(pack):
     return [(base+offset,base+offset+size) for offset,size in reviewed['mutable_ranges']]
 
 
-def _immutable_parts(blocks,mutable):
+def _special_beam_mutable(pack):
+    """Authenticate the second native recipe before allowing its relocations."""
+    beam=pack.get('special_beam_asset')
+    nested=(pack.get('beam_asset') or {}).get('special_beam')
+    if beam is None and nested is None:return []
+    if beam is None or nested is None or _json(beam)!=_json(nested):
+        raise ValueError('Cached Special Beam Cannon binding changed')
+    def read(key):
+        address,size=beam[key+'_address'],beam[key+'_size']
+        if type(address)is not int or type(size)is not int or address%16 or size<=0:
+            raise ValueError('Invalid cached Special Beam Cannon resource')
+        for base,data in pack['blocks']:
+            if base<=address and address+size<=base+len(data):
+                return data[address-base:address-base+size]
+        raise ValueError('Special Beam Cannon resource escaped its asset block')
+    reviewed=special_beam.validate_asset(read('resource'),read('metadata'))
+    for key,value in reviewed.items():
+        if _json(beam.get(key))!=_json(value):
+            raise ValueError('Cached Special Beam Cannon recipe changed')
+    return special_beam.mutable_ranges(beam)
+
+
+def _immutable_parts(blocks,mutable,extra_mutable=()):
     """Keep checks on both sides of small native-written fields within blocks."""
     ranges=sorted(mutable)
     for lo,hi in ranges:
-        if type(lo) is not int or type(hi) is not int or not tag.BASE<=lo<hi<=tag.END:
+        if type(lo) is not int or type(hi) is not int or not (tag.BASE<=lo<hi<=tag.END or (lo,hi)==(tag.INPUT_BUFFERS,tag.INPUT_BUFFERS_END) or (lo,hi) in extra_mutable):
             raise ValueError('Invalid tag-rush runtime data range')
     for p,data in blocks:
         cursor=p;end=p+len(data)
@@ -225,7 +256,11 @@ def admission_block(pack,admission):
         name=names[character].get('base_name') or names[character].get('name','')
         if not name:raise ValueError('A tag-rush fighter has an empty character name')
         flags[character]=1 | (0 if normalized(name) in non_ki else 2)
-    address=(max(p+len(b) for p,b in pack['blocks'])+15)&~15
+    # Additional cinematic source banks have their own reservations. Admission
+    # belongs only in the main asset tail, never after the highest guest address.
+    main_ends=[p+len(b) for p,b in pack['blocks'] if assets.BASE<=p<p+len(b)<=assets.END]
+    if not main_ends:raise ValueError('Tag-rush admission has no main asset storage')
+    address=(max(main_ends)+15)&~15
     if address+len(flags)>assets.END:raise ValueError('Tag-rush admission table exceeds asset storage')
     return (address,bytes(flags)),{0x3A0:address,0x3A4:size}
 
@@ -234,7 +269,7 @@ def _control(manager,count,options,training,scene_plan,admission_words):
     import tag_rush_shots as shots
     result=bytearray(tag.control_bytes(manager,count,options,training=training,ready=False))
     words=dict(scene_plan.get('control_words',{}))
-    if any(offset not in (tag.C['scene_table'],*range(0x80,0xA4,4),shots.TABLE_OFFSET,shots.MAGIC_OFFSET,0xAC,0xB0) for offset in words):
+    if any(offset not in (tag.C['scene_table'],*range(0x80,0xA4,4),shots.TABLE_OFFSET,shots.MAGIC_OFFSET,0xAC,0xB0,0xB8,0xBC) for offset in words):
         raise ValueError('Director tried to publish a reserved tag control field')
     words.update(admission_words)
     for offset,value in words.items():
@@ -304,6 +339,15 @@ def _meta_bytes(record):
     return struct.pack('<2I',META_MAGIC,len(data))+data+bytes(META_SIZE-8-len(data))
 
 
+def _authored_hold_receipt(blocks):
+    """Require the reviewed acquisition and frozen endpoints before hooking."""
+    expected=authored_hold.data()
+    selected=[bytes(data) for address,data in blocks if address==authored_hold.DATA]
+    if selected!=[expected]:
+        raise ValueError('Tag authored hold endpoints changed; prepare a new match')
+    return authored_hold.receipt()
+
+
 def _not_usable(reason,source,**extra):
     return dict(blocks=[],usable=False,status='Tag rush not armed',source=str(source),limitations=[reason],**extra)
 
@@ -345,11 +389,24 @@ def review_playtest_assets(pack,iso=None):
     if not pack.get('beam_asset') or not pack['beam_asset'].get('reviewed'):
         raise ValueError('Tag attack requires the reviewed native beam resources')
     _beam_mutable(pack)
+    _special_beam_mutable(pack)
     if iso is None:
         raise ValueError('The game disc is required to review tag finisher poses')
     # Derived clips must be reproducible from the selected disc. A self-consistent
     # cache hash alone cannot establish their source, channel data or root edits.
     reviewed_clips=assets.prepared_clips(iso)
+    import tag_rush_special_pair as special
+    reviewed_special=special.build(iso)
+    # Rebuild the complete separately reserved donor bank, including its bind
+    # descriptors. Cache hashes alone must not bless a changed restraint pose.
+    for base,data in reviewed_special['blocks']:
+        if read(base,len(data))!=data:raise ValueError('Special tag restraint source changed')
+    for row in reviewed_special['clips']:
+        source=assets.ClipSource(row['character'],row['animation'],row['mesh_entry'])
+        for base,data in reviewed_special['blocks']:
+            if base<=row['address'] and row['address']+row['size']<=base+len(data):
+                reviewed_clips[source]=animations.decompress_animation(
+                    data[row['address']-base:row['address']-base+row['size']]);break
     clips={}
     for row in pack.get('clips',[]):
         key=assets.ClipSource(row['character'],row['animation'],row['mesh_entry'])
@@ -400,19 +457,24 @@ def review_playtest_assets(pack,iso=None):
     custom_donors=pack['custom_role_donors_address']
     if struct.unpack('<3I',read(custom_donors,12))!=(models[0],)*3:
         raise ValueError('Tag attack finisher donor bindings changed')
-    names=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+    special_donors=pack['special_role_donors_address']
+    if struct.unpack('<3I',read(special_donors,12))!=(reviewed_special['donor_model'],models[0],reviewed_special['donor_model']):
+        raise ValueError('Special tag restraint donor bindings changed')
+    names=choreography.VARIANTS
     if set(pack.get('variants',{}))!=set(names):raise ValueError('Tag attack variants are incomplete')
     for name in names:
         row=pack['variants'][name];phases=assets.timeline(name)
         if row['count']!=len(phases):raise ValueError('Tag attack phase count changed')
         for i,phase in enumerate(phases):
-            phase_donors=custom_donors if phase.flags&assets.CUSTOM_FINISHER else donors
+            phase_donors=(special_donors if name==special.NAME else
+                          custom_donors if phase.flags&assets.CUSTOM_FINISHER else donors)
             expected=(phase.source_frames,*(clips.get(role,0) for role in phase.roles),*phase.starts,phase.flags,
                       *(role.animation if role else 0 for role in phase.roles),*phase.ends,assets.SOURCE_FPS,phase_donors)
             if struct.unpack('<16I',read(row['address']+i*64,64))!=expected:
                 raise ValueError('Tag attack phase descriptor changed')
     staging=b''.join(struct.pack('<4f',*row) for name in names
-                    for row in assets.NATIVE_STAGING[:4]+((0.,0.,0.,0.),)*(len(assets.timeline(name))-4))
+                    for row in (((0.,0.,0.,0.),)*len(assets.timeline(name)) if name==special.NAME else
+                                assets.NATIVE_STAGING[:4]+((0.,0.,0.,0.),)*(len(assets.timeline(name))-4)))
     if read(pack['staging_address'],len(staging))!=staging:raise ValueError('Tag attack staging changed')
     choreography_info=pack.get('choreography_asset') or {}
     stage_table=choreography_info.get('table_address')
@@ -466,7 +528,7 @@ def build_playtest(*args,**kwargs):
     return build_offline(*args,**kwargs)
 
 
-def _ready_receipts(ram,manager,count):
+def _ready_receipts(ram,manager,count,pack=None):
     """An armed reinstall must still possess the guest's exact FX receipts."""
     pool=_u(ram,GP+GPO(effects.NATIVE_POOL_OFFSET))
     if pool%4 or not 0x100000<=pool<=len(ram)-24:
@@ -485,6 +547,8 @@ def _ready_receipts(ram,manager,count):
                              (effects.DESC+796,row+effects.HEADER)):
             if _u(ram,row+off)!=expected:
                 raise ValueError('Existing tag-rush effect preparation receipt changed')
+    if pack and pack.get('special_beam_asset'):
+        special_beam.ready_receipts(ram,pack['special_beam_asset'],manager,count)
 
 
 @modes.matching_install
@@ -538,6 +602,13 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
         return _not_usable(' '.join(scene_plan.get('limitations') or ['Tag-rush cinematic effects are not ready.']),source,characters=admission)
     try:admission_data,admission_words=admission_block(pack,admission)
     except ValueError as error:return _not_usable(str(error),source,characters=admission)
+    hold_receipt=_authored_hold_receipt(scene_plan['blocks'])
+    pose_plan=None
+    if reviewed:
+        try:pose_plan=pose_profiles.build_assets(iso,bt4=SERIAL=='SLUS-21978')
+        except (OSError,ValueError,KeyError,struct.error) as error:
+            return _not_usable('Tag beam poses are incomplete: '+str(error),source,characters=admission)
+        admission_words=dict(admission_words);admission_words[pose_profiles.TABLE_OFFSET]=pose_plan['table_address']
     control,scene_words=_control(manager,count,options,training,scene_plan,admission_words)
     # Refuse old checkpoints missing native provenance or selective actor holds.
     import inactive_actor_guard as inactive
@@ -549,6 +620,19 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
     config['training']=bool(training)
     config['reviewed_assets']=reviewed
     configuration=hashlib.sha256(_json(config)).hexdigest()
+    for address,native,patched in cpu_tags.hooks():
+        if ram[address:address+len(native)]!=(patched if existing else native):
+            raise ValueError('Native tag CPU decision hook changed; prepare a new match')
+    if not existing and any(ram[cpu_tags.BASE:cpu_tags.END]):
+        raise ValueError('Tag CPU decision reservation is occupied')
+    if not existing and any(ram[pose_profiles.BASE:pose_profiles.END]):
+        raise ValueError('Tag beam pose reservation is occupied')
+    if not existing and any(ram[SPECIAL_BASE:SPECIAL_END]):
+        raise ValueError('Tag special pair reservation is occupied')
+    if not existing and any(ram[FULL_NELSON_BASE:FULL_NELSON_END]):
+        raise ValueError('Tag full-nelson pose reservation is occupied')
+    if not existing and any(ram[special_beam.BASE:special_beam.END]):
+        raise ValueError('Tag Special Beam Cannon reservation is occupied')
     expected_status=recovery.INSTALLED_HOOK if existing else recovery.NATIVE_HOOK
     if ram[recovery.HOOK:recovery.HOOK+8]!=expected_status:
         raise ValueError('Native tag recovery status hook changed; prepare a new match')
@@ -575,6 +659,8 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
         record=_read_meta(ram)
         if (record.get('manager'),record.get('count'),record.get('iso'),record.get('settings'))!=(manager,count,identity,configuration):
             raise ValueError('Tag-rush settings or capture changed; prepare a new match')
+        if _json(record.get('authored_hold'))!=_json(hold_receipt):
+            raise ValueError('Existing tag authored hold endpoints changed; prepare a new match')
         if record.get('native_contact')!=native_contact.hex():
             raise ValueError('Existing tag-rush native contact predecessor changed')
         site,previous=record['frame_site'],record['previous']
@@ -587,26 +673,36 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
         head=bytes(ram[contact.PROTECTED:contact.PROTECTED+8])
         original=head if _u(head,0)>>26==2 else bytes(ram[contact.PROTECTED:contact.PROTECTED+len(contact.protected_code())])
         record=dict(version=1,manager=manager,count=count,iso=identity,settings=configuration,
-                    frame_site=site,previous=previous,contact=original.hex(),native_contact=native_contact.hex())
+                    frame_site=site,previous=previous,contact=original.hex(),native_contact=native_contact.hex(),
+                    authored_hold=hold_receipt)
     static=[(tag.FRAME,tag.frame_code(previous,bootstrap=True)),(tag.GATE,tag.gate_code()),(tag.ELIGIBLE,tag.eligible_code()),
+            (tag.VICTIM_ELIGIBLE,tag.eligible_code(tag.VICTIM_ELIGIBLE,victim=True)),
+            (tag.BUFFER_TARGET,tag.eligible_code(tag.BUFFER_TARGET,victim=True,buffered=True)),
+            (tag.INPUT_BUFFERS,bytes(tag.INPUT_BUFFERS_END-tag.INPUT_BUFFERS)),
+            (tag.BUFFER_INPUT,tag.buffer_input_code()),(tag.INPUT_GATE,tag.gate_code(tag.INPUT_GATE,allow_manager_pause=True)),
             (tag.INPUT,tag.input_code()),(tag.TICK,tag.tick_code()),*scene_plan['blocks'],
             *pack['blocks'],admission_data,*camera.pieces(),*captions.pieces(options),*safety.pieces(original),
             *bootstrap.pieces(manager,count,beam_audio=reviewed),*active_pause.pieces(),
-            (launch.CONTACT_OLD,native_contact)]
+            (launch.CONTACT_OLD,native_contact),*cpu_tags.pieces()]
+    if pose_plan is not None:static.extend(pose_profiles.pieces(pose_plan)[len(pose_profiles.pieces()):])
     if reviewed:static.extend(beam_audio.pieces(iso,manager))
     # STATE is runtime data; neither a repeated install nor new HUD composition
     # should clear the finisher latch or scene ownership.
-    mutable=[(safety.STATE,safety.STATE+0x100),(bootstrap.STATE+12,bootstrap.STATE_END),
+    mutable=[(tag.INPUT_BUFFERS,tag.INPUT_BUFFERS_END),(safety.STATE,safety.STATE+0x100),(bootstrap.STATE+12,bootstrap.STATE_END),
              *scene_plan.get('mutable_ranges',[]),*_beam_mutable(pack)]
     if reviewed:mutable.append((beam_audio.STATE+8,beam_audio.STATE+64))
-    immutable=list(_immutable_parts(static,mutable))
+    beam_mutable=_special_beam_mutable(pack)
+    mutable.extend(beam_mutable)
+    immutable=list(_immutable_parts(static,mutable,beam_mutable))
     for p,b in static:
-        if not tag.BASE<=p<p+len(b)<=tag.END:raise ValueError('Tag-rush program escaped its reservation')
+        if not (tag.BASE<=p<p+len(b)<=tag.END or cpu_tags.BASE<=p<p+len(b)<=cpu_tags.END or pose_profiles.BASE<=p<p+len(b)<=pose_profiles.END or SPECIAL_BASE<=p<p+len(b)<=SPECIAL_END or FULL_NELSON_BASE<=p<p+len(b)<=FULL_NELSON_END or special_beam.BASE<=p<p+len(b)<=special_beam.END):
+            raise ValueError('Tag-rush program escaped its reservation')
     spans=sorted((p,p+len(b)) for p,b in static)+[(META,META+META_SIZE),(tag.CONTROL,tag.CONTROL+0x400)]
     spans.sort()
     if any(end>begin for (_,end),(begin,_) in zip(spans,spans[1:])):raise ValueError('Tag-rush programs overlap')
     if existing:
-        fixed_words=('magic','manager','count','enabled','shared','charge_ticks','damage','training_full','training')
+        fixed_words=('magic','manager','count','enabled','shared','charge_ticks','damage','training_full','training','keep_meter_on_miss',
+                     'sacrifice_enabled','sacrifice_multiplier')
         for offset in (*[tag.C[key] for key in fixed_words],*scene_words):
             if ram[tag.CONTROL+offset:tag.CONTROL+offset+4]!=control[offset:offset+4]:
                 raise ValueError('Existing tag-rush control changed')
@@ -614,7 +710,7 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
         if phase not in (bootstrap.WAITING,bootstrap.READY,bootstrap.FAILED) or ready not in (0,1):
             raise ValueError('Existing tag-rush initialization state changed')
         if ready and phase!=bootstrap.READY:raise ValueError('Tag rush was armed before guest initialization')
-        if ready:_ready_receipts(ram,manager,count)
+        if ready:_ready_receipts(ram,manager,count,pack)
         import native_hud_style
         classic=native_hud_style.classic_view(ram)   # the optional native HUD style re-points caption and meter calls
         for p,b in immutable:
@@ -627,9 +723,10 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
             (recovery.HOOK,recovery.INSTALLED_HOOK),(audio_queue.HOOK,audio_queue.INSTALLED_HOOK),
             (launch.CONTACT_HOOK,launch.CONTACT_PATCH),(launch.RETARGET_HOOK,launch.RETARGET_PATCH),
             (launch.COMMIT_HOOK,launch.COMMIT_PATCH)]
+    parts.extend((address,patched) for address,_,patched in cpu_tags.hooks())
     if reviewed:parts.append((beam_audio.HOOK,beam_audio.INSTALLED_HOOK))
     # The installed hooks remain inert until the guest bootstrap initializes
     # both native FX descriptors and publishes ready on the game thread.
     return dict(blocks=[dict(address=p,expected_hex=bytes(ram[p:p+len(b)]).hex(),data_hex=bytes(b).hex()) for p,b in parts],
                 usable=True,status='Tag attacks installed',source=str(source),characters=admission,
-                assets_bytes=pack.get('bytes_used',0),limitations=scene_plan.get('limitations',[]))
+                assets_bytes=pack.get('bytes_used',0)+(pose_plan or {}).get('bytes_used',0),limitations=scene_plan.get('limitations',[]))

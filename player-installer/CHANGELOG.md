@@ -1,3 +1,16 @@
+## Version 13
+
+Version 13 gives tag attacks more variety and adds pictures to Mod Settings so you can see what the visual options do before saving.
+
+- Tag attack endings have new choreography and better hit reactions. Beam poses and colors now vary by character.
+- Early Goku and Early Piccolo have their own grab attack. By default, it deals extra damage to both Goku and the enemy; you can turn Goku's damage off or adjust the multiplier.
+- CPUs can use tag attacks when both fighters have full meters.
+- Missing a tag rush empties your meter by default, while your partner keeps theirs. There's an option to keep your meter after a miss.
+- Settings pictures update as you change options, with shared previews for target markers, fusion timers and revival rings. Spanish numbers use decimal commas.
+- The BT4 tag meter sits below its HUD, and HUD rendering stays sharp without the stray lines.
+
+Tag attacks are available offline in BT3 USA and BT4. For a new installation, download the Windows ZIP or Linux archive. If you already have the mod, use the matching **Updater**; your settings and saves carry over. Everyone playing online together should use the same version.
+
 ## Version 12
 
 Version 12 adds tag-team rush attacks and gives the mod's HUD and online menus a look closer to the original game.

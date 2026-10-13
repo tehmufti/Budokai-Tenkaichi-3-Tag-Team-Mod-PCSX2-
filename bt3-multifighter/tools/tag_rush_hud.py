@@ -225,6 +225,10 @@ def draw_code():
     a.r(16, 8, 0); a.i(63, 8, 29, 0x48)
     a.r(18, 8, 0); a.i(63, 8, 29, 0x50)
     a.sw(0, 29, SPLIT_SLOT)
+    # Draw the scoped beam-ending white fade before hiding cinematic meters.
+    import tag_rush_effects as effects
+    a.li(8,effects.CONTROL);a.lw(9,8);a.li(10,effects.MAGIC)
+    a.branch(5,9,10,'white_done');a.call(effects.WHITE_DRAW);a.label('white_done')
     core.gate(a, 'done')
     a.li(16, CONTROL); a.lw(9, 16); a.li(8, MAGIC); a.branch(5, 9, 8, 'done')
     a.lw(9, 16, 4); a.lw(8, 28, -22364); a.branch(5, 9, 8, 'done')

@@ -81,9 +81,10 @@ DISPLAY_KEYS = (FRIEND_BARS_KEY, ENEMY_BARS_KEY, NATIVE_HUD_KEY, KILL_FEED_KEY, 
 BEAM_KEYS = ('beam_clash_camera', 'beam_struggle_length', 'beam_struggle_push_ahead', 'beam_struggle_cpu_power_percent',
              'beam_struggle_interference', 'beam_struggle_damage_penalty_percent',
              'beam_assist_enabled', 'beam_assist_multiplier_percent', 'beam_assist_cpu', 'beam_assist_range')
-# Coordinated two-attacker cinematic.
+# Local coordinated two-attacker cinematic (tag_team_rush.py).
 TAG_TEAM_RUSH_KEYS = ('tag_team_rush_enabled', 'tag_team_rush_damage', 'tag_team_rush_charge_seconds',
-                      'tag_team_rush_training_full', 'tag_team_rush_shared_camera')
+                      'tag_team_rush_keep_meter_on_miss', 'tag_team_rush_shared_camera',
+                      'tag_team_rush_sacrifice_enabled', 'tag_team_rush_sacrifice_multiplier')
 # Every key of the Movement page (ground_locomotion.py), in display order.
 MOVEMENT_KEYS = ('ground_running', 'ground_motion_style', 'ground_walk_tilt_percent', 'ground_walk_speed_percent', 'ground_run_speed_percent',
                  'ground_size_speed')
@@ -134,7 +135,7 @@ GROUPS = (
     ('Outnumbered', OUTNUMBERED_KEYS),
     ('Beam struggles', BEAM_KEYS),
     ('Training', ('training_cpu_behavior', 'training_refill_health', 'training_health_delay_seconds',
-                  'training_refill_ki', 'training_refill_stocks')),
+                  'training_refill_ki', 'training_refill_stocks', 'tag_team_rush_training_full')),
     ('Launch options (restart)', ('widescreen_patch', 'fast_disc_loading', 'emulated_cpu_speed', 'expanded_maps')),
     ('Diagnostics', ('keep_preparation_diagnostics', 'capture_freeze_dumps', 'record_battle_diagnostics')),
 )
@@ -158,7 +159,7 @@ notes = {
     'Movement': 'On the ground, fighters walk or run instead of gliding; dashes, jumps and flight stay unchanged. Classic keeps the previous animation. Natural is relaxed; Fighter has a more athletic stride. Tilt the left stick past the threshold to run; CPU fighters run. Speed and fighter size adjust the stride. Applies from the next match; Fight Again keeps the settings of its match.',
     'Cinematics': 'Special-move pause chooses who stops. Shared cameras pause everyone outside the scene for one view; off keeps separate views (paired attacks still hold their fighters). Split-screen transformations use one view or each half. Extra intros can be skipped. Zoom-out above 100% pulls the camera back. Kept in place, attacks and transformations play where they start, not at the arena centre. Applies next match; Fight Again keeps it.',
     'Battle rules': 'Tournament ring-outs use the original stage ground-contact rules. Flying outside the ring is safe until you touch a disallowed surface. Ringed-out fighters cannot be revived; their teammates keep fighting. Defeated humans can still take over a living CPU teammate when takeover is enabled. Turn this off to fight without ring-outs. Applies from the next match; Fight Again keeps the settings of its match.',
-    'Tag-team rush': 'Offline team matches on BT3 USA and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. The three participants follow the attack camera; Shared camera and pause includes everyone. Training full affects Modded Training only. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online or on BT3 Europe/Japan.',
+    'Tag-team rush': 'Offline team matches on BT3 USA and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. On a miss, only the fighter who started the rush loses meter. Keep meter after a missed rush preserves both meters. The three participants follow the attack camera; Shared camera and pause includes everyone. For Goku (Early) and Piccolo (Early), sacrifice multiplies damage to the enemy and also hurts Goku. The multiplier applies to both; off keeps normal damage without hurting Goku. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online or on BT3 Europe/Japan.',
     'Fusion': 'Allow fusions controls new human and CPU fusions; preselected forms are unaffected. Shared controls: swap every 20 s, split P1 attacks/P2 movement, or P1 only. Control messages show in swap mode. The time limit, timer and power-down apply to Fusion Dance, not Potara. Optional Potara and non-Potara buffs apply only when fusing in the match; non-Potara includes Fusion Dance. Health scales current and max HP together; damage scales outgoing damage; 2x defense halves damage taken. Off or 1x keeps native stats. Applies next match; Fight Again keeps it.',
     'Fighters': 'Ginyu can exchange bodies with the opponent he actually hits; stolen-body abilities are optional. Extra voices borrow idle native voice streams. The CPU switches and chance limit native CPU transformations; per-character exceptions override them. Humans, fusion and Body Change are unaffected. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
     'Giants': 'Larger giants scale native giant forms; expanded maps give them room. Size, attack speed, damage, stagger resistance and camera distance apply only while larger giants are on; the Cinematics zoom-out multiplies that distance up to a fixed limit. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
@@ -168,7 +169,7 @@ notes = {
     'Revival': 'Stay inside the circle of a fallen teammate for the set time. Moving and taunting keep progress; damage or leaving interrupts. Revival costs blast stocks, not ki, and restores the set health. Get-up protection, corpse safety and ring appearance are adjustable. No revival in free-for-all. Applies from the next match; a Fight Again rematch keeps its settings.',
     'Outnumbered': 'For a fighter on the smaller team or, if chosen, one targeted by two or more enemies. Damage follows the living team sizes: per extra enemy each of you faces, you deal more and take less (at most 300% dealt, at least 40% taken); equal teams and free-for-all keep normal damage. Recovery speed shortens knock-backs, get-ups and hit reactions. Protection: while you get up, ordinary hits neither stagger nor hurt you; Blast 2 attacks, rushes and throws still do. The combo breaker gives 1 s of it, at most every 5 s, never during a rush or throw. Balanced: +15%/-10%, 150%, 0.5 s, 12 hits. Strong: +40%/-30%, 200%, 1 s, 8 hits. Custom uses the rows below; the two rows about who is helped apply to every preset. The "Enemies targeting you" marks are on the HUD page. Applies from the next match; a Fight Again rematch keeps its settings.',
     'Beam struggles': "Clash camera: switch to the struggle, or keep every view on its own player. Long struggles last 2x or 4x; a set input lead wins at once. CPU strength scales CPU inputs. With hits on, enemies can hit both fighters (no grabs) and lost health weakens their push. Near a struggling ally, press R3 (1 blast stock): you fly in beside them and join, adding push and final damage. Up to four per side (x3 at most). Applies next match; Fight Again keeps it.",
-    'Training': 'Modded Training takes one to four players; share a team to practice together. The CPU stands still or fights back. Health refills after the delay, and ki and blast stocks refill. With health refill off, defeats can end the session. Native Training stays in the original menu. Applies from the next session; a Fight Again rematch keeps the settings of its session.',
+    'Training': 'Modded Training takes one to four players; share a team to practice together. The CPU stands still or fights back. Health refills after the delay, and ki and blast stocks refill. The full tag meter option keeps every Tag Attack ready in Modded Training. With health refill off, defeats can end the session. Native Training stays in the original menu. Applies from the next session; a Fight Again rematch keeps the settings of its session.',
     'Launch options (restart)': 'Applied when Play starts, so restart Play after saving. Widescreen enables the PCSX2 16:9 patch. Fast disc loading shortens loading screens. A faster emulated CPU smooths split screen; PCSX2 setting leaves the rate alone. 2x maps need Build expanded maps.cmd first (seven animated stages stay native); without that build, Play starts the original ISO.',
     'Diagnostics': 'For troubleshooting; these files can be large. Preparation dumps keep intermediate RAM images, freeze snapshots save memory when a match stops responding, and battle history records match events. Applies from the next match; a Fight Again rematch keeps the settings of its match.',
 }
@@ -722,7 +723,9 @@ def show_ui(path=None):
         except (OSError,ValueError) as failure:
             messagebox.showerror(title,tr('Your changes could not be saved.')+f'\n\n{failure}',parent=window)
             window.destroy();return 2
-    window.title(title);window.geometry('940x660');window.minsize(860,520)
+    # Wider when the screen allows it: the HUD pages show a picture beside each visual option.
+    window.title(title);window.geometry('1040x700' if window.winfo_screenwidth()>=1200 else '940x660')
+    window.minsize(860,520)
     outer=ttk.Frame(window,padding=16);outer.pack(fill='both',expand=True)
     ttk.Label(outer,text=tr('Mod settings'),font=('Segoe UI',16,'bold')).pack(anchor='w')
     header=ttk.Label(outer,text=tr(HEADER),wraplength=880);header.pack(anchor='w',pady=(4,12))
@@ -739,10 +742,17 @@ def show_ui(path=None):
     holder=ttk.Frame(body);holder.grid(row=0,column=1,sticky='nsew')
     holder.rowconfigure(0,weight=1);holder.columnconfigure(0,weight=1)
     containers={};pages={};canvases={};rows={};footers={}
+    # Pages with option pictures (settings_thumbnails): their row labels wrap to leave the picture column room.
+    pictured={};row_labels={}
     def fit(event,canvas,item,group):
         canvas.itemconfigure(item,width=event.width)
         # The help note wraps to the page, so a narrower window never clips it.
         if group in footers:footers[group].configure(wraplength=max(240,event.width-28))
+        if group in pictured:
+            controls=max((w.winfo_reqwidth() for w in pages[group].grid_slaves(column=1)
+                          if int(w.grid_info()['column'])==1),default=0)
+            wrap=max(140,min(380,event.width-controls-pictured[group]-48))
+            for label in row_labels.get(group,()):label.configure(wraplength=wrap)
     for group in listed:
         container=ttk.Frame(holder);container.grid(row=0,column=0,sticky='nsew')
         canvas=tk.Canvas(container,highlightthickness=0)
@@ -766,8 +776,9 @@ def show_ui(path=None):
         try:current=(int if fields[key][1]=='int' else float)(variables[key].get())
         except ValueError:return 'break'
         show_value(key,feature_preferences.step_value(key,current,direction,big));return 'break'
+    placed={}
     for key,(_,kind,low,high,group,label) in fields.items():
-        page=pages[group];row=rows[group];rows[group]+=1;value=controller.settings[key]
+        page=pages[group];row=rows[group];rows[group]+=1;value=controller.settings[key];placed[key]=(page,row)
         variable=(tk.BooleanVar if kind=='bool' else tk.StringVar)(
             value=value if kind in ('bool','choice','button') else str(value))
         variables[key]=variable
@@ -781,7 +792,8 @@ def show_ui(path=None):
             ttk.Checkbutton(page,text=tr(label),variable=variable,command=command).grid(
                 row=row,column=0,columnspan=2,sticky='w',pady=6)
             continue
-        ttk.Label(page,text=tr(label),wraplength=380).grid(row=row,column=0,sticky='w',pady=7,padx=(0,16))
+        caption=ttk.Label(page,text=tr(label),wraplength=380);row_labels.setdefault(group,[]).append(caption)
+        caption.grid(row=row,column=0,sticky='w',pady=7,padx=(0,16))
         if kind=='button':
             box=ttk.Frame(page);box.grid(row=row,column=1,sticky='w')
             text=tk.StringVar(value=input_binding.label(variable.get(),controller.settings));button_labels[key]=text
@@ -812,6 +824,42 @@ def show_ui(path=None):
             box.bind('<<Decrement>>',lambda event,k=key:spin(k,-1))
             box.bind('<Prior>',lambda event,k=key:spin(k,1,True))
             box.bind('<Next>',lambda event,k=key:spin(k,-1,True))
+    # Each visual option has a picture of its element beside it, drawn from the staged controls (changing an option
+    # does not save it): the game's art decoded in memory from the selected disc, rendered off the Tk thread and
+    # never written to disk (settings_thumbnails). Clicking a picture shows it larger.
+    def preview_values():
+        values=dict(controller.settings)
+        for key,var in variables.items():
+            kind=fields[key][1]
+            try:values[key]=(int(var.get()) if kind=='int' else float(var.get()) if kind=='float' else var.get())
+            except (ValueError,tk.TclError):pass
+        return values
+    try:
+        from PIL import ImageTk  # noqa: F401 (the pictures need Pillow's Tk support; without it the rows stay plain)
+        import settings_thumbnails
+    except ImportError:
+        settings_thumbnails=None
+    if settings_thumbnails is not None:
+        thumbnails=settings_thumbnails.Thumbnails(window,preview_values,localization.language(controller.settings))
+        covered=set();inside=set()
+        for key,(page,row) in placed.items():
+            if not settings_thumbnails.available(key) or key in covered:continue
+            # Adjacent options that draw the same element (the target marker's three rows) share one picture,
+            # spanned over their rows and centred on them.
+            members=[k for k in settings_thumbnails.shared(key) if k in placed and placed[k][0] is page]
+            if [placed[k][1] for k in members]!=list(range(row,row+len(members))):members=[key]
+            heading={k:tr(fields[k][5]) for k in members} if len(members)>1 else tr(fields[key][5])
+            thumbnails.attach(page,row,key,heading=heading,rowspan=len(members))
+            covered.update(members);inside.update(members[:-1])
+            pictured[fields[key][4]]=thumbnails.size[0]+16
+        for group in pictured:pages[group].columnconfigure(2,minsize=pictured[group])
+        # A hairline under each row of those pages ties every picture to its option (rows sharing a picture form
+        # one block, without lines between them).
+        for key,(page,row) in placed.items():
+            if fields[key][4] in pictured and key not in inside:
+                line=ttk.Separator(page);line.grid(row=row,column=0,columnspan=3,sticky='sew');line.lower()
+        for key,variable in variables.items():
+            variable.trace_add('write',lambda *_,k=key:thumbnails.changed(k))
     overrides=copy.deepcopy(controller.settings[NPC_OVERRIDES_KEY])
     def edit_exceptions():
         changed=show_npc_character_ui(window,overrides)
@@ -821,7 +869,7 @@ def show_ui(path=None):
     rows[group]+=1
     for group in groups:
         footers[group]=ttk.Label(pages[group],text=help_note(group),wraplength=560,foreground='#555555')
-        footers[group].grid(row=rows[group],column=0,columnspan=2,sticky='w',pady=(18,8))
+        footers[group].grid(row=rows[group],column=0,columnspan=3,sticky='w',pady=(18,8))
     # Desktop-only pages act at once (their own buttons); Save and Cancel below are for the settings pages.
     import disc_page
     def language_changed(value):

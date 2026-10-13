@@ -6,6 +6,8 @@ from native_map import elf_path as _test_elf_path
 if not _test_elf_path(_TestPath(__file__).resolve().parents[1]).is_file():
     raise _TestUnit.SkipTest('An extracted game executable is required for native tag tests')
 
+import math
+import struct
 import unittest
 import tag_team_rush as tag
 import tag_rush_scene as scene
@@ -58,6 +60,21 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(c.damage),damage)
         c=self.machine(False);c.r[4]=0;run(c,scene.FINISH)
         self.assertEqual(c.fr(c.actors[1]+0xA8),0.)
+
+    def test_slam_normalization_uses_ee_ft_for_all_horizontal_quadrants(self):
+        roots=[word for word in struct.unpack('<'+'I'*(len(recovery.code())//4),recovery.code())
+               if word>>26==17 and word>>21&31==16 and word&63==4]
+        self.assertEqual(len(roots),1);self.assertEqual(roots[0]>>16&31,4)
+        for dx,dz in ((12.,5.),(-12.,5.),(12.,-5.),(-12.,-5.),(0.,50.)):
+            c=self.machine(True);v=c.actors[1];row=scene.ROWS+2*scene.STRIDE
+            c.w(c.models[1]+192,c.u(row+scene.R['clip0']))
+            for model,x,z in ((c.models[0],-dx,-dz),(c.models[1],0.,0.)):
+                c.fw(model+2384,x);c.fw(model+2392,z)
+            c.r[4:6]=[row,recovery.SLAM_DOWN];run(c,recovery.BEGIN)
+            length=math.hypot(dx,dz)
+            self.assertAlmostEqual(c.fr(v+0x90),dx/length,places=6)
+            self.assertAlmostEqual(c.fr(v+0x98),dz/length,places=6)
+            self.assertAlmostEqual(c.fr(v+0x90)**2+c.fr(v+0x98)**2,1.,places=6)
 
     def test_a_lethal_hit_falls_without_reviving_or_replacing_native_ko_rules(self):
         c=self.machine();c.w(c.actors[1]+0x9E4,1000)

@@ -62,8 +62,15 @@ def begin_code():
     for i,r in enumerate((16,17,18)):a.sw(r,29,0x300+4*i)
     a.li(20,0);a.li(21,ROWS)
     a.label('check');a.r(0,8,0,20,2);a.addiu(9,29,0x300);a.r(0x21,9,9,8);a.lw(4,9)
-    a.call(tag.ELIGIBLE);a.branch(4,2,0,'no');a.move(22,2)
-    a.move(4,22);a.call(safety.PREFLIGHT);a.branch(4,2,0,'no')
+    a.li(8,2);a.branch(4,20,8,'victim_eligible')
+    a.call(tag.ELIGIBLE);a.jump('eligible_checked')
+    a.label('victim_eligible');a.call(tag.VICTIM_ELIGIBLE)
+    a.label('eligible_checked');a.branch(4,2,0,'no');a.move(22,2)
+    a.branch(5,20,0,'role_window');tag.emit_rush_window(a,22,'no','role_window',cpu_decision=True)
+    a.move(4,22);a.li(8,2);a.branch(4,20,8,'victim_preflight')
+    a.call(safety.PREFLIGHT);a.jump('preflight_checked')
+    a.label('victim_preflight');a.call(safety.VICTIM_PREFLIGHT)
+    a.label('preflight_checked');a.branch(4,2,0,'no')
     actors.model(a,22,23,'no');scene.finite(a,23,(2384,2388,2392,2400,2404,2408),'no')
     for field,reg in (('actor',22),('model',23)):a.sw(reg,21,R[field])
     a.lw(8,22);a.sw(8,21,R['index'])
@@ -82,6 +89,12 @@ def begin_code():
     for off,key in ((tag.C['manager'],'manager'),(tag.C['count'],'count')):a.lw(8,19,off);a.sw(8,21,S[key])
     for key in ('ticks','reason','stage','phase_ticks','contact','sound_pending'):a.sw(0,21,S[key])
     a.li(8,1);a.sw(8,21,S['active']);a.sw(8,19,tag.C['approaching'])
+    # Default: only the initiating fighter pays for the attempt. Keeping
+    # their meter on a miss defers this cost until confirmed contact; it
+    # never refunds into an actor slot that may since have changed owners.
+    a.lw(8,19,tag.C['keep_meter_on_miss']);a.branch(5,8,0,'deferred_cost')
+    a.li(8,tag.METERS);a.r(0,9,0,16,5);a.r(0x21,8,8,9);a.sw(0,8,tag.T['charge'])
+    a.label('deferred_cost')
     a.li(21,tag.METERS);a.lw(20,19,tag.C['count']);a.li(8,-1)
     a.label('offers');a.sw(8,21,tag.T['inviter']);a.sw(0,21,tag.T['expiry'])
     a.addiu(21,21,tag.METER_STRIDE);a.addiu(20,20,-1);a.branch(5,20,0,'offers')
@@ -127,7 +140,11 @@ def tick_code():
     for field,offset in (('action',2376),('clip',2420),('pending',2380)):
         a.lw(8,22,offset);a.sw(8,16,S[field])
     a.lw(8,22,0x994);a.li(9,164);a.r(0x19,0,8,9);a.r(0x12,8,0,0)
-    a.r(0x21,8,8,22);a.lw(8,8,0x9E4);a.lw(9,21,R['hp']);a.branch(5,8,9,'hp_miss')
+    a.r(0x21,8,8,22);a.lw(8,8,0x9E4);a.lw(9,21,R['hp'])
+    # Training refill and legitimate healing must not count as an incoming
+    # hit. Advance the baseline after a heal so a subsequent one-HP loss
+    # still interrupts the native rush, even above its starting health.
+    a.r(0x2B,9,8,9);a.branch(5,9,0,'hp_miss');a.sw(8,21,R['hp'])
     a.lw(8,22,2376);a.li(9,NATIVE_PRELUDE);a.branch(4,8,9,'native_owned')
     a.li(9,NATIVE_ACTION);a.branch(5,8,9,'native_miss');a.label('native_owned')
     a.lw(8,23,2348);a.li(9,launch.PARAMS);a.branch(5,8,9,'identity_miss')
@@ -139,6 +156,11 @@ def tick_code():
     a.move(4,0);a.call(CANCEL)
     for r,p in ((4,ROWS),(5,ROWS+STRIDE),(6,ROWS+2*STRIDE)):a.li(8,p);a.lw(r,8,R['index'])
     a.call(tag.START);a.branch(4,2,0,'failed_start')
+    # All three captured identities and the cinematic preflight succeeded.
+    # Spend both participant meters now, never the victim or a bystander.
+    for row in (ROWS,ROWS+STRIDE):
+        a.li(8,row);a.lw(9,8,R['index']);a.r(0,9,0,9,5)
+        a.li(8,tag.METERS);a.r(0x21,8,8,9);a.sw(0,8,tag.T['charge'])
     a.lw(8,16,S['connected']);a.addiu(8,8,1);a.sw(8,16,S['connected']);a.jump('done')
     for label,value in (('gate_miss',1),('timeout_miss',2),('identity_miss',3),('eligible_miss',4),('hp_miss',7),('native_miss',8)):
         a.label(label);a.li(8,value);a.jump('miss')

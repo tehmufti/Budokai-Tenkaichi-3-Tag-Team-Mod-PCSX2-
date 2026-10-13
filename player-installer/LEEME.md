@@ -696,3 +696,11 @@ Entrenamiento modificado y la cámara compartida. Los valores iniciales son
 15 000 de daño y 25 segundos. Los gigantes no pueden usar este ataque.
 Tampoco está disponible en línea ni en las
 ediciones europea y japonesa de BT3.
+
+## Novedades de la versión 13
+
+Los ataques combinados incluyen poses y colores de rayos según el personaje,
+finales cuerpo a cuerpo más variados y una variante con Goku y Piccolo del inicio.
+La CPU también puede usarlos cuando ambos medidores están llenos. Si fallas, solo
+se vacía tu medidor; puedes cambiarlo en los ajustes del mod. Las imágenes de los
+ajustes permiten ver cómo quedarán el HUD y otras opciones antes de guardarlas.

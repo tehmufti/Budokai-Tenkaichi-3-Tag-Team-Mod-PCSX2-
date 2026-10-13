@@ -58,6 +58,44 @@ def machine():
 
 
 class SafetyTests(unittest.TestCase):
+    def test_only_victim_knockback_flight_is_admitted_with_all_native_guards(self):
+        for action in (11,55,213,214,223,180,181,183,188,192,212,215,216,217,224,261,285,303,314):
+            for entry,expected in ((tag.PREFLIGHT,action in (11,55)),
+                                   (tag.VICTIM_PREFLIGHT,action in (11,55,213,214,217,223))):
+                c=machine();c.w(ACTOR+2376,action)
+                flag=FLAG(0xE);c.write(ACTOR+0x1085+(flag>>3),bytes([1<<(flag&7)]))
+                before=c.read(ACTOR,0x1600);c.r[4]=ACTOR;run(c,entry)
+                self.assertEqual(c.r[2],int(expected),(action,entry));self.assertEqual(c.read(ACTOR,0x1600),before)
+        for off,value in ((2380,11),(2388,261),(3480,1),(3500,1),(3512,1),(0xFE0,1),(4896,1),(0x9E4,0)):
+            c=machine();c.w(ACTOR+2376,213);c.w(ACTOR+off,value);before=c.read(ACTOR,0x1600)
+            c.r[4]=ACTOR;run(c,tag.VICTIM_PREFLIGHT);self.assertEqual(c.r[2],0,off);self.assertEqual(c.read(ACTOR,0x1600),before)
+        for original in (0x94,0xB,0xBE,0x125,0x126,0x135):
+            for bank in (0x1085,0x10AD):
+                c=machine();c.w(ACTOR+2376,214);flag=FLAG(original);c.write(ACTOR+bank+(flag>>3),bytes([1<<(flag&7)]))
+                c.r[4]=ACTOR;run(c,tag.VICTIM_PREFLIGHT);self.assertEqual(c.r[2],0,(original,bank))
+
+    def test_victim_native_fall_transition_is_not_mistaken_for_a_pending_hit(self):
+        for action in tag.LAUNCHED_ACTIONS:
+            c=machine();c.w(ACTOR+2376,action);c.w(ACTOR+2380,217)
+            before=c.read(ACTOR,0x1600);c.r[4]=ACTOR;run(c,tag.VICTIM_PREFLIGHT)
+            self.assertEqual(c.r[2],1);self.assertEqual(c.read(ACTOR,0x1600),before)
+            c.r[4]=ACTOR;run(c,tag.PREFLIGHT);self.assertEqual(c.r[2],0)
+        for action,pending,queue in ((11,217,None),(217,217,None),(213,192,None),(213,215,None),
+                                     (213,225,None),(213,303,None),(213,217,2388),(214,217,2392),
+                                     (223,217,2396),(213,217,2400)):
+            c=machine();c.w(ACTOR+2376,action);c.w(ACTOR+2380,pending)
+            if queue:c.w(ACTOR+queue,217)
+            before=c.read(ACTOR,0x1600);c.r[4]=ACTOR;run(c,tag.VICTIM_PREFLIGHT)
+            self.assertEqual(c.r[2],0,(action,pending,queue));self.assertEqual(c.read(ACTOR,0x1600),before)
+        for off,value in ((4896,1),(3500,1),(0xFE0,1),(0x9E4,0)):
+            c=machine();c.w(ACTOR+2376,213);c.w(ACTOR+2380,217);c.w(ACTOR+off,value)
+            c.r[4]=ACTOR;run(c,tag.VICTIM_PREFLIGHT);self.assertEqual(c.r[2],0,off)
+        for original in (0x94,0xB,0xBE,0x125,0x126,0x135):
+            for bank in (0x1085,0x10AD):
+                c=machine();c.w(ACTOR+2376,213);c.w(ACTOR+2380,217);flag=FLAG(original)
+                c.write(ACTOR+bank+(flag>>3),bytes([1<<(flag&7)]));c.r[4]=ACTOR
+                run(c,tag.VICTIM_PREFLIGHT);self.assertEqual(c.r[2],0,(original,bank))
+
     def test_preflight_rejects_native_giant_in_every_role_without_writes(self):
         import giant_options as giants
         for index in (0,2,1):

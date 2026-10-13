@@ -58,7 +58,112 @@ def straight_shot(c):
     c.write(rush.MEMBERS_SAVE+64,struct.pack('<4f',0.,0.,0.,1.))
 
 
+def camera_tail(c):
+    """An ended beam scene: gameplay ownership is gone, the wide shot remains."""
+    import tag_team_rush as rush
+    c.write(tag.TAIL,c.read(tag.CONTROL,28));c.w(tag.TAIL,tag.TAIL_MAGIC)
+    c.w(tag.TAIL+tag.ACTIVE,tag.TAIL_TICKS)
+    c.w(tag.CONTROL+tag.ACTIVE,0);c.w(tag.CONTROL+tag.MEMBERS,0)
+    c.w(rush.MEMBERS_SAVE,0)
+    c.w(tag.A(0x2FEB38),DIRECTOR);c.w(DIRECTOR,3)
+    c.w(tag.A(0x3337C0),1)
+
+
 class TagCameraTests(unittest.TestCase):
+    def test_burst_tail_keeps_only_camera_members_and_never_freezes_fighters(self):
+        for shared in (0,1):
+            c=cpu(shared=shared);camera_tail(c);c.write(inactive.ENTRY,inactive.code())
+            controls=c.read(tag.CONTROL,104)
+            for physical in range(8):
+                c.r[4]=physical;run(c,tag.QUERY)
+                expected=physical<6 and (shared or physical in (0,2,5))
+                self.assertEqual(c.r[2],tag.CAMERA if expected else 0)
+                actor=0x1920000+physical*0x2000;c.w(actor,physical)
+                c.w(tag.core.POINTERS+4*physical,actor)
+                c.r[4]=actor;c.r[31]=inactive.CALLERS[0]
+                c.run(inactive.ENTRY,stops=(inactive.CALLERS[0],))
+                self.assertEqual(c.r[2],0)
+            self.assertEqual(c.read(tag.CONTROL,104),controls)
+            self.assertEqual(c.u(tag.TAIL+tag.ACTIVE),tag.TAIL_TICKS)
+
+    def test_burst_tail_expires_per_update_not_per_view_or_render_query(self):
+        c=cpu();camera_tail(c)
+        controls=c.read(tag.CONTROL,104);binding=c.u(RENDERER+0xC40)
+        for remaining in range(tag.TAIL_TICKS,0,-1):
+            for _ in range(4):
+                c.r[4]=0;run(c,tag.QUERY);self.assertEqual(c.r[2],tag.CAMERA)
+            self.assertEqual(c.u(tag.TAIL+tag.ACTIVE),remaining)
+            run(c,tag.TAIL_TICK)
+        self.assertEqual(c.u(tag.TAIL),0)
+        c.r[4]=0;run(c,tag.QUERY);self.assertEqual(c.r[2],0)
+        self.assertEqual(c.read(tag.CONTROL,104),controls)
+        self.assertEqual(c.u(RENDERER+0xC40),binding)
+
+    def test_pause_holds_tail_but_new_cinematics_and_match_transitions_cancel_it(self):
+        import tag_team_rush as rush
+        c=cpu();camera_tail(c);c.w(tag.A(0x333700),1)
+        for _ in range(10):run(c,tag.TAIL_TICK)
+        self.assertEqual(c.u(tag.TAIL+tag.ACTIVE),tag.TAIL_TICKS)
+        c.w(tag.A(0x333700),0);run(c,tag.TAIL_TICK)
+        self.assertEqual(c.u(tag.TAIL+tag.ACTIVE),tag.TAIL_TICKS-1)
+        cases=((tag.A(0x3337B8),0x100),(tag.A(0x3337B8),0x2000),
+               (MANAGER+628,1),(DIRECTOR,4),(tag.A(0x3337C0),0),
+               (tag.core.MODE,0),(tag.CONTROL+12,0),(tag.CONTROL+4,MANAGER+16),
+               (tag.CONTROL+tag.ACTIVE,1),(tag.CONTROL+rush.C['approaching'],1))
+        for address,value in cases:
+            c=cpu();camera_tail(c);c.w(address,value);before=c.read(tag.CONTROL,104)
+            run(c,tag.TAIL_TICK)
+            self.assertEqual(c.u(tag.TAIL),0,hex(address))
+            self.assertEqual(c.read(tag.CONTROL,104),before)
+
+    def test_burst_tail_retains_final_portrait_fit_after_actor_release(self):
+        c=cpu();camera_tail(c);straight_shot(c);clone=cinema.CLONES[0]
+        c.write(clone,c.read(tag.CAMERA,832));c.write(clone+512,struct.pack('<4I',*quad.TWO_RECTS[0]))
+        c.r[4:6]=[clone,tag.CAMERA];run(c,tag.FIT_VIEW)
+        self.assertEqual(c.r[2],clone+720);self.assertEqual(c.fr(clone+728),-100.)
+        c.w(tag.TAIL,0);c.r[4:6]=[clone,tag.CAMERA];run(c,tag.FIT_VIEW)
+        self.assertEqual(c.r[2],tag.CAMERA+544)
+
+    def test_render_yields_to_native_cinematic_started_after_tail_tick(self):
+        # An actor's native update follows tag.TICK. The camera query must
+        # reject a cinematic started during that update, without waiting for
+        # the next tag tick or overwriting the native renderer's binding.
+        for address,value in ((MANAGER+628,1),(tag.A(0x3337B8),0x100),
+                              (tag.A(0x3337B8),0x2000)):
+            c=cpu();camera_tail(c);run(c,tag.TAIL_TICK)
+            self.assertEqual(c.u(tag.TAIL+tag.ACTIVE),tag.TAIL_TICKS-1)
+            c.w(address,value);c.w(c.r[28]-22176,AUTHORED)
+            c.w(RENDERER+0xC40,AUTHORED+16);c.r[4]=0;run(c,tag.QUERY)
+            self.assertEqual(c.r[2],0);self.assertEqual(c.u(tag.TAIL),0)
+            self.assertEqual(c.u(c.r[28]-22176),AUTHORED)
+            self.assertEqual(c.u(RENDERER+0xC40),AUTHORED+16)
+            c.w(address,0);c.r[4]=0;run(c,tag.QUERY)
+            self.assertEqual(c.r[2],0)  # the old view cannot resume afterward
+
+    def test_render_cancels_tail_when_match_identity_changes_before_next_tick(self):
+        cases=((tag.CONTROL+4,MANAGER+16),(tag.CONTROL+8,4),
+               (tag.core.MODE+8,MANAGER+16),(tag.core.MODE,0),
+               (tag.core.MODE+12,4),(MANAGER,3))
+        for address,value in cases:
+            c=cpu();camera_tail(c);c.w(address,value);c.r[4]=0
+            run(c,tag.QUERY)
+            self.assertEqual(c.r[2],0,hex(address));self.assertEqual(c.u(tag.TAIL),0)
+
+    def test_coordinator_retires_tail_even_when_ordinary_gate_refuses_update(self):
+        import tag_team_rush as rush
+        from test_tag_rush_scene import SceneCpu
+        # The coordinator uses the full register ABI; a closed menu gate must
+        # still run the cosmetic cleanup before leaving that frame.
+        initial=cpu();camera_tail(initial)
+        c=SceneCpu({'segments':[dict(address=p,data_hex=b.hex()) for p,b in tag.pieces()]})
+        for address in (tag.CONTROL,tag.TAIL,tag.core.MODE,MANAGER,DIRECTOR):
+            c.write(address,initial.read(address,0x300 if address==MANAGER else 104))
+        c.w(c.r[28]-22364,MANAGER);c.w(tag.A(0x2FEB38),DIRECTOR);c.w(DIRECTOR,4)
+        c.write(rush.TICK,rush.tick_code())
+        c.callbacks[rush.GATE]=lambda m:m.r.__setitem__(2,0)
+        run(c,rush.TICK);self.assertEqual(c.u(tag.TAIL),0)
+        self.assertEqual(c.u(tag.CONTROL+tag.ACTIVE),0)
+
     def test_bad_initial_camera_or_renderer_leaves_private_state_untouched(self):
         for global_offset,bad in ((-22176,0),(-22176,ORDINARY+1),(-22172,0),(-22172,0x7FFFF00)):
             c=cpu(active=0);before=c.read(tag.CAMERA,832);c.w(c.r[28]+global_offset,bad)

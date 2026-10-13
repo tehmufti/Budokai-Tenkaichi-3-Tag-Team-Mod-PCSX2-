@@ -69,7 +69,7 @@ class ChoreographyTests(unittest.TestCase):
 
     def test_nonki_roles_do_not_reach_the_beam_pose(self):
         melee = assets.timeline('two_melee')[-1]
-        self.assertEqual(melee.ends, (24, 24, 24))
+        self.assertEqual(melee.ends, (30, 30, 30))
         self.assertFalse(melee.flags & (assets.BEAM_LEAD | assets.BEAM_PARTNER))
         for variant, end, flag in [('mixed_ki_lead', (180, 180, 180), assets.BEAM_LEAD),
                                    ('mixed_ki_partner', (180, 180, 180), assets.BEAM_PARTNER)]:
@@ -110,23 +110,55 @@ class ChoreographyTests(unittest.TestCase):
     def test_descriptor_bounds_and_role_end_limits(self):
         clips = {source: minimal_clip(frames) for source, frames in assets.EXPECTED_FRAMES.items()}
         import tag_rush_choreography as choreography
+        import tag_rush_special_pair as special
         clips.update({assets.ClipSource(101,anim):minimal_clip(frames) for anim,frames,_ in choreography.DERIVED.values()})
         bindings = {character: dict(height=1., rows=()) for character in (101,102)}
-        with patch.object(assets, 'prepared_clips', return_value=clips), patch.object(assets, 'read_donor_bindings', return_value=bindings), patch.object(assets, 'read_native_staging', return_value=assets.NATIVE_STAGING), patch.object(assets, 'read_native_approach', return_value=dict(parameters=bytes(640),camera=bytes(384))):
+        special_pack=dict(blocks=[(special.BASE,bytes(16))],
+            pointers={p.roles[r]:special.BASE for p in special.timeline() for r in (0,2)},
+            clips=[],donor_model=special.BASE,bytes_used=16,reviewed=True)
+        with patch.object(assets, 'prepared_clips', return_value=clips), patch.object(assets, 'read_donor_bindings', return_value=bindings), patch.object(assets, 'read_native_staging', return_value=assets.NATIVE_STAGING), patch.object(assets, 'read_native_approach', return_value=dict(parameters=bytes(640),camera=bytes(384))), patch.object(special,'build',return_value=special_pack):
             result = assets.build_assets('unused.iso')
             data = result['blocks'][0][1]
-            self.assertEqual(len(data), 27 * 64)
+            self.assertEqual(len(data), (6+9+8+8+5) * 64)
             for v in result['variants'].values():
                 for p in v['phases']:
                     words = struct.unpack_from('<16I', data, p['address'] - assets.BASE)
                     self.assertEqual(words[0], p['source_frames'])
                     self.assertEqual(words[11:14], p['ends'])
                     self.assertEqual(words[14], 60)
-                    self.assertEqual(words[15], result['custom_role_donors_address'] if words[7]&assets.CUSTOM_FINISHER else result['role_donors_address'])
+                    donors=(result['special_role_donors_address'] if words[7]&special.RESTRAIN
+                            else result['custom_role_donors_address'] if words[7]&assets.CUSTOM_FINISHER
+                            else result['role_donors_address'])
+                    self.assertEqual(words[15],donors)
             with self.assertRaises(assets.TagRushAssetError):
                 assets.build_assets('unused.iso', end=assets.BASE + 128)
             for bad in ('unknown', '', None):
                 with self.assertRaises(ValueError): assets.timeline(bad)
+
+    def test_relay_contacts_have_explicit_roles_and_fit_their_own_pose_phases(self):
+        import tag_rush_choreography as choreography
+        expected={
+            'two_ki':(),
+            'two_melee':(((0,14),(0,32),(0,54)),((1,22),),((0,20),),((0,24),),()),
+            'mixed_ki_lead':(((1,14),(1,32),(1,54)),((1,22),),(),()),
+            'mixed_ki_partner':(((0,14),(0,32),(0,54)),((0,22),),(),()),
+        }
+        for variant,custom in expected.items():
+            phases=assets.timeline(variant)
+            self.assertEqual(phases[:4],assets.OPENING)
+            self.assertLessEqual(len(phases),choreography.MAX_PHASES)
+            for phase_index,contacts in enumerate(custom,4):
+                self.assertEqual(choreography.phase_contacts(variant,phase_index),contacts)
+                phase=phases[phase_index]
+                for role,contact in contacts:
+                    self.assertLess(contact,phase.source_frames)
+                    self.assertIn(phase.roles[role].animation,choreography.PHRASE_IDS.values())
+                    self.assertGreaterEqual(contact,choreography.records(variant)[phase_index][3])
+            self.assertEqual(len(choreography.records(variant)),len(phases))
+        self.assertEqual([p.source_frames for p in assets.timeline('two_melee')[4:]],
+                         [62,32,30,36,30])
+        self.assertEqual([p.source_frames for p in assets.timeline('mixed_ki_lead')[4:]],
+                         [62,32,30,180])
 
 
 class DiscTests(unittest.TestCase):
@@ -195,8 +227,10 @@ class DiscTests(unittest.TestCase):
         self.assertEqual(result['audio_cues']['two_melee'][-1],tuple(
             cue for cue in result['audio_cues']['two_ki'][-1] if cue['frame']<=40))
         offset=result['staging_address']-block_base
-        for variant in result['variants'].values():
-            self.assertEqual(tuple(struct.unpack_from('<4f',block,offset+i*16) for i in range(4)), assets.NATIVE_STAGING[:4])
+        for name,variant in result['variants'].items():
+            marks=tuple(struct.unpack_from('<4f',block,offset+i*16) for i in range(variant['count']))
+            if name=='early_goku_piccolo':self.assertEqual(marks,((0.,0.,0.,0.),)*5)
+            else:self.assertEqual(marks[:4],assets.NATIVE_STAGING[:4])
             offset+=variant['count']*16
         beam=assets.read_native_beam_asset(iso)
         self.assertEqual(beam['descriptor_counts'],(1,6,0,1))

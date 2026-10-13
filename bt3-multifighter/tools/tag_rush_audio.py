@@ -22,7 +22,7 @@ import tag_rush_audio_queue as deferred
 BASE, RESET, TICK = 0x06D0C000, 0x06D0C000, 0x06D0C400
 TABLE, STATE, END = 0x06D0CE00, 0x06D0D700, 0x06D0D800
 ROWS, STRIDE, MAGIC = STATE+0x20, 16, 0x54534131
-VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner')
+VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
 C=dict(magic=0,manager=4,count=8,played=12)
 R=dict(phase=0,frame=4)
 SOUND=deferred.ENQUEUE
@@ -52,12 +52,12 @@ def cue_rows(pack=None):
                 row=phase_rows[phase];flags=row.get('flags',0)
                 if flags&assets.FINISHER and flags&(assets.BEAM_LEAD|assets.BEAM_PARTNER):
                     frames=row.get('source_frames')
-                    if type(frames)is not int or not 30<frames<=1000:
-                        raise ValueError('Invalid tag beam ending duration')
+                    import tag_rush_choreography as choreography
+                    burst=choreography.beam_burst_frame(frames,custom=bool(flags&assets.CUSTOM_FINISHER))
                     # Match FX_BODY's final burst, once at the victim even
                     # when both attackers fire. The normal cursor handles
                     # pauses and skipped frames without replaying the sound.
-                    cues=tuple(cues)+(dict(role=2,frame=frames-30,bank=0,
+                    cues=tuple(cues)+(dict(role=2,frame=burst,bank=0,
                         sound_id=EXPLOSION_SOUND,bone=3,near=200.,far=1500.),)
             if phase<len(phase_rows) and phase_rows[phase].get('flags',0)&assets.OWN_CLASH_POSE:
                 flags=phase_rows[phase]['flags']
@@ -121,7 +121,7 @@ def tick_code(count=0,voices=False):
     if count==0:
         tag.restore(a);a.jr();return a.finish()
     a.li(8,A(0x333700));a.lw(8,8);a.branch(5,8,0,'done')
-    camera.emit_active(a,'done');a.lw(9,8,tag.C['variant']);a.i(11,10,9,4);a.branch(4,10,0,'done')
+    camera.emit_active(a,'done');a.lw(9,8,tag.C['variant']);a.i(11,10,9,len(VARIANTS));a.branch(4,10,0,'done')
     a.li(10,1);a.r(4,10,9,10);a.sw(10,29,0x300)
     a.li(16,STATE);a.lw(9,16);a.li(10,MAGIC);a.branch(5,9,10,'done')
     for off in (C['manager'],C['count']):

@@ -617,3 +617,11 @@ Change the damage, meter time, Training refill and shared camera in
 **Mod Settings → Tag-team rush**. The defaults are 15,000 damage and 25 seconds.
 Giants cannot use this attack. It is not available online or on the
 European/Japanese BT3 discs.
+
+## Version 13 additions
+
+Tag attacks now have character-specific beam poses and colors, more varied melee
+endings, and an Early Goku / Early Piccolo grab variant. CPUs can use tag attacks
+when both meters are ready. A missed rush empties only the initiator's meter by
+default; you can change this in Mod Settings. Settings pictures let you preview
+HUD and other visual options before saving.

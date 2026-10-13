@@ -23,10 +23,22 @@ def meter(index,field='charge'):
     return tag.METERS+index*tag.METER_STRIDE+tag.T[field]
 
 
+class GuestCpu(FusionCpu):
+    def extra_instruction(self,ins,pc):
+        if ins>>26==0 and ins&63==6:
+            self.r[(ins>>11)&31]=(self.r[(ins>>16)&31]&0xFFFFFFFF)>>(self.r[(ins>>21)&31]&31);return
+        return super().extra_instruction(ins,pc)
+
+
 def machine(count=6,full=True,cpu=()):
-    c=FusionCpu();c.calls=[];c.pad_reads=[]
+    import tag_rush_safety as safety
+    c=GuestCpu();c.calls=[];c.pad_reads=[]
     for p,b in ((tag.GATE,tag.gate_code()),(tag.ELIGIBLE,tag.eligible_code()),
+                (tag.VICTIM_ELIGIBLE,tag.eligible_code(tag.VICTIM_ELIGIBLE,victim=True)),
+                (tag.BUFFER_TARGET,tag.eligible_code(tag.BUFFER_TARGET,victim=True,buffered=True)),
+                (tag.BUFFER_INPUT,tag.buffer_input_code()),(tag.INPUT_GATE,tag.gate_code(tag.INPUT_GATE,allow_manager_pause=True)),
                 (tag.INPUT,tag.input_code()),(tag.TICK,tag.tick_code()),(tag.FRAME,tag.frame_code(0x110000))):c.write(p,b)
+    c.write(safety.PREFLIGHT,safety.preflight_code());c.write(safety.VICTIM_PREFLIGHT,safety.victim_preflight_code())
     c.w(c.r[28]-22364,MANAGER);c.w(MANAGER,2)
     c.write(tag.core.MODE,struct.pack('<4I',1,count,MANAGER,count))
     settings=dict(tag_team_rush_enabled=True,tag_team_rush_shared_camera=False,
@@ -44,9 +56,12 @@ def machine(count=6,full=True,cpu=()):
         c.w(tag.core.TABLE+4*i,1 if i%2==0 else 0)
         c.w(meter(i),LIMIT if full else 0);c.w(meter(i,'allies'),(count+1-i%2)//2)
     def pad(m):
-        index=ACTORS.index(m.r[4]);m.pad_reads.append(index);m.r[2]=PADS[index]
+        index=m.u(m.r[4]);m.pad_reads.append(index);m.r[2]=PADS[index]
     def start(m):
         first,partner,victim=m.r[4:7];m.calls.append((first,partner,victim))
+        # This coordinator-only fixture admits contact immediately; the real
+        # approach tests cover delayed partner cost and missed attempts.
+        m.w(meter(first),0);m.w(meter(partner),0)
         m.w(tag.CONTROL+tag.C['active'],1)
         m.w(tag.CONTROL+tag.C['members'],(1<<first)|(1<<partner)|(1<<victim))
         for i in range(count):m.w(meter(i,'inviter'),-1);m.w(meter(i,'expiry'),0)
@@ -94,6 +109,103 @@ def analog_frame(c,entries):
 
 
 class GuestCoordinatorTests(unittest.TestCase):
+    def test_smash_chord_survives_hitstop_then_native_recovery_exactly_once(self):
+        c=machine(cpu=(2,));c.w(ACTORS[0]+2376,71);c.w(ACTORS[1]+2376,213)
+        c.w(MANAGER+628,3);frame(c,[0])
+        ttl=tag.INPUT_BUFFERS+16
+        self.assertEqual(c.u(ttl)&255,tag.SMASH_BUFFER_TICKS);self.assertEqual(c.calls,[])
+        for _ in range(20):frame(c)
+        self.assertEqual(c.u(ttl)&255,tag.SMASH_BUFFER_TICKS)
+        c.w(MANAGER+628,0);frame(c);self.assertEqual(c.calls,[])
+        c.w(ACTORS[0]+2376,11);c.w(ACTORS[0]+2380,11);frame(c)
+        self.assertEqual(c.calls,[])
+        c.w(ACTORS[0]+2380,-1);frame(c);frame(c)
+        self.assertEqual(c.calls,[(0,2,1)]);self.assertEqual(c.u(ttl),0)
+        for _ in range(12):frame(c,[0])
+        self.assertEqual(c.calls,[(0,2,1)])
+
+    def test_live_smash_followthrough_keeps_one_chord_for_twenty_five_updates(self):
+        for action in range(71,77):
+            with self.subTest(action=action):
+                c=machine(cpu=(2,));c.w(ACTORS[0]+2376,action);c.w(ACTORS[1]+2376,213)
+                frame(c,[0])
+                for _ in range(25):frame(c)
+                self.assertEqual(c.calls,[])
+                self.assertEqual(c.u(tag.INPUT_BUFFERS+16)&255,tag.SMASH_BUFFER_TICKS-26)
+                c.w(ACTORS[0]+2376,11);frame(c);frame(c)
+                self.assertEqual(c.calls,[(0,2,1)])
+        c=machine(cpu=(2,));c.w(ACTORS[0]+2376,60);c.w(ACTORS[1]+2376,213)
+        frame(c,[0])
+        for _ in range(tag.INPUT_BUFFER_TICKS):frame(c)
+        c.w(ACTORS[0]+2376,11);frame(c);frame(c)
+        self.assertEqual(c.calls,[],"Unrelated actions do not gain the longer smash wait")
+
+    def test_waiting_chord_authenticates_victim_and_discards_cinematic_or_reload(self):
+        for smash in (False,True):
+            for change in ('actor','model','character','cinematic','reload','cinematic_flag','landed'):
+                with self.subTest(smash=smash,change=change):
+                    c=machine(cpu=(2,));c.w(ACTORS[0]+2376,71 if smash else 60)
+                    c.w(ACTORS[1]+2376,213 if smash else 11);frame(c,[0])
+                    addr=ACTORS[1]+2376;value=285
+                    if change=='actor':
+                        addr=tag.core.POINTERS+4;value=0x2B00000;c.write(value,c.read(ACTORS[1],0x1600))
+                    elif change=='model':
+                        addr=tag.core.MODELS+4;value=0x2B02000;c.write(value,c.read(MODELS[1],0x1700))
+                    elif change=='character':addr=MODELS[1]+12;value=42
+                    elif change=='reload':addr=ACTORS[1]+3500;value=1
+                    elif change=='cinematic_flag':
+                        import tag_rush_safety as safety
+                        flag=safety.FLAG(0x125);addr=ACTORS[1]+0x1085+(flag>>3);value=1<<(flag&7)
+                    elif change=='landed':
+                        if not smash:continue
+                        value=11
+                    old=c.u(addr);c.w(addr,value);frame(c);c.w(addr,old)
+                    self.assertEqual(c.u(tag.INPUT_BUFFERS+16),0)
+                    c.w(ACTORS[0]+2376,11);frame(c);frame(c)
+                    self.assertEqual(c.calls,[],"Restoring an old victim cannot resurrect consumed intent")
+
+    def test_buffer_expires_and_cannot_survive_changed_identity_target_or_menu(self):
+        for change in ('expiry','long_hitstop','model','character','actor','target','death','giant','pause','cinematic','cinematic_flag'):
+            with self.subTest(change=change):
+                c=machine(cpu=(2,));c.w(ACTORS[0]+2376,71);c.w(ACTORS[1]+2376,213);frame(c,[0])
+                if change=='expiry':
+                    for _ in range(tag.SMASH_BUFFER_TICKS):frame(c)
+                elif change=='long_hitstop':
+                    c.w(MANAGER+628,1)
+                    for _ in range(tag.ACTOR_HZ+1):frame(c)
+                    c.w(MANAGER+628,0)
+                elif change=='model':
+                    c.write(0x3000000,c.read(MODELS[0],0x2000));c.w(tag.core.MODELS,0x3000000)
+                elif change=='character':c.w(MODELS[0]+12,99)
+                elif change=='actor':
+                    c.write(0x3102000,c.read(ACTORS[0],0x1600));c.w(tag.core.POINTERS,0x3102000)
+                elif change=='target':c.w(tag.core.TABLE,3)
+                elif change=='death':c.w(ACTORS[0]+0x9E4,0)
+                elif change=='giant':c.write(PARAMS[0]+2,b'\x04')
+                elif change=='pause':c.w(tag.A(0x333700),1)
+                elif change=='cinematic':c.w(ACTORS[0]+2376,285)
+                elif change=='cinematic_flag':
+                    from native_map import FLAG
+                    flag=FLAG(0x125);c.write(ACTORS[0]+0x1085+(flag>>3),bytes([1<<(flag&7)]))
+                frame(c);self.assertEqual(c.u(tag.INPUT_BUFFERS+16),0)
+                c.w(ACTORS[0]+2376,11);c.w(tag.A(0x333700),0)
+                frame(c);frame(c);self.assertEqual(c.calls,[])
+
+    def test_native_initiator_windows_and_ordinary_helper_acceptance(self):
+        for action,current,previous,allowed in ((11,54,54,True),(13,0,0,True),(14,0,0,True),
+                (55,52,52,True),(55,54,52,False),(55,52,54,False),(71,0,0,False),(76,0,0,False),(62,0,0,False)):
+            c=machine(cpu=(2,));c.w(ACTORS[0]+2376,action);c.w(ACTORS[0]+2420,current);c.w(ACTORS[0]+2424,previous)
+            c.w(ACTORS[1]+2376,214);frame(c,[0]);frame(c)
+            self.assertEqual(bool(c.calls),allowed,(action,current,previous))
+        c=machine();c.w(ACTORS[1]+2376,223);frame(c,[0]);c.w(ACTORS[2]+2376,71)
+        frame(c,[2]);self.assertEqual(c.calls,[(0,2,1)])
+
+    def test_launched_victim_does_not_make_launched_attackers_eligible(self):
+        for action in (213,214,223):
+            for index in (0,2,1):
+                c=machine(cpu=(2,));c.w(ACTORS[index]+2376,action);frame(c,[0]);frame(c)
+                self.assertEqual(bool(c.calls),index==1,(action,index))
+
     def test_native_analog_left_uses_half_tilt_dominance_and_not_right_stick(self):
         for x,y,rx,ry,accepted in ((-.5001,0.,0.,0.,True),(-1.,0.,0.,0.,True),
                 (-.5,0.,0.,0.,False),(-.49,0.,0.,0.,False),(0.,0.,0.,0.,False),

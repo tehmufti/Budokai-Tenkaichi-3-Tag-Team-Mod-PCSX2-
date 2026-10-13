@@ -28,13 +28,21 @@ def custom_shot_data():
     The beam shot pulls back at the end to leave room for its impact burst.
     """
     views=(
-        ((72.,-30.,64.),(62.,-20.,48.),(0.,-8.,0.),(0.,-8.,0.)),
-        ((64.,-24.,48.),(86.,-30.,68.),(0.,-9.,0.),(0.,-8.,0.)),
+        ((108.,-30.,96.),(93.,-20.,72.),(0.,-8.,0.),(0.,-8.,0.)),
+        ((140.,-24.,62.),(156.,-30.,86.),(0.,-9.,0.),(0.,-8.,0.)),
         ((34.,-20.,28.),(-30.,-12.,30.),(0.,-9.,0.),(0.,-7.,0.)),
         ((30.,3.,26.),(20.,-25.,24.),(0.,-9.,0.),(0.,-5.,0.)),
         ((22.,-8.,28.),(38.,30.,8.),(0.,-8.,0.),(0.,38.,-30.)),
-        ((76.,-30.,84.),(94.,-24.,76.),(0.,-9.,18.),(0.,-8.,10.)),
-        ((32.,-20.,68.),(40.,-18.,60.),(0.,-10.,42.),(0.,-10.,40.)),
+        ((38.,-56.,82.),(62.,-62.,96.),(-16.,-37.,0.),(-10.,-36.,0.)),
+        ((32.,-20.,89.),(40.,-18.,81.),(0.,-10.,63.),(0.,-10.,61.)),
+        ((-40.,-24.,-32.),(-32.,-14.,-28.),(0.,-10.,0.),(0.,-8.,0.)),
+        ((44.,-36.,32.),(50.,-30.,-16.),(0.,-22.,0.),(0.,-20.,0.)),
+        ((32.,-6.,28.),(42.,-42.,32.),(0.,-25.,0.),(0.,-28.,0.)),
+        ((40.,-4.,34.),(22.,-40.,36.),(0.,-10.,0.),(0.,-38.,0.)),
+        ((-58.,-45.,28.),(-54.,-44.,24.),(-42.,-38.,0.),(-42.,-38.,0.)),
+        ((-30.,-13.,28.),(-26.,-12.,24.),(0.,-11.,0.),(0.,-11.,0.)),
+        ((-18.,-14.,-30.),(-14.,-13.,-34.),(0.,-12.,-58.),(0.,-12.,-58.)),
+        ((74.,-16.,-64.),(86.,-18.,-78.),(0.,-11.,-15.),(0.,-10.,-12.)),
     )
     return b''.join(struct.pack('<16f',*(v for point in row for v in (*point,1.))) for row in views)
 
@@ -43,10 +51,10 @@ def custom_sample(shot,fraction):
     """Reference evaluator for the exact emitted moving look-at camera."""
     values=struct.unpack_from('<16f',custom_shot_data(),(shot-1)*64)
     t=max(0.,min(1.,fraction))
-    if shot in (2,6):
+    if shot in (2,6,15):
         import tag_rush_choreography as choreography
         frame=t*choreography.BEAM_FRAMES
-        close=struct.unpack_from('<16f',custom_shot_data(),6*64)
+        close=struct.unpack_from('<16f',custom_shot_data(),(13 if shot==15 else 11 if shot==6 else 6)*64)
         if frame<choreography.CHARGE_CLOSEUP:
             values=close;t=frame/choreography.CHARGE_CLOSEUP
         elif frame<choreography.BEAM_START:
@@ -62,16 +70,28 @@ def custom_sample(shot,fraction):
     return (*right,0.,*down,0.,*forward,0.,*eye,1.),target
 
 
+def special_hold_fraction(phase,ticks,hz=None):
+    """One continuous held-pair pan before the single Piccolo charge cut."""
+    import tag_rush_special_pair as special
+    from native_map import ACTOR_HZ
+    hz=ACTOR_HZ if hz is None else hz
+    if type(phase)is not int or not 0<=phase<4 or not math.isfinite(ticks)or ticks<0 or hz<=0:
+        raise ValueError('Invalid special hold-camera clock')
+    prefix=sum(row[4]for row in special.SEGMENTS[:phase])
+    duration=sum(row[4]for row in special.SEGMENTS[:4])
+    return max(0.,min(1.,(prefix+ticks*60/hz)/duration))
+
+
 def custom_update_code():
     """a0 phase,a1 ticks,a2 descriptor -> v0. Private common-origin camera."""
     from native_map import A,ACTOR_HZ
     from prototype import Assembler
     import tag_rush_camera as camera,tag_rush_staging as staging,tag_team_rush as tag
-    import fusion_partner_lifecycle as full,beam_struggle as fp
+    import fusion_partner_lifecycle as full,beam_struggle as fp,tag_rush_special_pair as special
     a=Assembler(CUSTOM_UPDATE);camera.save(a);a.addiu(29,29,-0x100)
-    a.move(16,5);a.move(17,6);full.pointer(a,17,64,'no')
+    a.sw(4,29,0xF8);a.move(16,5);a.move(17,6);full.pointer(a,17,64,'no')
     a.call(staging.QUERY);a.branch(4,2,0,'no');a.lw(8,2);a.li(9,1);a.branch(5,8,9,'no')
-    a.lw(8,2,4);a.addiu(8,8,-1);a.i(11,9,8,6);a.branch(4,9,0,'no')
+    a.lw(8,2,4);a.addiu(8,8,-1);a.i(11,9,8,15);a.branch(4,9,0,'no')
     a.sw(8,29,0xF4)
     a.r(0,8,0,8,6);a.li(18,CUSTOM_DATA);a.r(0x21,18,18,8)
     a.li(19,tag.MEMBERS_SAVE)
@@ -81,16 +101,39 @@ def custom_update_code():
     a.emit((17<<26)|(4<<21)|(16<<16)|(0<<11));a.emit((17<<26)|(20<<21)|(0<<11)|(0<<6)|32)
     a.emit((17<<26)|(4<<21)|(8<<16)|(1<<11));a.emit((17<<26)|(20<<21)|(1<<11)|(1<<6)|32)
     fp.fconst(a,2,60/ACTOR_HZ);fp.fop(a,2,0,0,2)
+    # The special restraint spans four descriptors but is a single slow pan.
+    # Restarting this shot at every crop seam looked like a repeated/stuttering
+    # Piccolo setup. Only variant4/shot13 inherits the preceding source clock.
+    a.lw(8,29,0xF4);a.li(9,12);a.branch(5,8,9,'hold_clock_ready')
+    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.li(9,special.VARIANT)
+    a.branch(5,8,9,'hold_clock_ready');a.lw(8,29,0xF8)
+    a.i(11,9,8,4);a.branch(4,9,0,'no')
+    prefix=0
+    for index,segment in enumerate(special.SEGMENTS[:4]):
+        next_phase='hold_camera_phase'+str(index)
+        a.li(9,index);a.branch(5,8,9,next_phase)
+        fp.fconst(a,2,prefix);fp.fop(a,0,0,0,2);a.jump('hold_prefix_ready')
+        a.label(next_phase);prefix+=segment[4]
+    a.label('hold_prefix_ready');fp.fconst(a,1,prefix)
+    a.label('hold_clock_ready')
     # Charge and fire share one descriptor and one emitter. Only its camera
     # changes: own-character charge closeup, pullback, then the wide impact.
     a.lw(8,29,0xF4);a.li(9,1);a.branch(4,8,9,'beam_clock')
-    a.li(9,5);a.branch(5,8,9,'normal_clock')
+    a.li(9,5);a.branch(4,8,9,'beam_clock');a.li(9,14);a.branch(5,8,9,'normal_clock')
     a.label('beam_clock');fp.fconst(a,2,60.);fp.fop(a,0x34,0,0,2)
-    a.branch(17,8,0,'pull_back');a.li(18,CUSTOM_DATA+6*64);fp.fop(a,6,1,2)
+    a.branch(17,8,0,'pull_back');a.li(18,CUSTOM_DATA+6*64)
+    a.lw(8,29,0xF4);a.li(9,14);a.branch(5,8,9,'ordinary_charge_closeup')
+    a.li(18,CUSTOM_DATA+13*64);a.jump('charge_closeup_ready')
+    a.label('ordinary_charge_closeup');a.li(9,5);a.branch(5,8,9,'charge_closeup_ready');a.li(18,CUSTOM_DATA+11*64)
+    a.label('charge_closeup_ready');fp.fop(a,6,1,2)
     a.jump('normal_clock')
     a.label('pull_back');fp.fconst(a,2,90.);fp.fop(a,0x34,0,0,2)
     a.branch(17,8,0,'beam_wide')
-    a.li(8,CUSTOM_DATA+6*64)
+    a.li(8,CUSTOM_DATA+6*64);a.lw(9,29,0xF4);a.li(10,14)
+    a.branch(5,9,10,'ordinary_closeup_source');a.li(8,CUSTOM_DATA+13*64);a.jump('closeup_source_ready')
+    a.label('ordinary_closeup_source');a.li(10,5)
+    a.branch(5,9,10,'closeup_source_ready');a.li(8,CUSTOM_DATA+11*64)
+    a.label('closeup_source_ready')
     for source,target in ((16,0),(48,32)):
         for off in range(0,16,4):a.lw(9,8,source+off);a.sw(9,29,0x80+target+off)
     for source,target in ((0,16),(32,48)):

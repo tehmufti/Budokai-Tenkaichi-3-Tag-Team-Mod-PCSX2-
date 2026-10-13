@@ -32,7 +32,8 @@ class SceneCpu(FullCpu):
         if op==0 and fn==0x27:self.r[rd]=~(self.r[rs]|self.r[rt])&0xFFFFFFFF;return
         if op==17 and rs==2:self.r[rt]=int(self.condition)<<23;return
         if op==17 and rs==6:self.condition=bool(self.r[rt]&(1<<23));return
-        if op==17 and rs==16 and fn==4:self.set_number((ins>>6)&31,math.sqrt(self.number(rd)));return
+        # The EE/R5900 differs from ordinary MIPS: SQRT.S reads Ft.
+        if op==17 and rs==16 and fn==4:self.set_number((ins>>6)&31,math.sqrt(abs(self.number(rt))));return
         if op==0 and fn==25:
             value=(self.r[rs]&0xFFFFFFFF)*(self.r[rt]&0xFFFFFFFF);self.lo=value&0xFFFFFFFF;self.hi=value>>32;return
         if op==0 and fn==27:
@@ -113,6 +114,7 @@ def fixture(ki=(True,True), hz=30, adversarial=True):
         c.callbacks[address]=wrapper
     callback(tag.GATE,lambda m:m.r.__setitem__(2,1))
     callback(safety.PREFLIGHT,lambda m:m.r.__setitem__(2,1))
+    callback(safety.VICTIM_PREFLIGHT,lambda m:m.r.__setitem__(2,1))
     callback(safety.FLOOR,lambda m:m.r.__setitem__(2,0))
     callback(camera.INIT,lambda m:m.r.__setitem__(2,1))
     callback(camera.UPDATE,lambda m:None)
@@ -196,11 +198,152 @@ def reach_beam_event(c,hz=30):
 
 
 class SceneTests(unittest.TestCase):
+    def test_custom_burst_overlaps_firing_and_returns_camera_with_controls_sooner(self):
+        for hz in (25,30):
+            for ki in ((True,True),(True,False),(False,True)):
+                with self.subTest(hz=hz,ki=ki):
+                    c=fixture(ki,hz=hz);start(c)
+                    descriptor=c.u(scene.STATE+scene.S['base'])+4*64
+                    c.w(descriptor+28,c.u(descriptor+28)|assets.CUSTOM_FINISHER)
+                    c.w(scene.STATE+scene.S['descriptor'],descriptor)
+                    c.w(scene.STATE+scene.S['exploded'],1)
+                    c.w(c.r[28]-22176,camera.CAMERA);c.w(RENDERER+0xC40,camera.CAMERA+16)
+                    c.r[4]=0;run(c,scene.FINISH)
+                    limit=scene.burst_settle_ticks(hz,custom=True)
+                    self.assertEqual(limit,21 if hz==30 else 18)
+                    self.assertLess(limit,scene.burst_settle_ticks(hz))
+                    for elapsed in range(1,limit+1):
+                        self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),elapsed)
+                        self.assertEqual(c.u(tag.CONTROL+tag.C['active']),1)
+                        self.assertEqual(c.u(c.r[28]-22176),camera.CAMERA)
+                        self.assertEqual((c.beams,c.explosions,c.damage),([],[],[]))
+                        run(c,scene.STEP)
+                    self.assertEqual(c.u(tag.CONTROL+tag.C['active']),0)
+                    self.assertEqual(c.u(c.r[28]-22176),ORDINARY)
+                    self.assertEqual(c.u(camera.TAIL),0)
+                    self.assertEqual(len(c.damage),1)
+
+    def test_custom_burst_frame_matches_sound_and_damage_clock_in_both_regions(self):
+        import tag_rush_choreography as choreography
+        for hz in (25,30):
+            for custom in (False,True):
+                c=fixture(hz=hz);start(c)
+                descriptor=c.u(scene.STATE+scene.S['base'])+4*64
+                flags=c.u(descriptor+28)|(assets.CUSTOM_FINISHER if custom else 0)
+                c.w(descriptor+28,flags);c.w(descriptor,180)
+                c.w(scene.STATE+scene.S['descriptor'],descriptor)
+                c.w(scene.STATE+scene.S['phase'],4);c.w(scene.STATE+scene.S['fx_started'],1)
+                frame=choreography.beam_burst_frame(180,custom=custom)
+                self.assertEqual(frame,96 if custom else 150)
+                crossing=math.ceil(frame*hz/60)
+                for tick in (crossing-1,crossing,crossing,crossing+2):
+                    c.w(scene.STATE+scene.S['ticks'],tick)
+                    c.r[17]=scene.STATE;c.r[19]=descriptor;run(c,scene.FX_STEP)
+                    self.assertEqual(len(c.explosions),int(tick>=crossing))
+                self.assertEqual(c.explosions[0][3],crossing)
+
+    def test_only_the_victim_uses_knockback_admission_at_final_preflight(self):
+        c=fixture();start(c)
+        admissions=[(address,args[0]) for address,args in c.calls
+                    if address in (safety.PREFLIGHT,safety.VICTIM_PREFLIGHT)]
+        self.assertEqual(admissions,[(safety.PREFLIGHT,c.actors[0]),
+                                     (safety.PREFLIGHT,c.actors[2]),
+                                     (safety.VICTIM_PREFLIGHT,c.actors[1])])
+        c=fixture();before=[c.read(actor,0x1600) for actor in c.actors]
+        c.callbacks[safety.VICTIM_PREFLIGHT]=lambda m:m.r.__setitem__(2,0)
+        start(c);self.assertEqual(c.r[2],0)
+        self.assertEqual(before,[c.read(actor,0x1600) for actor in c.actors])
+        self.assertEqual(c.u(tag.CONTROL+tag.C['active']),0)
+
+    def test_beam_keeps_camera_and_controls_together_until_burst_clears(self):
+        for ki in ((True,True),(True,False),(False,True),(False,False)):
+            for cancelled in (0,1):
+                c=fixture(ki);start(c)
+                c.write(camera.QUERY,camera.query_code())
+                c.w(scene.STATE+scene.S['descriptor'],c.u(scene.STATE+scene.S['base'])+4*64)
+                c.w(scene.STATE+scene.S['exploded'],1)
+                c.w(c.r[28]-22176,camera.CAMERA);c.w(RENDERER+0xC40,camera.CAMERA+16)
+                c.r[4]=cancelled;run(c,scene.FINISH)
+                expected=not cancelled and any(ki)
+                if expected:
+                    for elapsed in range(1,scene.burst_settle_ticks()+1):
+                        self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),elapsed)
+                        self.assertEqual(c.u(tag.CONTROL+tag.C['active']),1)
+                        self.assertEqual(c.u(tag.CONTROL+tag.C['members']),7)
+                        self.assertEqual(c.u(scene.STATE+scene.S['magic']),scene.SCENE_MAGIC)
+                        self.assertEqual(c.u(camera.TAIL),0)
+                        self.assertEqual(c.placements,[]);self.assertEqual(c.damage,[])
+                        self.assertEqual(c.beams,[]);self.assertEqual(c.explosions,[])
+                        for physical in range(4):
+                            c.r[4]=physical;run(c,camera.QUERY)
+                            self.assertEqual(c.r[2],camera.CAMERA if physical<3 else 0)
+                        self.assertEqual(c.u(c.r[28]-22176),camera.CAMERA)
+                        run(c,scene.STEP)
+                self.assertEqual(c.u(camera.TAIL),0)
+                self.assertEqual(c.u(tag.CONTROL+tag.C['active']),0)
+                self.assertEqual(c.u(tag.CONTROL+tag.C['members']),0)
+                self.assertEqual(c.u(scene.STATE+scene.S['magic']),0)
+                self.assertEqual(len(c.placements),3)
+                self.assertEqual(c.u(c.r[28]-22176),ORDINARY)
+                self.assertEqual(c.u(RENDERER+0xC40),ORDINARY+16)
+                c.r[4]=0;run(c,camera.QUERY);self.assertEqual(c.r[2],0)
+                # A subsequent valid tag starts with no previous clearance wait.
+                start(c);self.assertEqual(c.r[2],1);self.assertEqual(c.u(camera.TAIL),0)
+                self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),0)
+
+    def test_burst_wait_counts_effect_retirement_and_cancels_without_delaying_cleanup(self):
+        for reason in ('retired','cancelled','changed_model','changed_manager'):
+            c=fixture();start(c)
+            c.w(scene.STATE+scene.S['descriptor'],c.u(scene.STATE+scene.S['base'])+4*64)
+            c.w(scene.STATE+scene.S['exploded'],1);c.stop_remaining=1
+            c.r[4]=0;run(c,scene.FINISH)
+            for _ in range(4):run(c,scene.STEP)
+            self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),5)
+            c.stop_remaining=0
+            if reason=='retired':
+                for _ in range(scene.burst_settle_ticks()-5):run(c,scene.STEP)
+                self.assertEqual(c.u(tag.CONTROL+tag.C['active']),1)
+                run(c,scene.STEP)
+            elif reason=='cancelled':c.r[4]=1;run(c,scene.FINISH)
+            elif reason=='changed_model':c.w(tag.core.MODELS+8,0x4000000);run(c,scene.STEP)
+            else:c.w(c.r[28]-22364,0x2000000);run(c,scene.STEP)
+            self.assertEqual(c.u(tag.CONTROL+tag.C['active']),0,reason)
+            self.assertEqual(c.u(camera.TAIL),0,reason)
+            self.assertEqual(len(c.damage),int(reason=='retired'))
+
+    def test_burst_clearance_uses_native_pause_clock_and_shared_camera_setting(self):
+        c=fixture();start(c)
+        c.w(scene.STATE+scene.S['descriptor'],c.u(scene.STATE+scene.S['base'])+4*64)
+        c.w(scene.STATE+scene.S['exploded'],1);c.w(tag.CONTROL+tag.C['shared'],1)
+        c.r[4]=0;run(c,scene.FINISH)
+        c.write(tag.TICK,tag.tick_code());c.write(active_pause.CHECK,active_pause.code())
+        c.write(camera.QUERY,camera.query_code())
+        c.w(scene.A(0x2FEB38),0x2470000);c.w(0x2470000,3);c.w(scene.A(0x3337C0),1)
+        c.callbacks[scene.A(0x12CE88)]=lambda m:m.r.__setitem__(2,int(
+            bool(m.u(scene.A(0x3337B8))&0x100) or bool(m.u(m.actors[m.r[4]]+4896))))
+        for address in (scene.A(0x333700),scene.A(0x3337B8)):
+            c.w(address,1 if address==scene.A(0x333700) else 0x100)
+            before=c.u(scene.STATE+scene.S['settle_ticks'])
+            for _ in range(3):run(c,tag.TICK)
+            self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),before)
+            self.assertEqual(c.u(tag.CONTROL+tag.C['active']),1)
+            c.r[4]=3;run(c,camera.QUERY);self.assertEqual(c.r[2],camera.CAMERA)
+            c.w(address,0);run(c,tag.TICK)
+            self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),before+1)
+        # Another fighter's transformation does not extend this shot when
+        # the three tag participants and their native effects are still free.
+        c.w(c.u(tag.CONTROL+tag.C['manager'])+628,1);c.w(c.actors[3]+4896,1)
+        before=c.u(scene.STATE+scene.S['settle_ticks']);run(c,tag.TICK)
+        self.assertEqual(c.u(scene.STATE+scene.S['settle_ticks']),before+1)
+
     def test_start_final_preflight_rejects_giant_in_any_role_before_mutation(self):
         import team_participation as participation
         for index in (0,2,1):
             for enabled in (0,1):
-                c=fixture();c.write(safety.PREFLIGHT,safety.preflight_code());del c.callbacks[safety.PREFLIGHT]
+                c=fixture()
+                for entry,code in ((safety.PREFLIGHT,safety.preflight_code()),
+                                   (safety.VICTIM_PREFLIGHT,safety.victim_preflight_code())):
+                    c.write(entry,code);del c.callbacks[entry]
                 c.w(participation.CONTROL+12,15)
                 c.write(giants.CONTROL,struct.pack('<4If',giants.MAGIC,c.u(tag.CONTROL+4),4,enabled,2.0))
                 c.write(c.u(c.models[index]+2332)+2,b'\x04')
@@ -208,7 +351,10 @@ class SceneTests(unittest.TestCase):
                 start(c);self.assertEqual(c.r[2],0);self.assertEqual(c.u(tag.CONTROL+16),0)
                 self.assertEqual([c.u(tag.METERS+32*i) for i in range(4)],[750]*4)
                 self.assertEqual(before,[(c.read(a,0x1600),c.read(m,0x1700)) for a,m in zip(c.actors,c.models)])
-        c=fixture();c.write(safety.PREFLIGHT,safety.preflight_code());del c.callbacks[safety.PREFLIGHT]
+        c=fixture()
+        for entry,code in ((safety.PREFLIGHT,safety.preflight_code()),
+                           (safety.VICTIM_PREFLIGHT,safety.victim_preflight_code())):
+            c.write(entry,code);del c.callbacks[entry]
         c.w(participation.CONTROL+12,15);start(c);self.assertEqual(c.r[2],1)
 
     def test_start_captures_before_cleanup_and_spends_no_meter(self):
@@ -407,6 +553,7 @@ class SceneTests(unittest.TestCase):
                 while c.u(tag.CONTROL+16) and ticks<500:
                     run(c,scene.STEP);ticks+=1
                 expected=sum(math.ceil(n*hz/60) for n in (68,99,149,119,40 if variant==1 else 262))+1
+                if variant!=1:expected+=scene.burst_settle_ticks(hz)
                 self.assertEqual(ticks,expected,(hz,variant));self.assertEqual(c.u(tag.CONTROL+16),0)
                 self.assertEqual(c.damage,[(c.actors[1],15000,scene.damage_schedule.FINAL_FLAGS)])
                 self.assertEqual(c.u(tag.CONTROL+84),1);self.assertEqual(len(c.placements),3)
@@ -554,7 +701,8 @@ class SceneTests(unittest.TestCase):
         self.assertEqual(c.u(tag.CONTROL+16),1)
 
     def test_incomplete_presentation_is_explicitly_not_installable(self):
-        pack={'variants':{name:dict(address=assets.BASE+320*i,count=5) for i,name in enumerate(('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner'))}}
+        import tag_rush_choreography as choreography
+        pack={'variants':{name:dict(address=assets.BASE+320*i,count=5) for i,name in enumerate(choreography.VARIANTS)}}
         plan=scene.installation(pack)
         self.assertFalse(plan['usable']);self.assertTrue(plan['limitations'])
         self.assertEqual(plan['control_words'][96],scene.TABLE)
