@@ -152,7 +152,7 @@ def build_memory(ram,mode='teams',humans=1,fusion_controls='swap_20s',source='<p
                              'Free-for-all uses native last-survivor result handling; time/ring-out policies remain native.'])
 
 
-def static_overrides(mode,n,initial,previous,present,button_aware=False,pad_resolver=None):
+def static_overrides(mode,n,initial,previous,present,button_aware=False,pad_resolver=None,revive_targets=None):
     """(address, original, installed) executable changes; no runtime target data.
 
     button_aware selects the lock-on queue emission the state was prepared from.
@@ -164,14 +164,14 @@ def static_overrides(mode,n,initial,previous,present,button_aware=False,pad_reso
         import extra_throws as throws
         import ffa_targeting as ffa
         resolver=core.rebound(core.resolver_code,RESOLVER=throws.OLD_RESOLVE)
-        out.append((throws.OLD_RESOLVE,resolver(),resolver(True)))
-        before=ai.program(n,initial)
-        after=ai.program(n,policy.targets('ffa',n,present),free_for_all=True)
+        out.append((throws.OLD_RESOLVE,resolver(revive_targets=revive_targets),resolver(True,revive_targets=revive_targets)))
+        before=ai.program(n,initial,revive_targets=revive_targets)
+        after=ai.program(n,policy.targets('ffa',n,present),free_for_all=True,revive_targets=revive_targets)
         for old,new in zip(before['segments'],after['segments']):
             if old['data_hex']!=new['data_hex']:
                 out.append((old['address'],bytes.fromhex(old['data_hex']),bytes.fromhex(new['data_hex'])))
-        out.append((lockon.CODE,lockon.payload(previous,button_aware=button_aware),
-                    lockon.payload(previous,free_for_all=True,button_aware=button_aware,pad_resolver=pad_resolver)))
+        out.append((lockon.CODE,lockon.payload(previous,button_aware=button_aware,revive_targets=revive_targets),
+                    lockon.payload(previous,free_for_all=True,button_aware=button_aware,pad_resolver=pad_resolver,revive_targets=revive_targets)))
         for p,fun,target in ((retaliation.ACCUMULATE,retaliation.accumulate_code,ffa.ACCUMULATE),
                              (retaliation.APPLY,retaliation.apply_code,ffa.APPLY)):
             out.append((p,fun(),jump(target)))
@@ -183,8 +183,8 @@ def static_overrides(mode,n,initial,previous,present,button_aware=False,pad_reso
             out.append((p,jump(target),struct.pack('<2I',0x03E00008,0x0000102D)))
     elif mode=='coop':
         import coop_fusion as coop
-        out.append((lockon.CODE,lockon.payload(previous,button_aware=button_aware),
-                    lockon.payload(previous,coop_controls=True,button_aware=button_aware,pad_resolver=pad_resolver)))
+        out.append((lockon.CODE,lockon.payload(previous,button_aware=button_aware,revive_targets=revive_targets),
+                    lockon.payload(previous,coop_controls=True,button_aware=button_aware,pad_resolver=pad_resolver,revive_targets=revive_targets)))
         for p,target,replacement in ((fusion.ELIGIBILITY_HOOK,fusion.ELIGIBILITY,coop.ELIGIBILITY),
                                      (fusion.BEGIN_HOOK,fusion.BEGIN,coop.BEGIN),
                                      (fusion.COMMIT_HOOK,fusion.COMMIT,coop.COMMIT),
@@ -248,7 +248,16 @@ def validate_memory(ram,manager=None,count=None):
         expected=fusion_duration.dependency_override(ram,p,expected)
         import multiplayer_fusion
         expected=multiplayer_fusion.dependency_override(ram,p,expected)
-        if ram[p:p+len(expected)]!=expected:raise ValueError(f'Battle-mode code changed:{p:08X}')
+        if ram[p:p+len(expected)]!=expected:
+            # Older checkpoints predate revivable allies in target selection.
+            # Accept only the exact original emission and its exact padding.
+            for lp,lo,lr in static_overrides(mode,count,initial,previous,mask,*configured,revive_targets=False):
+                if lp!=p:continue
+                legacy=lr+lo[len(lr):]
+                legacy=lockoff_target.dependency_override(ram,p,legacy)
+                legacy=lockon_threat.dependency_override(ram,p,legacy)
+                if ram[p:p+len(legacy)]==legacy:break
+            else:raise ValueError(f'Battle-mode code changed:{p:08X}')
     if mode=='ffa':
         import ffa_targeting
         ffa_targeting.validate_memory(ram,manager,count,mask,'ffa')

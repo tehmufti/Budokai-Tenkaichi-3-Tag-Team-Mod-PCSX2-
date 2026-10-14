@@ -143,7 +143,7 @@ def camera_code():
     a.label('none');a.move(2,0);a.jr();return a.finish()
 
 
-def pick_code():
+def pick_code(revive_targets=None):
     """Closest visible living enemy to this view's centre, by projected distance.
 
     Use the native projection and each camera's actual viewport (including
@@ -152,6 +152,7 @@ def pick_code():
     """
     import team_participation as part
     from guest_healthbars import valid_pointer
+    if revive_targets is None:revive_targets=modes.emitted_capacity()!=modes.LEGACY_TEAM_CAPACITY
     a=Assembler(PICK);save(a,0xC0);a.move(16,4);a.addiu(23,0,-1)
     core.gate(a,'return');a.move(20,10);a.call(CAMERA);a.move(17,2)
     valid_pointer(a,17,'return',656)
@@ -162,14 +163,21 @@ def pick_code():
     a.call(A(0x120AB0));a.addiu(4,17,320);a.call(A(0x120B80))
     a.move(18,0);a.li(22,0x7FFFFFFF)
     a.label('loop');a.branch(4,18,20,'pop');a.branch(4,18,16,'next')
+    if revive_targets:
+        import revive_targeting
+        revive_targeting.emit_check(a,16,18)
+        a.branch(5,2,0,'pick_relation')
     modes.emit_enemy(a,18,16,'next','pick_enemy')
+    if revive_targets:a.label('pick_relation')
     a.li(8,part.CONTROL);a.lw(9,8,12);a.lw(10,8,16);a.r(0x27,10,10,0);a.r(0x24,9,9,10)
     a.addiu(10,0,1);a.r(4,10,18,10);a.r(0x24,9,9,10);a.branch(4,9,0,'next')
     a.li(8,core.POINTERS);a.r(0,9,0,18,2);a.r(0x21,8,8,9);a.lw(19,8)
     valid_pointer(a,19,'next',0x1600)
     a.lw(8,19,0x994);a.i(11,9,8,5);a.branch(4,9,0,'next')
     a.addiu(9,0,164);a.r(24,0,8,9);a.r(18,9,0);a.r(0x21,9,9,19)
+    if revive_targets:a.branch(5,2,0,'pick_health')
     a.lw(8,9,0x9E4);a.branch(6,8,0,'next')
+    if revive_targets:a.label('pick_health')
     a.lw(8,19,12);a.i(11,9,8,12);a.branch(4,9,0,'next')
     a.r(0,8,0,8,2);a.li(9,core.MODELS);a.r(0x21,8,8,9);a.lw(21,8)
     valid_pointer(a,21,'next',0x1670)
@@ -318,6 +326,7 @@ def programs():
 
 
 def validate_memory(ram):
+    import native_hud_style; ram = native_hud_style.classic_view(ram)   # a native HUD style match reads as classic
     if struct.unpack_from('<2I',ram,CONTROL)!=(MAGIC,struct.unpack_from('<I',ram,core.ACTORS)[0]):
         raise ValueError('Lock-off belongs to another capture')
     # lockon_select hooks the INPUT/APPLY entries; it validates its own programs, never these.
@@ -326,6 +335,9 @@ def validate_memory(ram):
     for p,b in programs():
         b=lockon_select.dependency_override(ram,p,b)
         b=lockon_threat.dependency_override(ram,p,b)
+        if p==PICK and ram[p:p+len(b)]!=b:
+            legacy=pick_code(revive_targets=False)
+            if ram[p:p+len(legacy)]==legacy:b=legacy
         if ram[p:p+len(b)]!=b:raise ValueError(f'Lock-off executable changed at {p:X}')
 
 

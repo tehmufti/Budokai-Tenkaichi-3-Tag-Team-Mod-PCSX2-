@@ -74,7 +74,9 @@ def chord(a, button_aware):
     a.r(0x24, 8, 8, 9)
 
 
-def payload(previous, hold_release=True, free_for_all=False, coop_controls=False, button_aware=False, pad_resolver=None, lockoff=False):
+def payload(previous, hold_release=True, free_for_all=False, coop_controls=False, button_aware=False, pad_resolver=None, lockoff=False, revive_targets=None):
+    if revive_targets is None:revive_targets=policy.emitted_capacity()!=policy.LEGACY_TEAM_CAPACITY
+
     F, slots = layout() if hold_release else (LEGACY_FIELDS, 12)
     a = Assembler(CODE); a.addiu(29, 29, -0x40)
     for reg, off in SAVED: a.i(63, reg, 29, off)
@@ -180,14 +182,21 @@ def payload(previous, hold_release=True, free_for_all=False, coop_controls=False
     a.label('search'); a.addiu(11, 11, 1); a.r(0x2B, 8, 17, 11); a.branch(5, 8, 0, 'consume')
     a.addiu(14, 14, 1); a.r(0x2B, 8, 14, 17); a.branch(5, 8, 0, 'wrapped'); a.move(14, 0)
     a.label('wrapped'); a.branch(4, 14, 20, 'consume')
+    if revive_targets and hold_release and not free_for_all:
+        import revive_targeting
+        revive_targeting.emit_check(a,18,14)
+        a.branch(5,2,0,'candidate_relation')
     if free_for_all: a.branch(4, 14, 18, 'search')
     else: a.i(12, 8, 14, 1); a.i(12, 9, 18, 1); a.branch(4, 8, 9, 'search')
+    if revive_targets and hold_release and not free_for_all:a.label('candidate_relation')
     a.li(8, core.POINTERS); a.r(0, 9, 0, 14, 2); a.r(0x2D, 8, 8, 9); a.lw(9, 8)
     a.branch(4, 9, 0, 'search')
     a.lw(8, 9, 0x994); a.i(11, 10, 8, 5); a.branch(4, 10, 0, 'search')
     a.r(0, 10, 0, 8, 7); a.r(0, 12, 0, 8, 5); a.r(0x2D, 10, 10, 12)
     a.r(0, 12, 0, 8, 2); a.r(0x2D, 10, 10, 12); a.r(0x2D, 10, 10, 9)
+    if revive_targets and hold_release and not free_for_all:a.branch(5,2,0,'candidate_health')
     a.lw(10, 10, 0x9E4); a.branch(6, 10, 0, 'search')
+    if revive_targets and hold_release and not free_for_all:a.label('candidate_health')
     a.sw(14, 15)
     a.lw(8, 16, F['switches']); a.addiu(8, 8, 1); a.sw(8, 16, F['switches'])
     a.lw(8, 21, F['per_actor']); a.addiu(8, 8, 1); a.sw(8, 21, F['per_actor'])
@@ -297,6 +306,11 @@ def installed_configuration(ram, previous, free_for_all=False, coop_controls=Fal
             if ram[CODE:CODE+len(expected)] == expected:
                 if resolver is not None:four_player_mode.validate_pad(ram)
                 return button_aware,resolver
+            legacy=payload(previous,free_for_all=free_for_all,coop_controls=coop_controls,
+                           button_aware=button_aware,pad_resolver=resolver,revive_targets=False)
+            if ram[CODE:CODE+len(legacy)]==legacy:
+                if resolver is not None:four_player_mode.validate_pad(ram)
+                return button_aware,resolver
             if button_aware==CONFIGURABLE:
                 import lockoff_target as unlock
                 if struct.unpack_from('<I',ram,unlock.CONTROL)[0]==unlock.MAGIC:
@@ -347,9 +361,13 @@ def rebind_memory(ram, button, source='<offline-memory>',hold_updates=None):
     if found is None: raise ValueError('Installed lock-on payload differs')
     installed,resolver=found
     current = u(CONTROL+FIELDS['button'])
+    def original_payload(**options):
+        current_code=payload(previous,**options)
+        legacy=payload(previous,revive_targets=False,**options)
+        return legacy if ram[CODE:CODE+len(legacy)]==legacy else current_code
     pieces = []
     if hold_updates is not None or installed == CONFIGURABLE:
-        original=payload(previous,button_aware=installed,pad_resolver=resolver)
+        original=original_payload(button_aware=installed,pad_resolver=resolver)
         replacement=payload(previous,button_aware=CONFIGURABLE,pad_resolver=resolver)
         if installed != CONFIGURABLE:
             if any(ram[CODE+len(original):CODE+len(replacement)]):
@@ -366,7 +384,7 @@ def rebind_memory(ram, button, source='<offline-memory>',hold_updates=None):
                 pieces.append((CONTROL+TIMING_UPDATES,timing,'Configured target-switch hold duration'))
         installed=CONFIGURABLE
     elif not installed and button & CHORD_MASK:
-        original = payload(previous,pad_resolver=resolver)
+        original = original_payload(pad_resolver=resolver)
         replacement = payload(previous, button_aware=True,pad_resolver=resolver)
         if any(ram[CODE+len(original):CODE+len(replacement)]):
             raise ValueError('Expanded lock-on queue reservation occupied')

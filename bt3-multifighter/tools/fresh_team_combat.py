@@ -122,7 +122,10 @@ def getter_code(base, entry, logical=False, fused=True):
     return a.finish()
 
 
-def resolver_code(free_for_all=False):
+def resolver_code(free_for_all=False, revive_targets=None):
+    import battle_mode_policy as modes
+    if revive_targets is None:revive_targets=modes.emitted_capacity()!=modes.LEGACY_TEAM_CAPACITY
+
     a = Assembler(RESOLVER); alias_gate(a, 'global')
     a.lw(9, 8, 8); a.branch(4, 4, 9, 'role0')
     a.lw(9, 8, 12); a.branch(5, 4, 9, 'global')
@@ -139,11 +142,17 @@ def resolver_code(free_for_all=False):
     a.addiu(8, 8, 4); a.addiu(3, 3, 1); a.r(0x2B, 9, 3, 10)
     a.branch(5, 9, 0, 'find'); a.jump('native')
     a.label('found')
+    if revive_targets and not free_for_all:a.move(15,3)  # physical viewer before reading its target
     if free_for_all: a.move(2, 3)
     else: a.i(12, 2, 3, 1)
     a.li(8, TABLE); a.r(0, 9, 0, 3, 2); a.r(0x2D, 8, 8, 9); a.lw(3, 8)
     a.r(0x2B, 9, 3, 10); a.branch(4, 9, 0, 'native')
     if free_for_all: a.branch(4, 3, 2, 'native')
+    elif revive_targets:
+        import revive_targeting
+        a.i(12,9,3,1);a.branch(5,9,2,'target_allowed')
+        revive_targeting.emit_check(a,15,3);a.branch(4,2,0,'native')
+        a.label('target_allowed')
     else: a.i(12, 9, 3, 1); a.branch(4, 9, 2, 'native')
     a.li(8, POINTERS); a.r(0, 9, 0, 3, 2); a.r(0x2D, 8, 8, 9); a.lw(2, 8)
     a.branch(4, 2, 0, 'native'); a.jr()

@@ -245,13 +245,21 @@ def emit_present(a, index, fail):
     a.addiu(10, 0, 1); a.r(4, 10, index, 10); a.r(0x24, 9, 9, 10); a.branch(4, 9, 0, fail)
 
 
-def emit_candidate(a, index, viewer, actor, model, fail, tag):
+def emit_candidate(a, index, viewer, actor, model, fail, tag, revive_targets=None):
     """Exactly lock-off PICK's candidate predicate, without projection: an enemy of viewer, present and
     not consumed, valid actor, living active form, valid drawn model. t0..t2; actor/model outputs."""
+    if revive_targets is None:revive_targets=modes.emitted_capacity()!=modes.LEGACY_TEAM_CAPACITY
+    if revive_targets:
+        import revive_targeting
+        revive_targeting.emit_check(a,viewer,index)
+        a.branch(5,2,0,tag+'_relation')
     modes.emit_enemy(a, index, viewer, fail, tag)
+    if revive_targets:a.label(tag+'_relation')
     emit_present(a, index, fail)
     emit_actor(a, index, actor, fail)
+    if revive_targets:a.branch(5,2,0,tag+'_health')
     emit_health(a, actor, fail)
+    if revive_targets:a.label(tag+'_health')
     emit_model(a, actor, model, fail)
 
 
@@ -441,7 +449,9 @@ def emit_gate(a, closed, tag):
         a.addiu(9, 8, -start); a.i(11, 9, 9, span); a.branch(5, 9, 0, closed)
 
 
-def input_code():
+def input_code(revive_targets=None):
+    if revive_targets is None:revive_targets=modes.emitted_capacity()!=modes.LEGACY_TEAM_CAPACITY
+
     """a0 actor, a1 routed held word, a2 physical -> v0 kind (0, 1 next, 2 unlock, 4 aim, 5 after KO).
 
     Same ABI as lock-off INPUT, which it wraps (TAIL_INPUT runs the unchanged beta.33 logic).
@@ -615,6 +625,10 @@ def input_code():
     a.branch(4, 9, 18, 'not_defeated')
     a.lw(12, 29, 0x60); emit_present(a, 12, 'not_defeated')
     a.lw(12, 29, 0x60); emit_actor(a, 12, 11, 'not_defeated')
+    if revive_targets:
+        import revive_targeting
+        a.lw(12,29,0x60);revive_targeting.emit_check(a,18,12)
+        a.branch(5,2,0,'not_defeated')
     emit_health(a, 11, 'watched_alive', alive=False)
     emit_view_owned(a, 'return_kind', 'ko_view')          # the count waits for a free camera
     a.lw(8, 20, DEADN); a.i(11, 9, 8, 2); a.branch(4, 9, 0, 'confirmed'); a.branch(5, 8, 0, 'counted')
@@ -684,7 +698,7 @@ def apply_code():
     # The choice made when the target fell, if that enemy is still a valid living enemy; otherwise PICK now.
     a.lw(22, 20, KO_PICK); a.sw(0, 20, KO_PICK); a.branch(4, 22, 0, 'fresh_pick'); a.addiu(22, 22, -1)
     core.gate(a, 'fresh_pick'); a.r(0x2B, 8, 22, 10); a.branch(4, 8, 0, 'fresh_pick')
-    emit_candidate(a, 22, 17, 11, 13, 'fresh_pick', 'ko_enemy')
+    emit_candidate(a, 22, 17, 11, 13, 'fresh_pick', 'ko_enemy', revive_targets=False)
     a.move(2, 22); a.jump('ko_picked')
     a.label('fresh_pick'); a.move(4, 17); a.call(off.PICK)
     a.label('ko_picked')
