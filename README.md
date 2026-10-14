@@ -76,10 +76,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 13 Windows ZIP can be used instead of downloading it:
+An existing Version 13.1 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.1.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -92,7 +92,7 @@ python bt3-multifighter/tools/modder_gui.py
 
 ## Development source and downloads
 
-Version 13 is available in Releases. Main may receive further development changes;
+Version 13.1 is available in Releases. Main may receive further development changes;
 use the release tag for the source behind the installers and updaters.
 Choose a new version before distributing a modified build.
 
