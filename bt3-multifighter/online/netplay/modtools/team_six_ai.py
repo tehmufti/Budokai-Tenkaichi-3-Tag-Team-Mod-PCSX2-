@@ -66,7 +66,10 @@ def initialize_stub():
     return a.finish()
 
 
-def picker_stub(free_for_all=False):
+def picker_stub(free_for_all=False, revive_targets=None):
+    import battle_mode_policy as policy
+    if revive_targets is None:revive_targets=policy.emitted_capacity()!=policy.LEGACY_TEAM_CAPACITY
+
     a = Assembler(PICKER)
     a.addiu(29, 29, -0x50 if free_for_all else -0x30)
     saved = ((16, 0), (17, 8), (18, 16), (19, 24), (31, 32))
@@ -95,6 +98,11 @@ def picker_stub(free_for_all=False):
         a.load_address(8, TARGETS + i * 4)
         a.mem(35, 9, 8, 0)
         a.move(10, 9)
+        if revive_targets and not free_for_all:
+            import revive_targeting
+            a.addiu(11,0,i)
+            revive_targeting.emit_check(a,11,9)
+            a.branch(2,0,f'store{i}',not_equal=True);a.nop()
         for enemy in enemies:
             a.addiu(11, 0, enemy)
             a.branch(9, 11, f"current{i}_{enemy}")

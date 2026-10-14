@@ -145,11 +145,11 @@ def frame_stub(n, free_for_all=False):
     return a.finish()
 
 
-def program(n, targets=None, free_for_all=False):
+def program(n, targets=None, free_for_all=False, revive_targets=None):
     if not policy.MIN_ACTORS <= n <= policy.MAX_ACTORS:
         raise ValueError(f'Fresh count must be {policy.MIN_ACTORS}..{policy.MAX_ACTORS}')
     picker = rebind(six.picker_stub, N=n, DEFAULTS=tuple(targets or default_targets(n)),
-                    PICKER=PICKER, CONTROL=CONTROL)(free_for_all=free_for_all)
+                    PICKER=PICKER, CONTROL=CONTROL)(free_for_all=free_for_all,revive_targets=revive_targets)
     payloads = [(FRAME, frame_stub(n, free_for_all=free_for_all)), (PICKER, picker), (INITIALIZE, initializer(n))]
     for (start, data), end in zip(payloads, (PICKER, INITIALIZE, CONTROL)):
         if start+len(data) > end: raise ValueError('Fresh AI code reservations overlap')

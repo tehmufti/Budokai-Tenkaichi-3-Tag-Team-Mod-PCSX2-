@@ -1,3 +1,11 @@
+## Version 13.2
+
+You can now lock onto downed teammates to find them and revive them. They appear in the normal target cycle, using the same targeting and lock-off controls you already use.
+
+Living teammates and fighters permanently eliminated by ring-out stay out of the list. Once a teammate gets back up, they leave the target cycle again. This applies wherever teammate revival is enabled, including online.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.2.
+
 ## Version 13.1
 
 Keyboard controls are now easier to set up, especially online. Choose Keyboard on the online start screen, then open Keyboard bindings to set your keys before hosting or joining.

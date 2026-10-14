@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 13.1 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.1).
+Download the **Version 13.2 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.2).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -18,6 +18,10 @@ The release includes English and Spanish mod interfaces.
 This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
+
+Version 13.2 lets you lock onto downed teammates using the normal target cycle
+and lock-off controls, wherever teammate revival is enabled. Revived allies and
+fighters permanently eliminated by ring-out leave the target list.
 
 Version 13.1 adds editable keyboard controls for offline and online play.
 Use Mod Settings → Controls → Keyboard bindings locally, or choose Keyboard
@@ -76,10 +80,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 13.1 Windows ZIP can be used instead of downloading it:
+An existing Version 13.2 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.1.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.2.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are

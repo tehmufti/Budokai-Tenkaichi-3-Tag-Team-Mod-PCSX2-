@@ -144,8 +144,8 @@
       "shared": true
     },
     "tools/battle_modes.py": {
-      "bt3": "260b9827f0cba454e2b22442381ea3cfaa7a6a6f3f76537c09c6a2f0286ad16c",
-      "bt4": "260b9827f0cba454e2b22442381ea3cfaa7a6a6f3f76537c09c6a2f0286ad16c",
+      "bt3": "423e41e00e5af3e6c8ab6578d5fe9e73a3e04e294e1e87aff6738dfcc398078c",
+      "bt4": "423e41e00e5af3e6c8ab6578d5fe9e73a3e04e294e1e87aff6738dfcc398078c",
       "shared": true
     },
     "tools/beam_assist_pose.py": {
@@ -564,8 +564,8 @@
       "shared": true
     },
     "tools/fresh_team_ai.py": {
-      "bt3": "bc88056b9b7b986e60ecc882817a37d188457ccb7554b85d3f18a71ae063d832",
-      "bt4": "770ed0aaac3105ca7475034bfa697cfbce3ac99ea7f43ba898f83df039c78047",
+      "bt3": "32d80011f1f9ea2411d710a5052bd8a17560fcb5c7a17573d6bca43a5f06218a",
+      "bt4": "e1f190fe9a793cb14e1ca1c5fcd9cfce34f3e700b61033d4a5d2fbb99777130f",
       "shared": false
     },
     "tools/fresh_team_camera.py": {
@@ -574,8 +574,8 @@
       "shared": true
     },
     "tools/fresh_team_combat.py": {
-      "bt3": "5880b1ec5cea40039440b303919828c280d24d615fc2ebccfee7ecda72c6140a",
-      "bt4": "5880b1ec5cea40039440b303919828c280d24d615fc2ebccfee7ecda72c6140a",
+      "bt3": "b3cdc4ab5d462cf4f8e055f67a4b8ee6256114e642d7cd549b8f66d2b60d7589",
+      "bt4": "b3cdc4ab5d462cf4f8e055f67a4b8ee6256114e642d7cd549b8f66d2b60d7589",
       "shared": true
     },
     "tools/fresh_team_safety.py": {
@@ -584,8 +584,8 @@
       "shared": true
     },
     "tools/fresh_team_trainer.py": {
-      "bt3": "bc064f8fdf9c3e9c5871ff8cb6a2da90f0b543d5e9d37b77e55a0b5688b05bf8",
-      "bt4": "7a431a63bd4f1c977ff8f0bc7497ce9267a346f44de9cca6f3201b508ba2e844",
+      "bt3": "015c02fb641e9a64d139178ad28b55712715b791462463b298d657ad8c5b407b",
+      "bt4": "ad134f813155f8c667a4f3ecdeb5c1e52f5ff9cb6b1351aa979a867982143abf",
       "shared": false
     },
     "tools/fusion_audio_restore.py": {
@@ -834,18 +834,18 @@
       "shared": false
     },
     "tools/lockoff_target.py": {
-      "bt3": "7316cb53338586145d0f8eb08e4471bea799e6ee39c953af52abef1f34fb2b75",
-      "bt4": "7316cb53338586145d0f8eb08e4471bea799e6ee39c953af52abef1f34fb2b75",
+      "bt3": "8b534dfd1f4be0168a1c412aecbf44db92c9c64c24afa31a3c2d94aac43955ad",
+      "bt4": "8b534dfd1f4be0168a1c412aecbf44db92c9c64c24afa31a3c2d94aac43955ad",
       "shared": true
     },
     "tools/lockon_queue.py": {
-      "bt3": "830514d63004affca19d214cd9c6ca158fde6568a8eb8adc0094f6c8e40c0b7a",
-      "bt4": "830514d63004affca19d214cd9c6ca158fde6568a8eb8adc0094f6c8e40c0b7a",
+      "bt3": "f5b9c3a421827c2101abe781fc98402f549a932017489ce310858bcaa8e763a4",
+      "bt4": "f5b9c3a421827c2101abe781fc98402f549a932017489ce310858bcaa8e763a4",
       "shared": true
     },
     "tools/lockon_select.py": {
-      "bt3": "d48fb60bd621e5e14a0f075f8ef65ee70a0f27f4b40a17464249e4a1fe9e9090",
-      "bt4": "d48fb60bd621e5e14a0f075f8ef65ee70a0f27f4b40a17464249e4a1fe9e9090",
+      "bt3": "8da1a2dc3f05ebee85f8b39de40b88c184e3f5aa405daa57373f968626f8fbe9",
+      "bt4": "8da1a2dc3f05ebee85f8b39de40b88c184e3f5aa405daa57373f968626f8fbe9",
       "shared": true
     },
     "tools/lockon_switch.py": {
@@ -1126,6 +1126,11 @@
     "tools/result_presentation.py": {
       "bt3": "63cd69dd1639d2549c93879ad484add73594a013e37238491db77cb8db65ae86",
       "bt4": "63cd69dd1639d2549c93879ad484add73594a013e37238491db77cb8db65ae86",
+      "shared": true
+    },
+    "tools/revive_targeting.py": {
+      "bt3": "1a088f8c1c758cc7e121079a390e571e19ba7232d6d82272501053b3a8ac9a04",
+      "bt4": "1a088f8c1c758cc7e121079a390e571e19ba7232d6d82272501053b3a8ac9a04",
       "shared": true
     },
     "tools/roster_models.py": {
@@ -1554,8 +1559,8 @@
       "shared": true
     },
     "tools/team_six_ai.py": {
-      "bt3": "f9a3864ccaeb62d677647e4a84520e34815de4409c537fd67511c2126594793a",
-      "bt4": "f9a3864ccaeb62d677647e4a84520e34815de4409c537fd67511c2126594793a",
+      "bt3": "99f8c62f261e28395f9914af03d538079e48d4540c57f20880c71620c6fd6e8a",
+      "bt4": "99f8c62f261e28395f9914af03d538079e48d4540c57f20880c71620c6fd6e8a",
       "shared": true
     },
     "tools/team_start_gate.py": {

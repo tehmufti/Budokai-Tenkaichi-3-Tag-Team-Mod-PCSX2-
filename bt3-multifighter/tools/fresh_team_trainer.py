@@ -466,6 +466,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # Wraps those entries, the damage accumulator and the overhead-bar call again, so it is the last builder.
     import lockon_threat
     builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
+    import revive_targeting
+    builders.append(lambda r: revive_targeting.build_memory(r,settings=preferences,source=source))
     import fusion_buffs
     builders.append(lambda r: fusion_buffs.build_memory(r,settings=preferences,source=source))
     # The optional native HUD style re-points the classic draw calls installed above, so it is the last builder.
