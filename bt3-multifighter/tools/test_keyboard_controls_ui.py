@@ -27,10 +27,19 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(self.editor.values()['Cross'],'Space');self.assertTrue(self.editor.window.winfo_exists())
         self.editor.save();self.assertEqual(self.editor.result['Square'],'Z')
     def test_keyboard_activation_waits_for_release(self):
-        self.editor.capture_from_key('Square')
+        with patch.object(self.editor.window,'focus_set') as focus:
+            self.editor.capture_from_key('Square')
+        focus.assert_called_once()
         self.editor.key_press(self.event('Return'));self.assertEqual(self.editor.values()['Square'],'J')
         self.editor.key_release(self.event('Return'));self.editor.key_press(self.event('x'))
         self.assertEqual(self.editor.values()['Square'],'X')
+    def test_capture_moves_focus_off_button_and_accepts_return_space(self):
+        for key,expected in [('Return','Return'),('space','Space')]:
+            with patch.object(self.editor.window,'focus_set') as focus:
+                self.editor.capture('Square')
+            focus.assert_called_once()
+            self.editor.window.update();self.editor.key_press(self.event(key))
+            self.assertEqual(self.editor.values()['Square'],expected)
     def test_reserved_online_keys_are_rejected_and_capture_continues(self):
         self.editor.capture('Cross');self.editor.window.update();self.editor.key_press(self.event('Pause'))
         self.assertEqual(self.editor.values()['Cross'],'Space');self.assertEqual(self.editor.pending,'Cross')

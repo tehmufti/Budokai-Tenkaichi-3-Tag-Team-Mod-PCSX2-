@@ -129,11 +129,15 @@ class KeyboardEditor:
     def capture(self,button):
         self.pending=button;self.armed=False;self.testing=False
         self.status.set(text('waiting',self.language,button=LABELS[button][1 if self.language=='es' else 0]))
+        # Leave the button's own Return/Space and focus-traversal bindings
+        # behind, so the next key reaches the capture handler unchanged.
+        self.window.focus_set()
         self.window.after_idle(self.arm)
     def arm(self):
         if self.pending:self.armed=True
     def capture_from_key(self,button):
         self.pending=button;self.armed=False;self.testing=False
+        self.window.focus_set()
         self.status.set(text('waiting',self.language,button=button));return 'break'
     def key_release(self,event):
         if self.pending and not self.armed:self.armed=True

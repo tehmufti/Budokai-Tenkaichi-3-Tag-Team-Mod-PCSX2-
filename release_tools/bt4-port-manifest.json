@@ -744,8 +744,8 @@
       "shared": true
     },
     "tools/keyboard_controls_ui.py": {
-      "bt3": "e1e21e292d24b8bc82a25a9fc77160f43d3232c8b5ac0ec0565338c1c65faf11",
-      "bt4": "e1e21e292d24b8bc82a25a9fc77160f43d3232c8b5ac0ec0565338c1c65faf11",
+      "bt3": "4cd6a5551e89307a24f2480759f22386893e181401c609f2f4a533a46a128b32",
+      "bt4": "4cd6a5551e89307a24f2480759f22386893e181401c609f2f4a533a46a128b32",
       "shared": true
     },
     "tools/lazy_ram.py": {
