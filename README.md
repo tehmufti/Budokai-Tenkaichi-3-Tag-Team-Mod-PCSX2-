@@ -7,7 +7,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 13 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13).
+Download the **Version 13.1 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.1).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -18,6 +18,11 @@ The release includes English and Spanish mod interfaces.
 This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
+
+Version 13.1 adds editable keyboard controls for offline and online play.
+Use Mod Settings → Controls → Keyboard bindings locally, or choose Keyboard
+on the online start screen and open Keyboard bindings. Pick keys directly,
+capture a key press, use the WASD preset or test your layout before playing.
 
 Version 13 expands offline tag-team rush attacks for BT3 USA and BT4, with
 character-specific beams, more varied melee endings, CPU tag attacks and an

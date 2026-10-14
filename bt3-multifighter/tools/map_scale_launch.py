@@ -87,6 +87,8 @@ def main(argv=None):
                 if lock is not None:lock.release()
             print(tr('Expanded maps built: {path}',path=chosen[1]))
         else:
+            import keyboard_bindings
+            keyboard_bindings.apply_offline()
             path=selected_iso(checked=True)
             print(json.dumps(str(path)) if '--json' in argv else path)
     except game_profile.DiscError as error:

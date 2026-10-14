@@ -1,3 +1,13 @@
+## Version 13.1
+
+Keyboard controls are now easier to set up, especially online. Choose Keyboard on the online start screen, then open Keyboard bindings to set your keys before hosting or joining.
+
+For offline play, open Mod Settings → Controls → Keyboard bindings. There are separate layouts for Players 1 and 2, and your controller bindings stay available.
+
+You can capture key presses, choose keys from a list, use the WASD preset and test your layout. Existing online keyboard users keep their old keys until they change them.
+
+**Installing:** download the Windows or Linux installer. If you already have the mod, use the matching Updater download and choose your installed mod folder. Everyone in an online room needs Version 13.1.
+
 ## Version 13
 
 Version 13 gives tag attacks more variety and adds pictures to Mod Settings so you can see what the visual options do before saving.

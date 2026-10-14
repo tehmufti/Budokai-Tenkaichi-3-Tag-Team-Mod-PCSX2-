@@ -1204,6 +1204,7 @@ class App:
         self.adv_toggle.pack(anchor='w', pady=(px(4), 0))
         self.adv_box = tk.Frame(adv, bg=BG)
         self.draw_advanced(self.adv_box)
+        self.draw_inputs(pads)
         self.show_advanced(self.advanced_open)
         self.start_status = wrap_label(tk.Label(self.body, text='', bg=BG, fg=th.DIM, font=font(10)))
         self.start_status.pack(fill='x', padx=px(18), pady=px(6))
@@ -1344,12 +1345,6 @@ class App:
         ttk.Combobox(grid, textvariable=self.adv['renderer'], state='readonly', width=1,
                      values=['default', 'auto', 'd3d11', 'd3d12', 'vulkan', 'opengl', 'software']).grid(
             row=2, column=1, sticky='ew', padx=px(8), pady=px(2))
-        wrap_label(tk.Label(grid, text=self.T('adv.pad'), bg=th.PANEL, fg=th.INK,
-                            font=font(9))).grid(row=3, column=0, sticky='ew', padx=px(12), pady=px(3))
-        pad_box = ttk.Combobox(grid, textvariable=self.adv['pad'], state='readonly', width=1, values=list(self.pad_names))
-        pad_box.grid(row=3, column=1, sticky='ew', padx=px(8), pady=px(2))
-        pad_box.bind('<<ComboboxSelected>>', lambda e: setattr(self, 'adv_pad',
-                                                               self.pad_names.get(self.adv['pad'].get(), 'SDL-0')))
         ttk.Checkbutton(grid, text=self.T('adv.fullscreen'), variable=self.adv['fullscreen']).grid(
             row=4, column=0, columnspan=2, sticky='w', padx=px(12), pady=px(3))
         wrap_label(tk.Label(grid, text=self.T('adv.local'), bg=th.PANEL, fg=th.DIM,
@@ -1359,6 +1354,39 @@ class App:
                                 font=font(9))).grid(row=6, column=0, sticky='ew', padx=px(12), pady=(px(3), px(10)))
             ttk.Entry(grid, textvariable=self.password_var, show='*', width=1).grid(
                 row=6, column=1, sticky='ew', padx=px(8), pady=(px(2), px(10)))
+
+    def draw_inputs(self, parent):
+        row=tk.Frame(parent,bg=th.PANEL)
+        row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(px(10),0))
+        row.columnconfigure(1,weight=1)
+        wrap_label(tk.Label(row,text=self.T('adv.pad'),bg=th.PANEL,fg=th.GOLD,font=heading(10))).grid(
+            row=0,column=0,sticky='w',padx=(0,px(8)))
+        box=ttk.Combobox(row,textvariable=self.adv['pad'],state='readonly',width=1,values=list(self.pad_names))
+        box.grid(row=0,column=1,sticky='ew')
+        def chosen(_):
+            self.adv_pad=self.pad_names.get(self.adv['pad'].get(),'SDL-0')
+            fields=dict(pad=self.adv_pad)
+            if self.adv_pad=='keyboard' and 'keyboard_bindings' not in (self.state.get('settings') or {}):
+                import keyboard_bindings
+                fields['keyboard_bindings']=dict(keyboard_bindings.DEFAULT)
+            self.send('setup',**fields)
+        box.bind('<<ComboboxSelected>>',chosen)
+        controls=tk.Frame(row,bg=th.PANEL);controls.grid(row=1,column=0,columnspan=2,sticky='ew',pady=px(6))
+        self.button(controls,self.T('input.bindings'),self.edit_keyboard).pack(anchor='w')
+        wrap_label(tk.Label(controls,text=self.T('input.hint'),bg=th.PANEL,fg=th.DIM,font=font(9))).pack(fill='x',pady=px(3))
+
+    def edit_keyboard(self):
+        import keyboard_bindings as kb
+        import keyboard_controls_ui as ui
+        settings=self.state.get('settings') or {}
+        current=settings.get('keyboard_bindings')
+        fallback=kb.LEGACY_ONLINE if settings.get('pad')=='keyboard' else kb.DEFAULT
+        try:current=kb.validate(current,online=True) if current is not None else dict(fallback)
+        except ValueError:current=dict(kb.DEFAULT)
+        result=ui.show(self.root,current,language=self.lang,online=True)
+        if result is not None:
+            self.adv_pad='keyboard';self.adv['pad'].set(self.T('adv.pad.keyboard'))
+            self.send('setup',pad='keyboard',keyboard_bindings=result)
 
     def save_start_fields(self):
         fields = {}
@@ -1370,6 +1398,8 @@ class App:
                           directory=self.directory_var.get().strip())
         elif not SERVER_BROWSER_VISIBLE:
             fields['listed'] = False
+        if self.adv:
+            fields['pad']=self.pad_names.get(self.adv['pad'].get(),'SDL-0')
         if self.advanced_open and self.adv:
             try:
                 fields['port'] = int(self.adv['port'].get() or 47400)

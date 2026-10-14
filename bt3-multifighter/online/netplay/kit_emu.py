@@ -94,9 +94,12 @@ def ini_set(text, keys):
     return '\r\n'.join(lines)
 
 
-def pad1_bindings(source):
+def pad1_bindings(source, keyboard=None):
     """'SDL-0' (controller 1), 'SDL-1', ... or 'keyboard'."""
     if source == 'keyboard':
+        if keyboard is not None:
+            import keyboard_bindings
+            return keyboard_bindings.bindings(keyboard,online=True)
         return {PAD_NAMES[k]: 'Keyboard/' + v[3] for k, v in PAD1_KEYS.items()}
     return {b: f'{source}/{SDL_NAMES[b]}' for b in PAD_BUTTONS}
 
@@ -185,7 +188,7 @@ class Emulator:
             raise KitError('TTM-NET-25', what=f'{self.root / EXE} is missing.')
         (self.root / 'portable.ini').touch()
 
-    def setup(self, *, bios, pad1='SDL-0', null_audio=False, extra=()):
+    def setup(self, *, bios, pad1='SDL-0', null_audio=False, extra=(), keyboard_bindings=None):
         """Write everything this PC's PCSX2 needs into the kit's PCSX2 data folder; returns the ini text."""
         self.check_program()
         for sub in ('bios', 'cheats', 'memcards', 'inis', 'sstates', 'snaps', 'logs'):
@@ -200,7 +203,7 @@ class Emulator:
         for card in MEMCARDS:                                          # both PCs start from the same cards
             shutil.copyfile(kit_paths.RUNTIME / 'memcards' / card, self.root / 'memcards' / card)
         template = kit_paths.INI_TEMPLATE.read_bytes().decode('utf-8-sig')
-        self.ini_text = make_ini(template, pine_slot=self.pine_slot, pad1=pad1_bindings(pad1), bios_name=bios.name,
+        self.ini_text = make_ini(template, pine_slot=self.pine_slot, pad1=pad1_bindings(pad1,keyboard_bindings), bios_name=bios.name,
                                  null_audio=null_audio, extra=extra, start_paused=self.START_PAUSED,
                                  pause_key=self.pause_key)
         self.write_ini(self.root / 'inis' / 'PCSX2.ini')

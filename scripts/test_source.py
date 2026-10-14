@@ -27,3 +27,5 @@ if __name__ == '__main__':
     run(['-m','unittest','discover','-s','release_tools/version11-2-tests','-p','test_*.py'])
 
     run(['-m','unittest','discover','-s','release_tools/online-menu-tests','-p','test_*.py'])
+
+    run(['-m','unittest','discover','-s','release_tools/keyboard-tests','-p','test_*.py'])

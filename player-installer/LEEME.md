@@ -89,6 +89,28 @@ necesita su propia copia de la BIOS porque el mod usa sus propios ajustes de
 PCSX2, así que nunca cambia el PCSX2 que ya usas. La ISO se usa desde su
 ubicación actual; no la muevas después.
 
+## Controles con teclado
+
+Abre **Ajustes del mod → Controles → Asignar teclas** para asignar teclas a los
+jugadores locales 1 y 2. Pulsa **Asignar**, pulsa una tecla y guarda. Vuelve a
+iniciar Play para aplicarlas. Las asignaciones del mando siguen disponibles.
+El mod desactiva los atajos del emulador que entren en conflicto en su propio
+perfil local y los restaura cuando ya no haya conflicto.
+
+En **Play online**, elige **Teclado** en **Dispositivo de entrada** y abre
+**Asignación de teclas** antes de crear o entrar en una sala. Cada jugador guarda sus
+propias teclas; los demás pueden usar otras. Los cambios se aplican al entrar en
+la siguiente sala. Si ya jugabas con teclado, se mantienen tus teclas anteriores
+hasta que las cambies. Pause, ScrollLock y F8 se reservan para los atajos en línea.
+
+La **Perfil WASD** usa WASD para moverse, las flechas para la cruceta, J para
+golpear, K para ráfagas de ki, L para cubrirse, Espacio para desplazarse y Q para
+cargar ki. Mayús / Control sirven para ascender / descender, E es L1, T es L3,
+R transforma, Tab abre el menú del mod y Enter pausa. El teclado numérico controla
+el stick derecho. Los ataques especiales usan combinaciones de tus teclas
+asignadas; por ejemplo, Q + K + Abajo es la combinación del ataque definitivo.
+El editor permite probar las teclas y avisa si has asignado una a varios controles.
+
 ## Linux
 
 La compatibilidad con Linux es nueva en esta beta: el instalador, las

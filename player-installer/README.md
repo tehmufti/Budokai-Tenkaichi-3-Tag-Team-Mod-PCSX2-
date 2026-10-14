@@ -90,6 +90,26 @@ The private profile needs its own copy of the BIOS because the mod runs its own
 PCSX2 settings, so it never changes the PCSX2 you already use.
 The ISO is referenced in place: keep it at the selected path.
 
+## Keyboard controls
+
+Open **Mod Settings → Controls → Keyboard bindings** to assign keys for local
+Players 1 and 2. Click **Set key**, press a key, then Save. Restart Play to apply
+them. Controller bindings stay available. The mod disables conflicting emulator
+shortcuts in its own offline profile and restores them when the conflict ends.
+
+In **Play online**, choose **Keyboard** under **Input device**, then open
+**Keyboard bindings** before hosting or joining a room. Each player saves their
+own keys; other players can use a completely different layout. The changes apply
+when you enter the next room. Existing keyboard players keep their old keys until
+they change them. Pause, ScrollLock and F8 remain reserved for online shortcuts.
+
+The **WASD preset** uses WASD to move, arrow keys for the D-pad, J for melee,
+K for ki blasts, L for guard, Space for dash and Q to charge ki. Shift / Control
+ascend / descend, E is L1, T is L3, R transforms, Tab opens the mod menu and Enter
+pauses. The number pad controls the right stick. Special moves use combinations
+of your assigned controls; for example, with this preset, Q + K + Down is the
+ultimate input. The editor includes a key tester and warns about duplicate keys.
+
 ## Linux
 
 Linux support is new in this beta: the installer, dependencies and checks run on
