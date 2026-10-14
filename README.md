@@ -76,10 +76,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 13 Windows ZIP can be used instead of downloading it:
+An existing Version 13.1 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.1.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
