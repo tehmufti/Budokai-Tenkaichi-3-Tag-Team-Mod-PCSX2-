@@ -40,13 +40,13 @@ def token(value):return value.strip().casefold()
 
 def mappings(path=INI):
     """Input source -> logical buttons, preserving ambiguity rather than guessing."""
-    parser=configparser.ConfigParser(interpolation=None,strict=False)
-    with Path(path).open(encoding='utf-8-sig') as source:parser.read_file(source)
+    import keyboard_bindings
+    values=keyboard_bindings.ini_values(Path(path).read_text(encoding='utf-8-sig'))
     result={}
     for section in ('Pad1','Pad2'):
-        if not parser.has_section(section):continue
         for name in BUTTONS:
-            for binding in parser.get(section,name,fallback='').splitlines():
+            logical=next(button for button in keyboard_bindings.BUTTONS if button.casefold()==name)
+            for binding in values.get((section,logical),[]):
                 if '&' in binding:continue  # A chord is not a single captured input.
                 binding=token(binding)
                 if binding:result.setdefault(binding,set()).add(name)
@@ -117,12 +117,10 @@ def grab_dialog(dialog, attempts=40, delay=25):
 
 
 def keyboard_sources(keysym):
-    aliases={'return':'Return','kp_enter':'Enter','escape':'Escape','space':'Space',
-             'backspace':'Backspace','prior':'PageUp','next':'PageDown',
-             'shift_l':'Shift','shift_r':'Shift','control_l':'Control','control_r':'Control',
-             'alt_l':'Alt','alt_r':'Alt'}
-    key=aliases.get(keysym.casefold(),keysym)
-    return ('Keyboard/'+key,)
+    import keyboard_bindings
+    from types import SimpleNamespace
+    key=keyboard_bindings.event_key(SimpleNamespace(keysym=keysym,keycode=0))
+    return ('Keyboard/'+key,) if key else ()
 
 
 class ControllerCapture:

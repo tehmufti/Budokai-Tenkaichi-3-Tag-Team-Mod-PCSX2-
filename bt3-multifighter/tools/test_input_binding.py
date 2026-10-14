@@ -88,7 +88,7 @@ class BindingTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(),raw)
 
     def test_keyboard_keys_match_pcsx2_names(self):
-        for key,name in (('space','Space'),('Return','Return'),('Prior','PageUp'),('Shift_L','Shift'),('x','x')):
+        for key,name in (('space','Space'),('Return','Return'),('Prior','PageUp'),('Shift_L','Shift'),('x','X'),('KP_Enter','NumpadEnter')):
             self.assertEqual(binding.keyboard_sources(key),('Keyboard/'+name,))
 
     def test_windows_loads_the_bundled_dll_exactly_as_before(self):

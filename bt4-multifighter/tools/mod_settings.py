@@ -864,6 +864,12 @@ def show_ui(path=None):
     def edit_exceptions():
         changed=show_npc_character_ui(window,overrides)
         if changed is not None:overrides.clear();overrides.update(changed)
+    import keyboard_controls_ui
+    group='Controls'
+    ttk.Button(pages[group],text=keyboard_controls_ui.text('title',localization.language(controller.settings))+'…',
+        command=lambda:keyboard_controls_ui.show_offline(window,language=preview_values().get('language','en'))).grid(
+            row=rows[group],column=0,columnspan=3,sticky='w',pady=12)
+    rows[group]+=1
     group=EXCEPTIONS_GROUP;ttk.Button(pages[group],text=tr('Per-character transformation exceptions…'),
         command=edit_exceptions).grid(row=rows[group],column=0,columnspan=2,sticky='w',pady=12)
     rows[group]+=1

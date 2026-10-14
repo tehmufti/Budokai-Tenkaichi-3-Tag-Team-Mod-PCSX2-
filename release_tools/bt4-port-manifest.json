@@ -724,8 +724,8 @@
       "shared": true
     },
     "tools/input_binding.py": {
-      "bt3": "d19233536225f9464eb4f8d63231f21c09d2d1463cf777cbeaf9bdae97d806c9",
-      "bt4": "d19233536225f9464eb4f8d63231f21c09d2d1463cf777cbeaf9bdae97d806c9",
+      "bt3": "c361298709f88602060c6cf3286510badbfa1e88e5012c5a381bcc4c659d80d8",
+      "bt4": "c361298709f88602060c6cf3286510badbfa1e88e5012c5a381bcc4c659d80d8",
       "shared": true
     },
     "tools/input_script.py": {
@@ -736,6 +736,16 @@
     "tools/install_boot_hooks.py": {
       "bt3": "f1d6fd6f13ca619d431e26f6ed9433807b435a84718a57f6c2a886090ffcca8c",
       "bt4": "f1d6fd6f13ca619d431e26f6ed9433807b435a84718a57f6c2a886090ffcca8c",
+      "shared": true
+    },
+    "tools/keyboard_bindings.py": {
+      "bt3": "ad1912c7f99e311370499e6324a5d1094b35d4e4932e2f95a667f01c0b161d93",
+      "bt4": "ad1912c7f99e311370499e6324a5d1094b35d4e4932e2f95a667f01c0b161d93",
+      "shared": true
+    },
+    "tools/keyboard_controls_ui.py": {
+      "bt3": "e1e21e292d24b8bc82a25a9fc77160f43d3232c8b5ac0ec0565338c1c65faf11",
+      "bt4": "e1e21e292d24b8bc82a25a9fc77160f43d3232c8b5ac0ec0565338c1c65faf11",
       "shared": true
     },
     "tools/lazy_ram.py": {
@@ -854,8 +864,8 @@
       "shared": true
     },
     "tools/map_scale_launch.py": {
-      "bt3": "7f2203e602a5770faaad3f1bf1412b4445bbdb1cbe672f23bcb356dd6b139062",
-      "bt4": "96d22d9ba360e2b5a19a3968d0eb258c2741739f8e25a562c9080533d678d37a",
+      "bt3": "39bcf2cccf055f30bf7ad6ac2a7deed9b5991d2f46ebde543fed78af97f56830",
+      "bt4": "e72167496723524beb3d48d95986e1a592e97f059f87943b007f0e54122c81a2",
       "shared": false
     },
     "tools/menu_return.py": {
@@ -869,8 +879,8 @@
       "shared": false
     },
     "tools/mod_settings.py": {
-      "bt3": "9895474f50ddccc4b464a081b331fbae1043c065df8f317892e690ff4743dbaf",
-      "bt4": "8ec7bd45ffe3c772f759f85fb2900b8843fb6a73f4ee65ee8bfae60c0a3466e6",
+      "bt3": "aede9753ffe2989e0e41f77d06f33d95dce671b577aae9dde486ffa39f2d2428",
+      "bt4": "12c5a6439e08b4c62a6daa53f8daf59a21a2941998346a3b83dbe2c60f5faf24",
       "shared": false
     },
     "tools/modded_training.py": {

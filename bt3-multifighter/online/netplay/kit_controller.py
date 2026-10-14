@@ -61,7 +61,7 @@ SHA256_HEX = re.compile(r'[0-9a-f]{64}')
 UI_GONE = 120.0
 SERIALS = {'SLUS_216.78': None, 'SLES_549.45': 'europe', 'SLPS_258.15': 'japan', 'SLPS_258.16': 'japan'}
 SETTINGS_FILE = 'settings.json'
-SETTINGS_KEYS = ('lang', 'port', 'delay', 'renderer', 'pad', 'fullscreen', 'host_address', 'audio', 'room_name', 'listed', 'directory', 'drop_load_failures')
+SETTINGS_KEYS = ('lang', 'port', 'delay', 'renderer', 'pad', 'keyboard_bindings', 'fullscreen', 'host_address', 'audio', 'room_name', 'listed', 'directory', 'drop_load_failures')
 # The frame-scheduled host services this kit runs online (kit_services). Not Body Change: its disc IO stage is built by
 # extra_reload_service (not the preload builder kit_service makes W1-gated), so its read would finish at a different
 # frame on every PC. Not timed fusion: its audio wait is IOP-timed.
@@ -167,6 +167,11 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
                 cfg[key] = value
         cfg.setdefault('port', DEFAULT_PORT)
         cfg.setdefault('pad', 'keyboard' if a.hidden or a.keyboard else 'SDL-0')
+        if not re.fullmatch(r'(?:keyboard|SDL-[0-9]{1,2})',str(cfg['pad'])):cfg['pad']='SDL-0'
+        import keyboard_bindings
+        if 'keyboard_bindings' in cfg:
+            try:cfg['keyboard_bindings']=keyboard_bindings.validate(cfg['keyboard_bindings'],online=True)
+            except ValueError:cfg.pop('keyboard_bindings',None)
         cfg.setdefault('renderer', 'default')
         cfg['drop_load_failures'] = cfg.get('drop_load_failures') is True
         if not cfg.get('lang'):
@@ -181,8 +186,9 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
     def save_settings(self):
         try:
             save_json(kit_paths.DATA / SETTINGS_FILE, {k: self.cfg.get(k) for k in SETTINGS_KEYS if k in self.cfg})
+            return True
         except OSError:
-            pass
+            return False
 
     def save_profile(self):
         try:
@@ -394,6 +400,21 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         handler(cmd)
 
     def cmd_setup(self, c):
+        import keyboard_bindings
+        c=dict(c)
+        if 'keyboard_bindings' in c:
+            try:c['keyboard_bindings']=keyboard_bindings.validate(c['keyboard_bindings'],online=True)
+            except ValueError as error:
+                self.fail(KitError('TTM-NET-17',what=str(error)));return
+        if 'pad' in c and not re.fullmatch(r'(?:keyboard|SDL-[0-9]{1,2})',str(c['pad'])):
+            self.fail(KitError('TTM-NET-17',what='Choose Keyboard or an SDL controller.'));return
+        changed=any(key in c and c[key]!=self.cfg.get(key) for key in ('pad','keyboard_bindings'))
+        if changed and self.phase!='start':
+            self.fail(KitError('TTM-NET-17',what='Leave the room before changing input bindings.'));return
+        if changed:
+            self.invalidate_preboot()
+            if self.emulator is not None and self.emulator.alive():
+                self.emulator.stop();self.emulator=None
         for key in SETTINGS_KEYS:
             if key in c:
                 self.cfg[key] = c[key]
@@ -411,7 +432,9 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             except KitError:
                 pass
             self.install_scan = None
-        self.save_settings()
+        saved=self.save_settings()
+        if changed and saved is False:
+            self.fail(KitError('TTM-NET-17',what='Your input settings could not be saved. Check that the online data folder is writable.'))
         self.dirty = True
 
     def cmd_dismiss(self, c):
@@ -587,7 +610,8 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             if renderer != 'default' and renderer in RENDERERS:
                 extra.append(('EmuCore/GS', 'Renderer', str(RENDERERS[renderer])))
             ini = em.setup(bios=bios, pad1='keyboard' if a.hidden else pad,
-                           null_audio=a.hidden or self.cfg.get('audio') == 'null', extra=extra)
+                           null_audio=a.hidden or self.cfg.get('audio') == 'null', extra=extra,
+                           keyboard_bindings=None if a.hidden else self.cfg.get('keyboard_bindings'))
         else:
             em = self.emulator
             em.run_dir = self.run_dir
