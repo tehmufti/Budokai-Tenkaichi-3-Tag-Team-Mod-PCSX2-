@@ -11,6 +11,7 @@ Download the **Version 13.3 installer** from [Releases](https://github.com/tehmu
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
+The updater handles the old beta 14–46 numbering and refreshed downloads with the same version number.
 Keep everyone in an online room on the same release. Supply your own compatible
 game disc image, PS2 BIOS and PCSX2 installation; none is included here.
 The release includes English and Spanish mod interfaces.

@@ -1,5 +1,7 @@
 ## Version 13.3
 
+The updater now handles installations from before the version-number reset. It also checks the actual files when updating the same version, so refreshed downloads and repairs are applied properly.
+
 You can now block while reviving teammates. Damage taken through a block no longer resets revival progress.
 
 Fixed some issues on the HUD displays in splitscreen, and de-fusions no longer make your health red as it is adjusting.

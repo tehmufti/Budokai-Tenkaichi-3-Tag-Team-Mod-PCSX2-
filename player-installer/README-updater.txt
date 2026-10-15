@@ -7,6 +7,10 @@ TAG TEAM MOD - UPDATE AN EXISTING INSTALLATION
 5. Wait for "Update complete", then use your existing Play shortcut.
 
 Keep everyone in an online room on the same release.
+The updater compares the files themselves, not just the version number. Download
+the updater again after a release is refreshed: it installs changes even when the
+version number stays the same, and repairs missing or damaged managed files.
+Installations from the old beta 14-46 numbering can update to the current release.
 Your game discs, BIOS, emulator, controller bindings, saves, settings, online profile
 and existing custom scenarios are preserved. New example filenames are added; existing
 scenario files are not replaced, because you may have edited them.
@@ -30,5 +34,9 @@ o Play.sh). Espera a que termine y usa el mismo acceso directo para jugar.
 
 Se conservan tus partidas, ajustes, mandos, perfil online y escenarios editados.
 Todos los participantes de una sala online deben usar la misma version.
+El actualizador compara los archivos, no solo el numero de version. Si se renueva
+una publicacion, descarga otra vez el actualizador: instala los cambios aunque
+la version sea la misma y repara los archivos del mod que falten o esten danados.
+Tambien permite actualizar las antiguas betas 14-46 con la numeracion anterior.
 Los archivos sustituidos se guardan en update-backups. Si se interrumpe la
 actualizacion, vuelve a ejecutar el actualizador antes de jugar para recuperarla.

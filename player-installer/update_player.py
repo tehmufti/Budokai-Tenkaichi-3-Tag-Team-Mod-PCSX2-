@@ -231,6 +231,28 @@ def version_key(value):
     return tuple(int(part or 0) for part in match.groups())
 
 
+def check_release_order(receipt,release,installed_release):
+    """Accept the old beta 14-46 numbering without allowing future downgrades."""
+    current=version_key(receipt['version']);target=version_key(release['version'])
+    epochs=(receipt.get('version_epoch',1),installed_release.get('version_epoch',1),release.get('version_epoch',1))
+    require(all(type(value) is int and value>=1 for value in epochs),'Invalid release numbering information.')
+    installed_epoch=max(epochs[:2]);target_epoch=epochs[2]
+    legacy_reset=(installed_epoch==1 and target_epoch==2 and current[:3]==(0,1,0)
+                  and 14<=current[3]<=46 and current[4]==0)
+    require(installed_epoch<=target_epoch and (current<=target or legacy_reset),
+            'This installation is newer than this updater. Download the latest updater.')
+    return legacy_reset
+
+
+def changed_files(root,files):
+    """Compare the actual managed files, even if the version and old receipt agree."""
+    changed={}
+    for name,data in files.items():
+        path=bounded(root,name)
+        if not path.is_file() or digest(path)!=hashlib.sha256(data).hexdigest():changed[name]=data
+    return changed
+
+
 def update_runtime_graphics(root,adapter,installer,transaction):
     """Journal each isolated runtime's version-derived BT4 alias with the update."""
     graphics={}
@@ -251,14 +273,14 @@ def update(root,setup=HERE):
     assert_closed(root)
     with update_lock(root):
         recover(root)
-        verify_bundle(setup)
+        bundle=verify_bundle(setup)
         receipt=read_json(root/'installed-files.json');release=read_json(setup/'release.json')
         adapter=receipt.get('adapter');require(adapter in ADAPTERS,'This installation has an unsupported adapter.')
         require(receipt.get('schema')==1 and isinstance(receipt.get('files'),dict),'Invalid installation receipt.')
-        def version(s):return version_key(s)
         # Published releases can receive a same-version refresh. Managed file
-        # hashes below still determine replacements; downgrades stay blocked.
-        require(version(receipt['version'])<=version(release['version']),'This installation is newer than this updater.')
+        # hashes below determine replacements, including the old numbering era.
+        if check_release_order(receipt,release,read_json(root/'release.json')):
+            print('Updating an installation from before the version-number reset.',flush=True)
         lockname='requirements-player.lock' if os.name=='nt' else 'requirements-player-linux.lock'
         require((root/'requirements-player.lock').read_bytes()==(setup/lockname).read_bytes(),
                 'This release changes Python dependencies. Use its full installer and import your previous installation.')
@@ -268,7 +290,8 @@ def update(root,setup=HERE):
             work=Path(folder);installer.unpack(setup/'player-payload.zip',work)
             files=source_files(root,work,setup,adapter,installer)
             old=receipt['files']
-            changed={name:data for name,data in files.items() if not (root/name).is_file() or digest(root/name)!=hashlib.sha256(data).hexdigest()}
+            print('Checking installed files against this download, including same-version updates.',flush=True)
+            changed=changed_files(root,files)
             stale=[name for name in old if name not in files and name.endswith('.py') and
                    name.startswith(('game/tools/','online/netplay/','iso_compatibility/'))]
             print(f'Updating to {release["version"]}: {len(changed)} files, {len(stale)} retired modules.',flush=True)
@@ -289,6 +312,7 @@ def update(root,setup=HERE):
                 cheatdir='game/runtime28/'+('' if os.name=='nt' else 'PCSX2/')+'cheats/'
                 for path in hooks.iterdir():transaction.write(cheatdir+path.name,path.read_bytes())
                 graphics=update_runtime_graphics(root,adapter,installer,transaction)
+                require(not changed_files(root,files),'Updated files differ from this download; restoring the previous installation.')
                 # Retain original ISO-derived receipts; change only the replaced/new managed code and documents.
                 updated=dict(old)
                 for name in stale:updated.pop(name,None)
@@ -296,12 +320,15 @@ def update(root,setup=HERE):
                     if not name.startswith('game/missions/'):updated[name]=hashlib.sha256(data).hexdigest()
                 for name,data in graphics.items():updated[name]=hashlib.sha256(data).hexdigest()
                 updated['game/player-install.json']=digest(root/'game/player-install.json')
-                receipt.update(version=release['version'],files=updated)
+                receipt.update(version=release['version'],files=updated,
+                               version_epoch=release.get('version_epoch',1),
+                               update_payload_sha256=bundle['files']['player-payload.zip'])
                 transaction.write('installed-files.json',json_bytes(receipt))
                 for name in ('check-status.json','check-installation.log'):transaction.remember(name)
                 run(root,root/'check_installation.py','--quiet-failure')
                 checked=read_json(root/'check-status.json')
                 require(checked.get('installation_valid') and checked.get('ready'),'Updated installation did not pass its checks.')
+                require(not changed_files(root,files),'Updated files changed during the final check; restoring the previous installation.')
                 status=read_json(root/'install-status.json');status.update(version=release['version'],ready=True)
                 transaction.write('install-status.json',json_bytes(status))
                 if os.name!='nt':

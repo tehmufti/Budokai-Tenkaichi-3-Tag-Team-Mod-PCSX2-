@@ -950,7 +950,8 @@ def installed_files(root,game,runtime):
 def install_receipt(release,adapter,emulator_version,files,**emulator):
     """installed-files.json: the release, the PCSX2 build and whether it is a tested release. Linux adds
     emulator_kind='appimage' and emulator_version_source (how the AppImage's version was read)."""
-    return dict(schema=1,version=release['version'],adapter=adapter,emulator_version=emulator_version,
+    return dict(schema=1,version=release['version'],version_epoch=release.get('version_epoch',1),
+                adapter=adapter,emulator_version=emulator_version,
                 pcsx2_tested=pcsx2_support(emulator_version,release)[1],files=files,**emulator)
 
 

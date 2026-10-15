@@ -74,7 +74,7 @@ class VersionPolicyTests(unittest.TestCase):
         for version,tested in (('2.8.2.0',True),('2.6.0.0',True),('2.9.79.0',False)):
             with self.subTest(version=version):
                 receipt=installer.install_receipt(release,'bt3-usa',version,{'game/tools/x.py':'0'*64})
-                self.assertEqual(receipt,dict(schema=1,version=release['version'],adapter='bt3-usa',
+                self.assertEqual(receipt,dict(schema=1,version=release['version'],version_epoch=2,adapter='bt3-usa',
                     emulator_version=version,pcsx2_tested=tested,files={'game/tools/x.py':'0'*64}))
 
     def test_payload_policy_must_match_release_json(self):
@@ -552,7 +552,7 @@ class LinuxInstallerTests(unittest.TestCase):
     def test_linux_receipt_records_how_the_version_was_read(self):
         release=installer.release_info()
         receipt=installer.install_receipt(release,'bt3-usa','2.8.2',{},emulator_kind='appimage',emulator_version_source='AppImage metainfo')
-        self.assertEqual(receipt,dict(schema=1,version=release['version'],adapter='bt3-usa',emulator_version='2.8.2',
+        self.assertEqual(receipt,dict(schema=1,version=release['version'],version_epoch=2,adapter='bt3-usa',emulator_version='2.8.2',
                                       pcsx2_tested=True,files={},emulator_kind='appimage',emulator_version_source='AppImage metainfo'))
 
     def test_appimage_check_explains_flatpak_and_refuses_other_programs(self):
