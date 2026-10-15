@@ -111,7 +111,9 @@ class LaunchTests(unittest.TestCase):
         validate.assert_not_called()
         self.assertEqual(command, [str(self.exe), '-portable', '-fastboot', '--', str(self.iso)])
 
-    def test_only_authenticated_selector_boot_skips_native_menu_checkpoint_owner(self):
+    def test_private_watcher_never_owns_native_menu_checkpoints(self):
+        # Oct 15 redesign: the authenticated neutral base is the private copy's only way back to its selector, for a
+        # selector boot and for the deterministic base build alike (two menu savestates only slowed the build).
         folder = self.dest / 'game/analysis/autopilot/owned'
         request = dict(token='a' * 32, selector_boot={'signed': True})
         command = launch.watcher_command(request, self.dest, folder, 222)
@@ -119,7 +121,7 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(command[command.index('--launcher-token') + 1], request['token'])
         self.assertEqual(command[command.index('--emulator-pid') + 1], '222')
         request.pop('selector_boot')
-        self.assertNotIn('--no-menu-checkpoint', launch.watcher_command(request, self.dest, folder, 222))
+        self.assertIn('--no-menu-checkpoint', launch.watcher_command(request, self.dest, folder, 222))
 
     def test_failed_owned_launch_cleans_only_its_staged_boot_archive(self):
         state = self.dest / 'game/runtime28/sstates/.ttm-selector-boot-test.p2s'

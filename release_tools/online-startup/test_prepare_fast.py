@@ -172,7 +172,8 @@ class PreparationCriticalPath(unittest.TestCase):
             self.assertEqual(len(changed), 1)
             self.assertEqual(ast.dump(before), ast.dump(after))
 
-    def test_cached_bootstrap_is_accelerated_and_speed_is_released(self):
+    def test_cached_bootstrap_loads_the_base_and_releases_the_phase_flag(self):
+        # Oct 15 redesign: the copy always runs at its private speed; no turbo phase is entered for the base load.
         with tempfile.TemporaryDirectory() as folder:
             copy = copy_at(folder)
             copy.base.pid = None
@@ -184,8 +185,7 @@ class PreparationCriticalPath(unittest.TestCase):
             copy.loading_speed = lambda enabled: events.append(('turbo', enabled))
             copy.restore_selector = lambda engine: events.append(('restore', engine))
             self.assertEqual(copy.warm(), 'warm')
-            self.assertEqual(events, [('launch', True), ('turbo', True),
-                                      ('restore', 'teams'), ('turbo', False)])
+            self.assertEqual(events, [('launch', True), ('restore', 'teams'), ('turbo', False)])
 
     def test_private_poll_patch_only_changes_three_sleep_intervals(self):
         for game in ('bt3-multifighter', 'bt4-multifighter'):
@@ -283,8 +283,10 @@ class PreparationCriticalPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             copy = copy_at(folder)
             copy.loading_speed = Mock()
-            copy.wait_for_fight = Mock(return_value=dict(clock=1, fighters=4))
-            copy.return_to_select = copy.native_picks = copy.check = Mock()
+            copy.cached_selector = Mock(return_value=True)
+            copy.watcher = Mock(return_value=dict(state='ACTIVE'))
+            copy.restore_selector = Mock()
+            copy.check = Mock()
             with copy.lock:
                 copy.schedule_reset()
                 # The thread is waiting on this RLock. A new nested owner can
@@ -292,9 +294,24 @@ class PreparationCriticalPath(unittest.TestCase):
                 copy._finish_pending_reset()
             copy.reset_thread.join(timeout=2)
             self.assertFalse(copy.reset_thread.is_alive())
-            copy.wait_for_fight.assert_called_once()
+            copy.restore_selector.assert_called_once_with('teams')
             self.assertEqual(copy.state, 'warm')
             self.assertIsNone(copy.reset_token)
+
+    def test_reset_without_a_base_closes_instead_of_pressing_menus(self):
+        with tempfile.TemporaryDirectory() as folder:
+            copy = copy_at(folder)
+            copy.loading_speed = Mock()
+            copy.cached_selector = Mock(return_value=False)
+            copy.keys = copy.tap = Mock(side_effect=AssertionError('no menu presses'))
+            copy.close = Mock()
+            copy.check = Mock()
+            with copy.lock:
+                copy.schedule_reset()
+                copy._finish_pending_reset()
+            copy.reset_thread.join(timeout=2)
+            copy.close.assert_called_once()
+            self.assertEqual(copy.state, 'cold')
 
     def test_close_invalidates_pending_reset_before_emulator_shutdown(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -310,62 +327,75 @@ class PreparationCriticalPath(unittest.TestCase):
             self.assertEqual(copy.state, 'cold')
 
     def test_engine_change_reuses_healthy_emulator(self):
+        # Oct 15 redesign: one neutral base serves both engines; a switch loads it and commits the other engine.
         with tempfile.TemporaryDirectory() as folder:
             copy = copy_at(folder)
             copy.loading_speed = Mock()
             copy.check = Mock()
-            copy.sample = Mock(return_value=dict(scene=auto.MAIN_MENU, pager=True))
-            copy.commit_mode = Mock()
-            copy.native_picks = Mock()
+            copy.cached_selector = Mock(return_value=True)
+            copy.restore_selector = Mock(side_effect=lambda engine: setattr(copy, 'engine', engine))
             copy.close = Mock(side_effect=AssertionError('healthy switch must not reboot'))
             with patch.object(auto.kit_win, 'pid_alive', return_value=True):
                 self.assertEqual(copy.switch_engine('ffa'), 'warm')
             self.assertEqual(copy.engine, 'ffa')
-            copy.commit_mode.assert_called_once()
+            copy.restore_selector.assert_called_once_with('ffa')
 
-    def test_commit_waits_for_owned_live_pager_and_resets_remembered_submenu(self):
+    def test_commit_waits_for_owned_live_pager_and_requests_the_mode_semantically(self):
+        # Oct 15 redesign: Select (guest pad) opens Modded Modes once the watcher's pager is armed and its stock result
+        # consumed; the mode itself is the menu's semantic choice (PENDING_CHOICE), never row presses. A request
+        # dropped by a pager re-arm is made again, at most three times.
+        if not (ROOT / 'bt3-multifighter/analysis/SLUS_216.78').is_file():
+            self.skipTest('An extracted game executable is required for native tests')
+        import native_mode_menu as menu
+        import struct as st
         with tempfile.TemporaryDirectory() as folder:
             copy = copy_at(folder)
             pointer = 0x600000
-            main = dict(scene=auto.MAIN_MENU, pager=True, pager_state=2, pager_page=2,
-                        main_object=pointer, pager_owner=pointer)
-            selected = dict(scene=auto.TEAM_SELECT, loop=0)
-            copy.sample = Mock(return_value=dict(main, pager_page=0))
-            copy.watcher = Mock(return_value=dict(battle_mode='teams', humans=1))
+            memory = {menu.CONTROL + 12: 6}                       # the stock result, not yet consumed
+            state = dict(scene=auto.MAIN_MENU, pager=True, pager_state=4, main_object=pointer, pager_owner=pointer,
+                         loop=0)
+            presses, requests = [], []
             copy.check = Mock()
-            calls = []
-            copy.keys = lambda keys, gap=0: calls.append(keys)
-            count = 0
-            def wait(pred, timeout, what):
-                nonlocal count
-                count += 1
-                if count == 1:
-                    self.assertFalse(pred(dict(main, pager_state=0)))
-                    self.assertFalse(pred(dict(main, pager_owner=pointer + 4)))
-                    self.assertTrue(pred(main))
-                    return main
-                self.assertTrue(pred(selected))
-                return selected
-            copy.wait = wait
-            words = {auto.MAIN_OBJECT: pointer, auto.PAGER + 20: pointer,
-                     pointer + 0x144: 5, pointer + 0x148: 4, pointer + 0x10C: 0}
-            client = Mock()
-            client.__enter__ = Mock(return_value=client)
-            client.__exit__ = Mock(return_value=False)
-            copy.pine = Mock(return_value=client)
-            with patch.object(auto, 'u32', side_effect=lambda c, a: words[a]):
-                copy.commit_mode()
-            self.assertEqual(calls[0], ['triangle'])
-            self.assertEqual(calls[-2:], [['cross'], ['cross']])
 
-    def test_private_speed_is_held_and_released_without_toggle(self):
+            def sample():
+                if menu.CONTROL + 12 in memory and len(presses) == 0 and copy.sample.call_count > 2:
+                    memory[menu.CONTROL + 12] = 0                 # the watcher consumed it
+                return dict(state)
+            copy.sample = Mock(side_effect=sample)
+            copy._read = lambda a, n: b''.join(st.pack('<I', memory.get(a + 4 * k, 0)) for k in range(n // 4))
+            copy._u32 = lambda a: memory.get(a, 0)
+
+            def tap(*names, **kw):
+                presses.append(names)
+                state['pager_state'] = 2
+
+            def write(fn, timeout):
+                class C:
+                    def write(self, a, data):
+                        requests.append(st.unpack('<I', data)[0])
+                        if len(requests) == 1:
+                            state['pager_state'] = 4              # a re-arm drops the first request
+                        else:
+                            state.update(scene=auto.TEAM_SELECT, loop=0)
+                return fn(C())
+            copy.tap = tap
+            copy.pad = SimpleNamespace(polls=Mock(side_effect=range(0, 10 ** 6, 50)), retry=write)
+            copy.watcher = Mock(side_effect=lambda: dict(battle_mode='teams', humans=1, native_mode_receipt=dict(
+                epoch=2 if len(requests) == 2 else 1, choice=0, custom=True)))
+            copy.drive_mode('teams', timeout=5)
+            self.assertEqual(presses, [('select',), ('select',)])
+            self.assertEqual(requests, [1, 1])
+            self.assertEqual(copy.engine, 'teams')
+
+    def test_private_speed_phase_never_sends_a_key(self):
         with tempfile.TemporaryDirectory() as folder:
             copy = copy_at(folder)
             with patch.object(auto.kit_win, 'post_key') as key:
                 copy.loading_speed(True)
-                copy.loading_speed(True)  # idempotent: no repeated key-down.
+                copy.loading_speed(True)
+                self.assertTrue(copy.fast_loading)
                 copy.loading_speed(False)
-            self.assertEqual([c.args[2] for c in key.call_args_list], [True, False])
+            key.assert_not_called()
             self.assertFalse(copy.fast_loading)
 
     def test_headless_speed_key_never_targets_a_visible_user_emulator(self):
@@ -406,11 +436,11 @@ class PreparationCriticalPath(unittest.TestCase):
                 copy.base.pid = 123
             copy.launch = launch
             copy.restore_selector = Mock(side_effect=auto.Cancelled())
-            copy.close = Mock()  # The enclosing finally must release the key itself.
+            copy.close = Mock()
             with patch.object(auto.kit_win, 'post_key') as key:
                 with self.assertRaises(auto.Cancelled):
                     copy.warm()
-            self.assertEqual([c.args[2] for c in key.call_args_list], [True, False])
+            key.assert_not_called()                     # Oct 15 redesign: no turbo key exists to release
             self.assertFalse(copy.fast_loading)
 
 

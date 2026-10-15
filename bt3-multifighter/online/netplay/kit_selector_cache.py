@@ -162,36 +162,85 @@ def semantic_config(path):
     return result
 
 
-def identity(copy):
-    """Content-based portable identity of the installed native preparation recipe.
+# Bump only when the way the neutral base is built changes its bytes (Oct 15 redesign: the guest-pad recipe).
+BASE_RECIPE = 'ttm-neutral-base-2'
+# One neutral base serves both battle engines: the engine is a semantic choice committed after every load.
+BASE_ENGINE = 'teams'
+GUEST_MEMO = 'guest-code.json'
+GUEST_PROBE = (
+    'import hashlib, json, os, sys\n'
+    'sys.path.insert(0, "tools")\n'
+    'os.environ.setdefault("BT3_RUNTIME_PROFILE", "runtime28")\n'
+    'import guest_loading_screen, native_mode_menu, mode_menu\n'
+    'rows = [("boot-hooks", hashlib.sha256(guest_loading_screen.pnach()).hexdigest())]\n'
+    'for name, module in (("menu", native_mode_menu), ("pager", mode_menu)):\n'
+    '    rows += [(name, a, len(d), hashlib.sha256(d).hexdigest()) for a, d in module.code_pieces()]\n'
+    'print(json.dumps(hashlib.sha256(json.dumps(rows).encode()).hexdigest()))\n')
 
-    Offline mod-settings, authored scenarios, reports, paths and version labels
-    do not participate. Match settings are applied after every restore. The
-    template language does participate because its native menu assets differ.
+
+def guest_code(copy, source):
+    """SHA-256 of the guest code bytes the base holds: the generated boot hooks (the pnach the private launcher
+    installs) and the native menu programs. Python-only edits that leave these bytes unchanged keep the base.
+
+    Generating them takes about a second, so the result is remembered next to the private copy under the digest of
+    the mod tools and executable it was generated from; an unchanged tree costs only that digest."""
+    # The probe runs the COPY's tools, so the memo is keyed on the copy's own files (and only kept when they did not
+    # change while the probe ran: a tree edited meanwhile is generated again next time, never remembered stale).
+    executed = Path(copy.base.dest) / 'game'
+
+    def tree():
+        files = [path for path in (executed / 'tools').rglob('*') if path.is_file()
+                 and '__pycache__' not in path.parts and path.suffix.lower() != '.pyc']
+        files += list((executed / 'elf').glob('*'))
+        return files_digest(executed, files)
+    before = tree()
+    memo_path = Path(copy.base.dest).parent / GUEST_MEMO
+    try:
+        memo = json.loads(memo_path.read_text(encoding='utf-8'))
+        if isinstance(memo, dict) and memo.get('tree') == before and isinstance(memo.get('guest'), str) and \
+                len(memo['guest']) == 64:
+            return memo['guest']
+    except (OSError, ValueError):
+        pass
+    code, out, err = copy.base.copy_python('-c', GUEST_PROBE, timeout=120)
+    try:
+        guest = json.loads(out.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        guest = None
+    if code != 0 or not isinstance(guest, str) or len(guest) != 64:
+        raise ValueError('The private copy could not generate its guest code: ' + (err or out).strip()[-300:])
+    if tree() != before:
+        raise ValueError('The private copy changed while its guest code was generated; prepare it again')
+    SelectorCache._atomic(memo_path, lambda stream: stream.write(canonical(dict(tree=before, guest=guest))))
+    return guest
+
+
+def pad_code():
+    """The private guest pad's patch bytes (kit_inject), which the base holds while it is built."""
+    import kit_inject
+    return kit_inject.identity()
+
+
+def identity(copy):
+    """Identity of the neutral base: ONLY what changes its bytes.
+
+    The disc, BIOS, the emulator build (its binaries carry the savestate version), the guest code bytes (guest_code)
+    and the private guest pad's patch (pad_code), the emulation settings of the private profile (semantic_config), its
+    memory cards, the native menu language and the base recipe version. Python-only edits of the kit or the mod that generate the same guest bytes, offline
+    mod-settings, scenarios, reports, paths and version labels do not participate: match settings are applied after
+    every load, and every load is validated against its signed record and the live game (a rejected base is rebuilt
+    once, automatically).
     """
     import kit_adapter
-    import kit_prepare
-    import kit_prepare_auto
-    import kit_settings
-    import kit_prepare_launch
     source = Path(copy.install['root']).resolve() / 'game'
     game = copy.base.dest / 'game'
     runtime = game / 'runtime28'
-    guest = [path for path in (source / 'tools').rglob('*') if path.is_file()
-             and '__pycache__' not in path.parts and path.suffix.lower() != '.pyc']
-    guest += list((source / 'elf').glob('*'))
-    guest += list((source / 'runtime28' / 'cheats').glob('*.pnach'))
     binaries = [path for path in runtime.rglob('*') if path.is_file()
                 and path.suffix.lower() in ('.exe', '.dll', '.pak', '.qm')]
     profile = kit_adapter.profile(source.parent)
     profile = {key: profile[key] for key in ('schema', 'adapter', 'iso_sha256', 'members', 'serial',
                                             'pcsx2_crc', 'runtime_variant') if key in profile}
     settings = json.loads((game / 'mod-settings.json').read_text(encoding='utf-8'))
-    # The recipe is independent of its port number; source text plus the exact
-    # unpatched launcher files guards private patch behavior instead.
-    recipe = {Path(module.__file__).name: sha(module.__file__, memo=True)
-              for module in (kit_prepare, kit_prepare_auto, kit_settings, kit_adapter, kit_prepare_launch)}
-    recipe[Path(__file__).name] = sha(__file__, memo=True)
     iso, bios = Path(copy.iso), Path(copy.install['bios'])
     if getattr(copy, 'verified_iso', None) is not None:
         seed_verified_iso(copy, copy.verified_iso)
@@ -202,13 +251,10 @@ def identity(copy):
     if (not bios_dir.is_relative_to(runtime.resolve()) or not selected_bios.is_relative_to(bios_dir) or
             sha(selected_bios, memo=True) != sha(bios, memo=True)):
         raise ValueError('The private preparation BIOS differs from its verified installation')
-    value = dict(schema=SCHEMA, adapter=copy.install['adapter'], profile=profile,
+    value = dict(schema=SCHEMA, recipe=BASE_RECIPE, adapter=copy.install['adapter'], profile=profile,
                  iso=dict(size=iso.stat().st_size, sha256=sha(iso, memo=True)),
                  bios=dict(size=bios.stat().st_size, sha256=sha(bios, memo=True)),
-                 emulator=files_digest(runtime, binaries), guest=files_digest(source, guest),
-                 recipe=hashlib.sha256(canonical(recipe)).hexdigest(),
-                 launchers=files_digest(source, [source / name for name in
-                           ('launch-autopilot.ps1', 'launcher-lifecycle.ps1')]),
+                 emulator=files_digest(runtime, binaries), guest=guest_code(copy, source), pad=pad_code(),
                  config=semantic_config(runtime / 'inis' / 'PCSX2.ini'),
                  template_language=settings.get('language', 'en'),
                  cards={path.name: sha(path, memo=True) for path in sorted((runtime / 'memcards').glob('*.ps2'))})
@@ -684,11 +730,26 @@ class SelectorCache:
             if key in _VALIDATED_ARCHIVES:
                 _VALIDATED_ARCHIVES.move_to_end(key)
                 return path, record
-        memory, archive = archive_payload(path)
-        if archive != record['archive'] or selector(memory, engine) != record['selector']:
-            raise ValueError('Selector archive validation differs')
-        if sha(path) != digest:
-            raise ValueError('Selector archive changed during native validation')
+        # Oct 15 redesign: a payload proof made by an earlier process of this cache is signed with the same local key as the
+        # record itself and binds the same scalars (record, full archive SHA, identity, native code recipe); a lobby
+        # that opens later need not inflate the same 128 MiB again.
+        proof_path = path.with_suffix('.proof')
+        proof_mac = hmac.new(self.key, canonical(list(key)), hashlib.sha256).hexdigest()
+        try:
+            proven = proof_path.stat().st_size <= MAX_METADATA and \
+                hmac.compare_digest(_read_json(proof_path).get('mac', ''), proof_mac)
+        except (OSError, ValueError, AttributeError, TypeError):
+            proven = False
+        if not proven:
+            memory, archive = archive_payload(path)
+            if archive != record['archive'] or selector(memory, engine) != record['selector']:
+                raise ValueError('Selector archive validation differs')
+            if sha(path) != digest:
+                raise ValueError('Selector archive changed during native validation')
+            try:
+                self._atomic(proof_path, lambda stream: stream.write(canonical(dict(mac=proof_mac))))
+            except OSError:
+                pass                              # only a later process's speed depends on it
         # HMAC/identity/bounds and a fresh full SHA are still checked above on
         # every call. Identical bytes already proved in this interpreter need
         # not repeatedly inflate 128MiB. Keep only bounded scalar identities.
@@ -709,6 +770,23 @@ class SelectorCache:
             return True
         except (OSError, ValueError, KeyError, zipfile.BadZipFile):
             return False
+
+    def discard(self, engine, identity_value):
+        """Remove one base (its signed record, archive and payload proof): a base the live game rejected must not stay
+        published, or the rebuild would keep it. Returns the removed file names."""
+        removed = []
+        with self._lock(engine, identity_value):
+            path, metadata = self.paths(engine, identity_value)
+            for item in (metadata, path.with_suffix('.proof'), path):
+                try:
+                    item.unlink()
+                    removed.append(item.name)
+                except FileNotFoundError:
+                    pass
+        with _VALIDATION_LOCK:
+            for key in [k for k in _VALIDATED_ARCHIVES if k[0] == str(path.resolve())]:
+                del _VALIDATED_ARCHIVES[key]
+        return removed
 
     def stage_boot(self, copy, engine, identity_value):
         """Stage one authenticated checkpoint before starting a fresh private VM."""
@@ -731,7 +809,7 @@ class SelectorCache:
                          state_path=str(target.resolve()), cache_folder=str(self.folder), record=record)
             return dict(claim=claim, mac=hmac.new(self.key, canonical(claim), hashlib.sha256).hexdigest())
 
-    def restore_boot(self, copy, engine, identity_value, lease, descriptor, timeout=45):
+    def restore_boot(self, copy, engine, identity_value, lease, descriptor, timeout=45, *, commit=None):
         """Authorize the VM's startup checkpoint without loading it a second time.
 
         PCSX2's -statefile startup restores the archive before guest execution.
@@ -740,6 +818,9 @@ class SelectorCache:
         """
         import native_mode_menu as menu
         from native_map import SERIAL, CRC
+        commit = engine if commit is None else commit
+        if commit not in ('teams', 'ffa'):
+            raise ValueError('Unknown selector engine')
         start, end = time.monotonic(), time.monotonic() + timeout
         with copy.lock, self._lock(engine, identity_value):
             _owner(copy)
@@ -790,12 +871,12 @@ class SelectorCache:
                 first_frame = _startup_menu_frame(client)
                 # The full live proof above also requires no outstanding lease.
                 client.write_u32(menu.CONTROL + 16, 0)
-                client.write_u32(menu.CONTROL + 12, record['selector']['choice'] + 1)
+                client.write_u32(menu.CONTROL + 12, menu.SELECTIONS.index((commit, 1)) + 1)
                 client.write_u32(menu.CONTROL + 4, 3)
             acknowledged = None
             while time.monotonic() < end:
                 current = lease.read(copy)
-                if current.get('state') == 'MENU' and mode_receipt(current, engine, after=previous_epoch):
+                if current.get('state') == 'MENU' and mode_receipt(current, commit, after=previous_epoch):
                     with copy.pine() as client:
                         consumed = client.read_u32(menu.CONTROL + 12) == client.read_u32(menu.CONTROL + 4) == 0
                         running = client.require_game(serial=SERIAL, crc=CRC).get('status') == 'running'
@@ -806,14 +887,14 @@ class SelectorCache:
                 copy.sleep(.05)
             if acknowledged is None:
                 raise ValueError('Current private watcher did not authorize the startup selector')
-            copy.engine, copy.state, copy.settings_written = engine, 'warm', None
+            copy.engine, copy.state, copy.settings_written = commit, 'warm', None
             path.unlink(missing_ok=True)
             return dict(validation_seconds=round(validation, 3),
                         restore_and_authorization_seconds=round(time.monotonic() - start, 3),
                         bootstrap_code_wait_seconds=0, queued_load_canary=False, direct_state_boot=True,
                         native_mode_receipt=acknowledged, loaded_game=info)
 
-    def restore(self, copy, engine, identity_value, lease, timeout=45, *, boot=None):
+    def restore(self, copy, engine, identity_value, lease, timeout=45, *, boot=None, commit=None):
         """Restore before logos or from an idle native game; never while a prep worker owns it.
 
         For a post-export reset the caller first waits for watcher ACTIVE, which
@@ -821,7 +902,10 @@ class SelectorCache:
         The subsequent MENU acknowledgement below waits for worker cleanup.
         """
         if boot is not None:
-            return self.restore_boot(copy, engine, identity_value, lease, boot, timeout)
+            return self.restore_boot(copy, engine, identity_value, lease, boot, timeout, commit=commit)
+        commit = engine if commit is None else commit
+        if commit not in ('teams', 'ffa'):
+            raise ValueError('Unknown selector engine')
         import kit_adapter
         import native_mode_menu as menu
         from native_map import SERIAL, CRC
@@ -888,12 +972,12 @@ class SelectorCache:
                 if selector(LiveMemory(client), engine) != record['selector']:
                     raise ValueError('Loaded live selector differs from its authenticated template')
                 client.write_u32(menu.CONTROL + 16, 0)
-                client.write_u32(menu.CONTROL + 12, record['selector']['choice'] + 1)
+                client.write_u32(menu.CONTROL + 12, menu.SELECTIONS.index((commit, 1)) + 1)
                 client.write_u32(menu.CONTROL + 4, 3)  # native semantic commit, state last
             acknowledged = None
             while time.monotonic() < end:
                 current = lease.read(copy)
-                if current.get('state') == 'MENU' and mode_receipt(current, engine, after=previous_epoch):
+                if current.get('state') == 'MENU' and mode_receipt(current, commit, after=previous_epoch):
                     with copy.pine() as client:
                         consumed = client.read_u32(menu.CONTROL + 12) == client.read_u32(menu.CONTROL + 4) == 0
                     if consumed and copy.at_map_select():
@@ -902,7 +986,7 @@ class SelectorCache:
                 copy.sleep(.05)
             if acknowledged is None:
                 raise ValueError('Current private watcher did not authorize the restored selector')
-            copy.engine, copy.state, copy.settings_written = engine, 'warm', None
+            copy.engine, copy.state, copy.settings_written = commit, 'warm', None
             return dict(validation_seconds=round(validation, 3),
                         restore_and_authorization_seconds=round(time.monotonic() - start, 3),
                         bootstrap_code_wait_seconds=round(bootstrap_seconds, 3),

@@ -11,7 +11,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 13.3 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.3).
+Download the **Version 13.4 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.4).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -23,6 +23,8 @@ The release includes English and Spanish mod interfaces.
 This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
+
+Version 13.4 reimplements online play, which is now more stable.
 
 Version 13.3 fixes some issues on the HUD displays in splitscreen, and de-fusions
 no longer make your health red as it is adjusting. It also fixes an issue that
@@ -94,10 +96,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 13.2 Windows ZIP can be used instead of downloading it:
+An existing Version 13.4 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.3.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.4.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -110,7 +112,7 @@ python bt3-multifighter/tools/modder_gui.py
 
 ## Development source and downloads
 
-Version 13.2 is available in Releases. Main may receive further development changes;
+Version 13.4 is available in Releases. Main may receive further development changes;
 use the release tag for the source behind the installers and updaters.
 Choose a new version before distributing a modified build.
 

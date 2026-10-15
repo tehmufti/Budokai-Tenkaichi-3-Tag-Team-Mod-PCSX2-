@@ -277,11 +277,10 @@ def watcher_command(request, root, folder, emulator_pid):
     command = [str(root / 'game/tools/autopilot.py'), '--mode', 'Original', '--status-file',
                str(folder / 'status.json'), '--emulator-pid', str(emulator_pid),
                '--launcher-token', request['token']]
-    if request.get('selector_boot') is not None:
-        # This fresh watcher did not capture the original native menus. The
-        # authenticated online selector helper owns all its menu resets; the
-        # offline fallback must retain its normal clean-checkpoint lifecycle.
-        command.append('--no-menu-checkpoint')
+    # Oct 15 redesign: the private builder never returns through the watcher's own menu checkpoints: the authenticated
+    # neutral base (kit_selector_cache) is its only way back, built deterministically when missing. Two 128 MiB
+    # menu savestates per boot only slowed the base build and briefly blocked PINE.
+    command.append('--no-menu-checkpoint')
     return command
 
 

@@ -262,10 +262,11 @@ class PrivateAccelerationProfile(unittest.TestCase):
 
     def test_hidden_windows_only_has_null_renderer_and_private_turbo(self):
         config = self.configure(True, True)
-        self.assertEqual(config.getint('EmuCore/GS', 'Renderer'), 11)
+        self.assertEqual(config.getint('EmuCore/GS', 'Renderer'), 3)   # D3D11: PCSX2 2.8 has no Null renderer
         self.assertEqual(config.getint('Framerate', 'TurboScalar'), 32)
         self.assertEqual(prepare.PRIVATE_SPEED, 32.0)
-        self.assertEqual(config.getfloat('Framerate', 'NominalScalar'), 1)
+        # Oct 15 redesign: driven from inside the game, the private copy runs at its private speed from boot to export.
+        self.assertEqual(config.getfloat('Framerate', 'NominalScalar'), 32)
         for backend in ('SDL', 'XInput', 'DInput'):
             self.assertFalse(config.getboolean('InputSources', backend))
 

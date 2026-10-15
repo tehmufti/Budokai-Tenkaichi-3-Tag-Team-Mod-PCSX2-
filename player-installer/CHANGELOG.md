@@ -1,3 +1,9 @@
+## Version 13.4
+
+Online play has been reimplemented and is now more stable.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.4.
+
 ## Version 13.3
 
 The updater now handles installations from before the version-number reset. It also checks the actual files when updating the same version, so refreshed downloads and repairs are applied properly.

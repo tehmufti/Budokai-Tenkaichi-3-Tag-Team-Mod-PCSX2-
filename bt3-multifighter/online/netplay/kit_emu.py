@@ -221,6 +221,10 @@ class Emulator:
         if problems:
             raise KitError('TTM-NET-25', what='The kit\'s PCSX2 settings could not be forced: ' + '; '.join(problems))
         Path(path).write_bytes(self.ini_text.encode('utf-8'))
+        # PCSX2 2.8 may fail to create secrets.ini at startup and stop on a modal error; see kit_prepare.
+        secrets_ini = Path(path).with_name('secrets.ini')
+        if not secrets_ini.exists():
+            secrets_ini.write_bytes(b'')
         if forced_problems(Path(path).read_bytes().decode('utf-8')):
             raise KitError('TTM-NET-25', what=f'{path} did not keep the forced settings.')
 

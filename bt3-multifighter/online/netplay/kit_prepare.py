@@ -172,6 +172,22 @@ def patches(slot):
             # foreground-only Space toggle, which can pause the finished boot.
             ('        self.menu_resume_sent = False    # the paused boot menu is resumed at most once per session',
              '        self.menu_resume_sent = True     # private builder startup is owned by Qt and its controller'),
+            # Oct 15 redesign: the private copy runs at PRIVATE_SPEED from boot to export; its watcher looks at the game
+            # four times as often (0.2 s of host time is several seconds of its game time).
+            ("    def __init__(self, mode='Original', poll=0.2, menu_checkpoint=True,",
+             "    def __init__(self, mode='Original', poll=0.05, menu_checkpoint=True,"),
+            # The kit loads its neutral base into this copy while the watcher is ACTIVE in the copy's prepared fight.
+            # A poll during that load can read the old loop word with the new scene's team word, which reads as a
+            # native Fight Again (live, Oct 15: 2 of 19 resets loaded the rematch over the base). The private
+            # watcher acts on two consecutive observations only; the next poll of a real load sees the menu.
+            ("                if obs.team_mode == 0:\n"
+             "                    log(say(SAY_REMATCH_LOADING))",
+             "                if obs.team_mode == 0 and not getattr(self, '_private_rematch_seen', False):\n"
+             "                    self._private_rematch_seen = True   # TTM Online private copy: confirm next poll\n"
+             "                    continue\n"
+             "                self._private_rematch_seen = False\n"
+             "                if obs.team_mode == 0:\n"
+             "                    log(say(SAY_REMATCH_LOADING))"),
             ("value['launcher_token'] = self.launcher_token",
              "value['launcher_token'] = self.launcher_token\n"
              "            value['native_mode_receipt'] = dict(\n"
@@ -331,10 +347,18 @@ class Prepare:
 
     # ---- the copy's patches and settings --------------------------------------------------------------------------
     def patch(self):
+        install = getattr(getattr(self, 'run', None), 'install', None)
+        source = Path(install['root']) if isinstance(install, dict) and install.get('root') else None
         for rel, edits in patches(self.slot).items():
             original = self.orig / rel
             target = self.dest / rel
-            if not original.exists():
+            # Oct 15 redesign: the installation's own file is the original (an edited development tree keeps its copy and
+            # its neutral base; a remembered original could be an older file).
+            if source is not None and (source / rel).is_file():
+                original.parent.mkdir(parents=True, exist_ok=True)
+                if not original.exists() or original.read_bytes() != (source / rel).read_bytes():
+                    shutil.copyfile(source / rel, original)
+            elif not original.exists():
                 original.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(target, original)
             data = original.read_bytes()
@@ -362,20 +386,31 @@ class Prepare:
                      ('InputSources', 'XInput', 'false'), ('InputSources', 'DInput', 'false'),
                      ('Hotkeys', 'Screenshot', 'Keyboard/F8'),
                      ('Hotkeys', 'HoldTurbo', 'Keyboard/Period'),
-                     ('Framerate', 'NominalScalar', '1'), ('Framerate', 'TurboScalar', str(int(PRIVATE_SPEED))),
+                     # Oct 15 redesign: the private copy is driven from inside the game (kit_inject), whose presses count
+                     # native polls, so it runs at its private speed from boot to export: no turbo key is sent.
+                     ('Framerate', 'NominalScalar', str(int(PRIVATE_SPEED))),
+                     ('Framerate', 'TurboScalar', str(int(PRIVATE_SPEED))),
                      ('Framerate', 'SlomoScalar', '1'), ('EmuCore/GS', 'upscale_multiplier', '1')]
             if kit_win.WINDOWS:
                 # Only the hidden builder skips host drawing. The native GS
                 # state remains in the archive; normal client rendering is unchanged.
                 # FIFO with present skipping avoids a hidden mailbox swapchain
                 # pacing the private native loader at the desktop refresh rate.
-                keys += [('EmuCore/GS', 'Renderer', '11'),
+                # PCSX2 2.8 has no Null renderer: 11 reads as Automatic (D3D12 on most GPUs). Pin D3D11 at 1x,
+                # the renderer proven on hidden desktops, instead of depending on the GPU's automatic choice.
+                keys += [('EmuCore/GS', 'Renderer', '3'),
                          ('EmuCore/GS', 'VsyncEnable', 'true'),
                          ('EmuCore/GS', 'DisableMailboxPresentation', 'true')]
             keys += [('Pad1', kit_emu.PAD_NAMES[k], 'Keyboard/' + v[3]) for k, v in kit_emu.PAD1_KEYS.items()]
             keys += [('Pad2', kit_emu.PAD_NAMES[k], 'Keyboard/' + v) for k, v in pad2.items()]
         text = original.read_bytes().decode('utf-8-sig', errors='replace')
         independent_write(ini, ini_set(text, keys).encode('utf-8'))
+        # PCSX2 2.8 keeps secrets in secrets.ini beside PCSX2.ini. When it has to create that file while the private
+        # builder starts, its rename can fail (Win32 error 5) and leave a modal "Failed to save secrets" box on the
+        # hidden desktop, so PINE never opens (TTM-NET-23). An existing, empty file avoids the creation.
+        secrets_ini = Path(ini).with_name('secrets.ini')
+        if not secrets_ini.exists():
+            secrets_ini.write_bytes(b'')
 
     def python(self):
         return self.dest / '.venv' / 'Scripts' / 'python.exe'
@@ -911,6 +946,21 @@ def _convert(capture, folder, names_file, spec=None, options=None, *, controls=N
     release = []
     if held_export is not None:
         ram, release = held_export_memory(capture, ram, held_export)
+    # Oct 15 redesign: the private copy's guest pad (kit_inject) is unhooked in the exported match first, before any
+    # check reads it: the native pad read again, the pad disabled (its program stays, see kit_inject).
+    import kit_inject
+    try:
+        unpad = kit_inject.unhook_blocks(ram)
+    except ValueError as error:
+        return dict(code='TTM-NET-24', error=f'The prepared match holds an unknown private pad: {error}.',
+                    error_es=f'El combate preparado contiene un mando privado desconocido: {error}.')
+    if unpad:
+        import patch_state
+        manifest = dict(serial=patch_state.SERIAL, crc=patch_state.CRC,
+                        blocks=[dict(address=a, expected_hex=bytes(ram[a:a + len(d)]).hex(), data_hex=d.hex())
+                                for a, d in unpad])
+        ram, _ = patch_state.patch_memory(ram, manifest)
+        release = list(release) + unpad
     u = lambda a: struct.unpack_from('<I', ram, a)[0]
     problems = []
     battle = u(BATTLE)

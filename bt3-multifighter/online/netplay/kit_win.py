@@ -329,12 +329,29 @@ def windows_of(pid, desktop=None):
     return DesktopThread.run(desktop, _windows_of, pid, desktop)
 
 
+def _display_children(hwnd):
+    """Qt native child windows (the embedded game picture) of a top-level PCSX2 window."""
+    found = []
+
+    def each(child, _):
+        name = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(child, name, 256)
+        if name.value.startswith('Qt') and user32.IsWindowVisible(child):
+            found.append(child)
+        return True
+    user32.EnumChildWindows(hwnd, ENUM(each), 0)
+    return found
+
+
 def _post_key(pid, desktop, vk, scan, extended, down):
     lparam = 1 | (scan << 16) | (extended << 24) | (0 if down else 0xC0000000)
     hits = 0
     for hwnd, _, _ in _windows_of(pid, desktop):
-        user32.PostMessageW(hwnd, 0x0100 if down else 0x0101, vk, lparam)
-        hits += 1
+        # With the game drawn inside the main window, PCSX2 reads keys only from that embedded display window;
+        # a key posted to the unfocused main window on the hidden desktop never reaches the game.
+        for target in _display_children(hwnd) or [hwnd]:
+            user32.PostMessageW(target, 0x0100 if down else 0x0101, vk, lparam)
+            hits += 1
     return hits
 
 
