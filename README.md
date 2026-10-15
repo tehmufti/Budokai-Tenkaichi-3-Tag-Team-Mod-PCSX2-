@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="bt3-multifighter/Tag%20Team%20Mod%20Logo.png" alt="Dragon Ball Z Budokai Tenkaichi 3 Tag Team Mod" width="480">
+</p>
+
 # Budokai Tenkaichi Tag Team Mod for PCSX2
 
 Simultaneous fighters, teams and free-for-all battles for Budokai Tenkaichi 3,
