@@ -829,8 +829,8 @@
       "shared": true
     },
     "tools/localization.py": {
-      "bt3": "426e29e42b6eb5d90255e474608c9484e99613e203f4668c85682a07cf23b671",
-      "bt4": "426e29e42b6eb5d90255e474608c9484e99613e203f4668c85682a07cf23b671",
+      "bt3": "6071f2d143a87282cba07655049279001e7c570e28d5253ba7567446139db5a4",
+      "bt4": "6071f2d143a87282cba07655049279001e7c570e28d5253ba7567446139db5a4",
       "shared": false
     },
     "tools/lockoff_target.py": {
@@ -879,8 +879,8 @@
       "shared": false
     },
     "tools/mod_settings.py": {
-      "bt3": "aede9753ffe2989e0e41f77d06f33d95dce671b577aae9dde486ffa39f2d2428",
-      "bt4": "12c5a6439e08b4c62a6daa53f8daf59a21a2941998346a3b83dbe2c60f5faf24",
+      "bt3": "a0d7274d9dc65a2b595f317d540844f3c6e94c300d4dd3e6982b2400cc848b71",
+      "bt4": "8ff0dfc5b0f3d8c1238abe7c3311b702a8408ae7a50789b344fefe33affe76c0",
       "shared": false
     },
     "tools/modded_training.py": {
