@@ -1,3 +1,11 @@
+## Version 13.3
+
+Fixed some issues on the HUD displays in splitscreen, and de-fusions no longer make your health red as it is adjusting.
+
+Fixed an issue that could disable transformations, Body Change and fusion timers when starting a match.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.3.
+
 ## Version 13.2 refresh
 
 Piccolo's tag attacks now use his native Special Beam Cannon effect in BT3 and BT4. The refreshed updater also works if you already installed 13.2.

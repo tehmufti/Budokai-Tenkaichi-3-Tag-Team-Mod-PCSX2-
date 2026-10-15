@@ -55,7 +55,8 @@ F=dict(actor=0,target=4,progress=8,hp=12,lock_target=16,x=20,y=24,z=28,
 HOOKS=(start.HOOK,contact.PROTECTED,feed.DAMAGE_ENTRY,A(0x1D4F30),A(0x1E0290))
 WRAPPERS=(FRAME,CONTACT,DAMAGE,COMMAND,REQUEST)
 # These native code dependencies own queue reset, get-up choice/completion,
-# health rows and animation timing. Their bytes are not rewritten.
+# health rows and animation timing. Only tag rush's authenticated dispatcher
+# call substitution is accepted inside them; all other bytes stay native.
 DEPENDENCIES=((A(0x1E23D0),0x1E0),(A(0x1EA920),0x410),(A(0x1DC2D0),0x78),
               (A(0x1C47A8),0x110),(A(0x204DB0),0x48),(A(0x1E02A8),0x68),
               (A(0x1EA1A0),0xF8),(A(0x1210D8),0x90),(A(0x120AB0),0x30),(A(0x120B80),0x20))
@@ -438,7 +439,9 @@ def validate_memory(ram):
                     continue
             raise ValueError(f'Revival executable changed {p:08X}')
     for p,n in DEPENDENCIES:
-        if ram[p:p+n]!=NATIVE(p,n):raise ValueError(f'Revival native dependency changed {p:08X}')
+        import tag_rush_launch
+        expected=tag_rush_launch.dependency_override(ram,p,NATIVE(p,n))
+        if ram[p:p+n]!=expected:raise ValueError(f'Revival native dependency changed {p:08X}')
     for i in range(count):
         if u(ROWS+i*STRIDE)!=u(core.POINTERS+4*i):raise ValueError('Revival actor pointer changed')
     return previous

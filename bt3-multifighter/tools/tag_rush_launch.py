@@ -54,6 +54,26 @@ def copy_words(a,src,dst,size,label):
     a.addiu(src,src,4);a.addiu(dst,dst,4);a.branch(5,src,10,label)
 
 
+def dependency_override(ram,address,expected):
+    """Authenticate the one tag call inside the native action dispatcher.
+
+    Revival/Body Change still require every other byte of that native routine.
+    The substituted callee must also be our complete, match-owned commit code.
+    """
+    offset=COMMIT_HOOK-address
+    if offset<0 or offset+len(COMMIT_NATIVE)>len(expected):return expected
+    if expected[offset:offset+len(COMMIT_NATIVE)]!=COMMIT_NATIVE:return expected
+    if bytes(ram[COMMIT_HOOK:COMMIT_HOOK+len(COMMIT_PATCH)])!=COMMIT_PATCH:return expected
+    u=lambda at:struct.unpack_from('<I',ram,at)[0]
+    manager,count=u(tag.core.ACTORS),u(tag.core.MODE+4)
+    if (u(tag.CONTROL),u(tag.CONTROL+4),u(tag.CONTROL+8))!=(tag.MAGIC,manager,count) or count not in tag.modes.ACTOR_COUNTS:
+        raise ValueError('Tag-rush action dispatcher belongs to another match')
+    code=commit_code()
+    if bytes(ram[COMMIT:COMMIT+len(code)])!=code:
+        raise ValueError('Tag-rush action dispatcher changed')
+    return expected[:offset]+COMMIT_PATCH+expected[offset+len(COMMIT_NATIVE):]
+
+
 def check_code():
     a=Assembler(CHECK);tag.save(a);a.move(16,4);table(a,17,'no')
     a.move(4,16);a.call(retarget.CHECK);a.branch(4,2,0,'no')

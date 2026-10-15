@@ -1329,8 +1329,8 @@
       "shared": true
     },
     "tools/story_runtime.py": {
-      "bt3": "d78bb3e257497c01e2cd6f5d290a1e79cb3f20a8efcd8bd8600e77e829c335c7",
-      "bt4": "d78bb3e257497c01e2cd6f5d290a1e79cb3f20a8efcd8bd8600e77e829c335c7",
+      "bt3": "7b485d9b50d7de0ea5e61a545a16b6e1f5fe4b68db076a281404796288eb8cb2",
+      "bt4": "7b485d9b50d7de0ea5e61a545a16b6e1f5fe4b68db076a281404796288eb8cb2",
       "shared": true
     },
     "tools/story_voice.py": {
@@ -1439,8 +1439,8 @@
       "shared": true
     },
     "tools/tag_rush_launch.py": {
-      "bt3": "31e57426e7bc5b21ac11686ef9220d3d73db8ee57ca8f826d206c1b73516b8c1",
-      "bt4": "31e57426e7bc5b21ac11686ef9220d3d73db8ee57ca8f826d206c1b73516b8c1",
+      "bt3": "4a492721aa8b674d579f8ed4af006a2a5c03aeff45d53044bbf59781e3ab5f4f",
+      "bt4": "4a492721aa8b674d579f8ed4af006a2a5c03aeff45d53044bbf59781e3ab5f4f",
       "shared": true
     },
     "tools/tag_rush_native_pose.py": {
@@ -1469,8 +1469,8 @@
       "shared": true
     },
     "tools/tag_rush_safety.py": {
-      "bt3": "277fbf06f6a442998eb23700a2c3fe7af38f6f19d1d7e29431d71bfd7f229120",
-      "bt4": "277fbf06f6a442998eb23700a2c3fe7af38f6f19d1d7e29431d71bfd7f229120",
+      "bt3": "b103f1270126358e5879be4192ace0349673c017bce8e5b2addd163c48037c72",
+      "bt4": "b103f1270126358e5879be4192ace0349673c017bce8e5b2addd163c48037c72",
       "shared": true
     },
     "tools/tag_rush_scene.py": {
@@ -1584,8 +1584,8 @@
       "shared": true
     },
     "tools/teammate_revive.py": {
-      "bt3": "a908f62ccd2d5998eadcb0f8f1fc5de7ba7c89513b594df45208c14bc24ffb7e",
-      "bt4": "a908f62ccd2d5998eadcb0f8f1fc5de7ba7c89513b594df45208c14bc24ffb7e",
+      "bt3": "4680d4195d02620792fe5aba65c3b10e2b2c3a74e43371d692e080aee5d88b57",
+      "bt4": "4680d4195d02620792fe5aba65c3b10e2b2c3a74e43371d692e080aee5d88b57",
       "shared": true
     },
     "tools/teammate_revive_ring.py": {
@@ -1649,13 +1649,13 @@
       "shared": true
     },
     "tools/viewport_hud.py": {
-      "bt3": "29991735783a328f081b9b5585fd929bad31b0daf664bb899eaa248ea55ce636",
-      "bt4": "22a6eeed9baef474c0692af9de78d9a158ea42dc3e97d389c7a1d0788e785a9f",
+      "bt3": "73a3fa04f4f12b24e8ee8df8eaa9a889e632703e89f87a7589990ff19b94599f",
+      "bt4": "015b5c28e95e55ec649c8447db0a86b858c656b3c998235978ad0a89fb94ee4b",
       "shared": false
     },
     "tools/viewport_hud_art.py": {
-      "bt3": "c9a394b5d7b6be3b4c624acdf8ed9f517cd06d9e03740130422eba5fbe25c97b",
-      "bt4": "c9a394b5d7b6be3b4c624acdf8ed9f517cd06d9e03740130422eba5fbe25c97b",
+      "bt3": "8020c32d507b7505f60cc9804a3e587cc17688973a83559be222cd38f2110e4d",
+      "bt4": "8020c32d507b7505f60cc9804a3e587cc17688973a83559be222cd38f2110e4d",
       "shared": true
     },
     "tools/viewport_hud_art_v1.py": {

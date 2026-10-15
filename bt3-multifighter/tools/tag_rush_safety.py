@@ -239,6 +239,39 @@ def pieces(original):
     return out
 
 
+def dependency_override(ram,address,expected):
+    """Recognize only our exact contact guard and its authenticated predecessor.
+
+    Tag attacks install after Body Change and scenarios. Their outer jump must
+    not make those services reject a valid match, or hide a changed inner hook.
+    This inspects code and match ownership without rewriting guest memory.
+    """
+    import cinematic_contact_guard as contact
+    if address!=contact.PROTECTED or len(expected)!=8:return expected
+    actual=bytes(ram[address:address+8])
+    installed=struct.pack('<2I',0x08000000|(CONTACT>>2),0)
+    if actual!=installed:return expected
+    import tag_team_rush as tag
+    u=lambda at:struct.unpack_from('<I',ram,at)[0]
+    manager,count=u(core.ACTORS),u(core.MODE+4)
+    if (u(CONTROL),u(CONTROL+4),u(CONTROL+8))!=(tag.MAGIC,manager,count) or count not in tag.modes.ACTOR_COUNTS:
+        raise ValueError('Tag-rush contact protection belongs to another match')
+    code=contact_code()
+    if bytes(ram[CONTACT:CONTACT+len(code)])!=code:
+        raise ValueError('Tag-rush contact protection changed')
+    # The retained predecessor can itself be an exact scenario wrapper.
+    import story_runtime
+    previous=bytes(ram[TRAMPOLINE:TRAMPOLINE+8])
+    retained=story_runtime._protection_override(ram,address,expected,previous)
+    code=trampoline_code(retained)
+    if bytes(ram[TRAMPOLINE:TRAMPOLINE+len(code)])!=code:
+        # Older validators may try their own predecessor first, then validate
+        # the Body Change layer separately. Preserve that mismatch/fallback;
+        # never bless this outer jump unless its retained chain matches.
+        return expected
+    return actual
+
+
 def build_memory(ram):
     import cinematic_contact_guard as contact
     head=bytes(ram[contact.PROTECTED:contact.PROTECTED+8])

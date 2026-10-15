@@ -11,11 +11,24 @@ import struct
 from prototype import Assembler, ROOT, elf_reader
 import viewport_hud as hud
 from regional import tbp, Y_ORIGIN
-from native_map import ACTOR_HZ
+from native_map import ACTOR_HZ, SERIAL
 
 SPRITE,TEMPLATE,NATIVE_PANEL,COMPACT = 0x072D4000,0x072D5800,0x072D6000,0x072DC000
 SETTINGS = 0x072DE000
 METERS, METER_BYTES = 0x072DE100,12*24
+# HP trail identity per fighter: row character | model character << 16, then the clock until which a lowered HP
+# snaps instead of animating (a form, fusion, defusion, body or revival change is not damage). PASSES holds the
+# clocks of the current and previous HUD pass: a fighter the previous pass did not draw is newly shown (target
+# switch, swap) and starts from its own current HP, never from a stale trail.
+IDENTITY, IDENTITY_BYTES = 0x072DE240,12*8
+PASSES = 0x072DE2C0
+SETTLE = round(.5*ACTOR_HZ)
+assert METERS+METER_BYTES<=IDENTITY and IDENTITY+IDENTITY_BYTES<=PASSES and PASSES+8<=0x072DF000
+# Native 21C5B0/21C940 use palette 5 (blue) from this layer up: slti 7 on BT3 (all regions), slti 4 on BT4.
+BLUE_LAYER = 4 if SERIAL == 'SLUS-21978' else 7
+# The native pip records' own palettes (21CA60 only shows/hides them): BT3 draws every pip green, BT4 colours
+# pip k like HP layer k (orange, yellow, green, green, blue, blue).
+PIP_PALETTES = (3,4,1,1,5,5) if SERIAL == 'SLUS-21978' else (1,)*6
 UPLOAD, INVALIDATE = A(0x224F00),A(0x21F438)
 PARAM=0x120
 NATIVE_RANGES=((UPLOAD,0x1C8),(INVALIDATE,0x48),(A(0x1006E8),8),(A(0x100738),8))
@@ -173,36 +186,16 @@ def clamp(a,out,pointer_reg,offset,maximum,tag):
     a.label(tag+'positive');a.li(8,maximum);a.r(0x2B,9,8,out);a.branch(4,9,0,tag+'ready');a.move(out,8);a.label(tag+'ready')
 
 
-def hp_palette(a,layer,out,tag):
-    a.i(11,8,layer,7);a.branch(4,8,0,tag+'blue');a.i(11,8,layer,2);a.branch(4,8,0,tag+'green')
+def hp_palette(a,layer,out,tag,blue=7):
+    a.i(11,8,layer,blue);a.branch(4,8,0,tag+'blue');a.i(11,8,layer,2);a.branch(4,8,0,tag+'green')
     a.branch(5,layer,0,tag+'yellow');a.addiu(out,0,3);a.jump(tag+'end')
     for name,p in (('blue',5),('green',1),('yellow',4)):
         a.label(tag+name);a.addiu(out,0,p);a.jump(tag+'end')
     a.label(tag+'end')
 
 
-def panel_code():
-    a=Assembler(NATIVE_PANEL);hud.save(a)
-    for dest,source in ((16,4),(17,5),(18,6),(19,7)):a.move(dest,source)
-    a.i(55,20,29,hud.SAVED.index(8)*8)
-    import widescreen_support as wide
-    a.sw(0,29,0x1D0);wide.emit_detection(a,10,'aspect_ready');a.sw(10,29,0x1D0);a.label('aspect_ready')
-    a.call(hud.spectator.LOOKUP);a.branch(4,3,0,'done')
-    a.li(8,hud.core.POINTERS);a.r(0,9,0,16,2);a.r(0x21,8,8,9);a.lw(23,8);a.move(4,23)
-    a.call(hud.feed.ROW);a.branch(4,2,0,'done');a.move(21,2)
-    a.lw(22,28,-0x5728);pointer(a,22,0x200,'compact');a.lw(22,22);pointer(a,22,32,'compact')
-    a.lw(8,22);a.i(11,9,8,16);a.branch(5,9,0,'compact')
-    # Normal native background and real active model portrait.
-    emit_sprite(a,6,0,(0,0,256,64),(0,0,256,64))
-    a.li(8,SETTINGS);a.lw(8,8,4);a.branch(4,8,0,'portrait_done')
-    a.lw(8,23,12);a.i(11,9,8,12);a.branch(4,9,0,'portrait_done')
-    a.r(0,8,0,8,2);a.li(9,hud.core.MODELS);a.r(0x21,8,8,9);a.lw(24,8)
-    pointer(a,24,84,'portrait_done');a.lw(24,24,80)
-    # Native status-node translations relative to the atlas6 frame:
-    # portrait (16,3), health (69,9), pips (73,2), ki (64,27).
-    # These are authored node offsets, not the visible texture bounds.
-    emit_sprite(a,0,0,(0,0,64,64),(16,3,80,67),bundle=24,portrait=True)
-    a.label('portrait_done')
+def _legacy_hp(a):
+    """The previous release's HP section, byte for byte (strict upgrades of prepared captures)."""
     # Native21C5B0 paints the next layer followed by atlas8/palette0's
     # translucent black mask; adjacent green layers remain distinguishable.
     # Keep that underlay behind the per-fighter red damage trail and live HP.
@@ -251,6 +244,131 @@ def panel_code():
         emit_sprite(a,8,1,(0,16,16,32),(73+9*pip,2,89+9*pip,18))
         a.label(f'pip{pip}')
     a.label('hp_done')
+
+
+def _width(a,reg,tag,sliver):
+    """reg = native 160-unit width of a 1..10000 layer remainder; sliver: 21C5B0 keeps 3 units on the last layer."""
+    a.addiu(8,0,160);a.r(25,0,reg,8);a.r(18,reg,0);a.li(8,10000);a.r(27,0,reg,8);a.r(18,reg,0)
+    if sliver:
+        a.lw(8,29,0x180);a.branch(5,8,0,tag);a.i(11,8,reg,3);a.branch(4,8,0,tag);a.addiu(reg,0,3)
+        a.label(tag)
+
+
+def _native_hp(a):
+    """HP exactly as native 21C5B0/21CA60 draw it, from this fighter's own trail record.
+
+    The trail layer (not the HP layer) chooses the fill and next-layer palettes and the pip count. While the trail is
+    still in a higher layer the fill is hidden, the trail shows red, and the next layer shows its remaining HP over
+    the dark mask with the part already lost in dark red (native records 0x1C/0x38). The trail resets instead of
+    animating on a new fighter, form, fusion, defusion, body change or revival (identity), on any HP rise, when the
+    fighter was not drawn by the previous HUD pass (target switch, swap) and after a HUD absence longer than the
+    trail itself (co-op fusion, cinematics). Draw-only: only HUD records change.
+    """
+    # Values live in t4..t7 (r12..r15), s-registers and the stack, never k0/k1 (r26/r27): a kernel interrupt
+    # handler may overwrite those between two instructions (a one-frame wrong palette, width or pip count).
+    clamp(a,24,21,0,10000000,'hp_');a.branch(5,24,0,'hp_alive')
+    a.r(0,8,0,16,1);a.r(0x21,8,8,16);a.r(0,8,0,8,3);a.li(9,METERS);a.r(0x21,8,8,9);a.sw(0,8)
+    a.jump('hp_done');a.label('hp_alive')
+    a.sw(24,29,0x190);a.r(0,25,0,16,1);a.r(0x21,25,25,16);a.r(0,25,0,25,3)
+    a.li(8,METERS);a.r(0x21,25,25,8);a.li(8,hud.feed.CONTROL);a.lw(15,8,12)
+    # Pass clocks: the first panel of a new battle tick moves current -> previous (a clock that went back starts over).
+    a.li(8,PASSES);a.lw(9,8);a.branch(4,9,15,'hp_pass_ready')
+    a.r(0x2B,10,15,9);a.branch(4,10,0,'hp_pass_forward');a.move(9,15)
+    a.label('hp_pass_forward');a.sw(9,8,4);a.sw(15,8)
+    a.label('hp_pass_ready')
+    # Identity: the selected row's character (row-0x40) and the bounded model's character.
+    a.lw(12,21,-64);a.i(12,12,12,0xFFFF)
+    a.lw(8,23,12);a.i(11,9,8,12);a.branch(4,9,0,'hp_id_ready')
+    a.r(0,8,0,8,2);a.li(9,hud.core.MODELS);a.r(0x21,8,8,9);a.lw(8,8)
+    pointer(a,8,0x10,'hp_id_ready');a.lw(8,8,12);a.i(12,8,8,0xFFFF);a.r(0,8,0,8,16);a.r(0x25,12,12,8)
+    a.label('hp_id_ready');a.r(0,13,0,16,3);a.li(8,IDENTITY);a.r(0x21,13,13,8)
+    a.lw(8,25);a.branch(5,8,23,'hp_identity');a.lw(8,25,4);a.branch(5,8,21,'hp_identity')
+    a.lw(8,13);a.branch(5,8,12,'hp_identity')
+    # A record the previous HUD pass did not draw, one from a later clock, or one older than the trail's own
+    # duration (a long single-view stretch: co-op fusion, an ultimate) is stale: start from the current HP.
+    a.lw(8,25,12);a.branch(4,8,15,'hp_fresh')
+    a.r(0x2B,9,15,8);a.branch(5,9,0,'hp_reset')
+    a.li(9,PASSES);a.lw(9,9,4);a.r(0x2B,9,8,9);a.branch(5,9,0,'hp_reset')
+    a.li(9,SETTINGS);a.lw(9,9,16);a.r(0x23,11,15,8);a.r(0x2B,9,9,11);a.branch(5,9,0,'hp_reset')
+    a.label('hp_fresh')
+    a.li(8,SETTINGS);a.lw(10,8,16);a.branch(4,10,0,'hp_reset')
+    a.lw(14,25,8);a.r(0x2B,8,24,14);a.branch(4,8,0,'hp_reset')
+    # Within SETTLE ticks of an identity change a lower HP is the new form's value, not damage.
+    a.lw(8,13,4);a.r(0x23,8,8,15);a.addiu(8,8,-1);a.i(11,8,8,SETTLE);a.branch(5,8,0,'hp_reset')
+    a.lw(8,25,20);a.branch(4,8,24,'hp_rate_ready')
+    a.r(0x23,8,14,24);a.r(0x21,8,8,10);a.addiu(8,8,-1)
+    a.r(27,0,8,10);a.r(18,9,0);a.sw(9,25,16)
+    a.label('hp_rate_ready')
+    a.lw(8,25,12);a.branch(4,8,15,'hp_trail_ready')
+    a.lw(9,25,16);a.r(0x23,14,14,9);a.r(0x2A,8,14,24);a.branch(4,8,0,'hp_store');a.move(14,24)
+    a.jump('hp_store')
+    a.label('hp_identity');a.sw(12,13);a.addiu(8,15,SETTLE);a.sw(8,13,4)
+    a.label('hp_reset');a.sw(23,25);a.sw(21,25,4);a.move(14,24);a.addiu(8,0,1);a.sw(8,25,16)
+    a.label('hp_store');a.sw(14,25,8);a.sw(15,25,12)
+    a.label('hp_trail_ready');a.sw(24,25,20);a.sw(14,29,0x194)
+    # Layers (exact multiples keep a full bar): HP -> 0x1B0/0x1B4, trail -> 0x180/0x184.
+    for value,layer_at,tag in ((24,0x1B0,'hp_layer_hp'),(14,0x180,'hp_layer_trail')):
+        a.li(8,10000);a.r(27,0,value,8);a.r(18,25,0);a.r(16,9,0)
+        a.branch(5,9,0,tag);a.addiu(25,25,-1);a.li(9,10000)
+        a.label(tag);a.sw(25,29,layer_at);a.sw(9,29,layer_at+4)
+    a.lw(25,29,0x180);a.branch(4,25,0,'hp_under_done');a.addiu(25,25,-1)
+    hp_palette(a,25,14,'hp_under_',BLUE_LAYER)
+    emit_sprite(a,8,(14,),(0,0,160,16),(69,9,229,25))
+    # Trail above the HP layer: the HP layer's lost part is red under the mask (one layer apart: past its
+    # remaining HP; further apart: all of it).
+    a.lw(25,29,0x180);a.lw(8,29,0x1B0);a.branch(4,25,8,'hp_lost_done')
+    a.addiu(8,8,1);a.move(15,0);a.branch(5,25,8,'hp_lost_x')
+    a.lw(15,29,0x1B4);_width(a,15,'hp_lost_w',False)
+    a.label('hp_lost_x');a.addiu(8,0,160);a.branch(4,15,8,'hp_lost_done');a.addiu(14,15,69)
+    emit_sprite(a,8,2,(15,0,160,16),(14,9,229,25),uv_registers=(0,),box_registers=(0,))
+    a.label('hp_lost_done')
+    emit_sprite(a,8,0,(0,0,160,16),(69,9,229,25))
+    a.label('hp_under_done')
+    # Exact native red trail palette and stepped alpha mask. The upper part
+    # begins at UVx64: a hit crossing that step legitimately looks taller than
+    # the remaining lower-left green fill; it is not an opaque rectangle.
+    a.lw(14,29,0x194);a.lw(8,29,0x190);a.branch(4,14,8,'hp_front')
+    a.lw(14,29,0x184);_width(a,14,'hp_trail_w',True)
+    a.branch(4,14,0,'hp_front');a.addiu(15,14,69)
+    emit_sprite(a,8,2,(0,0,14,16),(69,9,15,25),uv_registers=(2,),box_registers=(2,))
+    # The fill shows only once the trail is back in the HP layer, in the trail layer's palette.
+    a.label('hp_front');a.lw(25,29,0x180);a.lw(8,29,0x1B0);a.branch(5,25,8,'hp_front_done')
+    hp_palette(a,25,14,'hp_front_',BLUE_LAYER)
+    a.lw(24,29,0x1B4);_width(a,24,'hp_front_w',True)
+    a.branch(4,24,0,'hp_front_done');a.addiu(15,24,69)
+    emit_sprite(a,8,(14,),(0,0,24,16),(69,9,15,25),uv_registers=(2,),box_registers=(2,))
+    a.label('hp_front_done')
+    # 21CA60: one pip per full layer below the trail's layer (max six), each in its native record's palette.
+    for pip in range(6):
+        a.lw(25,29,0x180);a.i(11,8,25,pip+1);a.branch(5,8,0,f'pip{pip}')
+        emit_sprite(a,8,PIP_PALETTES[pip],(0,16,16,32),(73+9*pip,2,89+9*pip,18))
+        a.label(f'pip{pip}')
+    a.label('hp_done')
+
+
+def panel_code(native_hp=True):
+    a=Assembler(NATIVE_PANEL);hud.save(a)
+    for dest,source in ((16,4),(17,5),(18,6),(19,7)):a.move(dest,source)
+    a.i(55,20,29,hud.SAVED.index(8)*8)
+    import widescreen_support as wide
+    a.sw(0,29,0x1D0);wide.emit_detection(a,10,'aspect_ready');a.sw(10,29,0x1D0);a.label('aspect_ready')
+    a.call(hud.spectator.LOOKUP);a.branch(4,3,0,'done')
+    a.li(8,hud.core.POINTERS);a.r(0,9,0,16,2);a.r(0x21,8,8,9);a.lw(23,8);a.move(4,23)
+    a.call(hud.feed.ROW);a.branch(4,2,0,'done');a.move(21,2)
+    a.lw(22,28,-0x5728);pointer(a,22,0x200,'compact');a.lw(22,22);pointer(a,22,32,'compact')
+    a.lw(8,22);a.i(11,9,8,16);a.branch(5,9,0,'compact')
+    # Normal native background and real active model portrait.
+    emit_sprite(a,6,0,(0,0,256,64),(0,0,256,64))
+    a.li(8,SETTINGS);a.lw(8,8,4);a.branch(4,8,0,'portrait_done')
+    a.lw(8,23,12);a.i(11,9,8,12);a.branch(4,9,0,'portrait_done')
+    a.r(0,8,0,8,2);a.li(9,hud.core.MODELS);a.r(0x21,8,8,9);a.lw(24,8)
+    pointer(a,24,84,'portrait_done');a.lw(24,24,80)
+    # Native status-node translations relative to the atlas6 frame:
+    # portrait (16,3), health (69,9), pips (73,2), ki (64,27).
+    # These are authored node offsets, not the visible texture bounds.
+    emit_sprite(a,0,0,(0,0,64,64),(16,3,80,67),bundle=24,portrait=True)
+    a.label('portrait_done')
+    (_native_hp if native_hp else _legacy_hp)(a)
     # Native20B4E0 reads ordinary ki at row+0x0C, but charging to Sparking
     # uses20B588 -> row+0x1C and21DB78 -> 6000 per blue band (30000 total).
     # Ordinary ki can exceed100k in Sparking; it is not the blue accumulator.
@@ -300,8 +418,8 @@ def panel_code():
     a.label('done');hud.restore(a);a.jr();data=a.finish();assert len(data)<COMPACT-NATIVE_PANEL;return data
 
 
-def pieces(safe_edges=True,isolated=True):
-    return [(SPRITE,sprite_code(safe_edges,isolated)),(TEMPLATE,template()),(NATIVE_PANEL,panel_code()),
+def pieces(safe_edges=True,isolated=True,native_hp=True):
+    return [(SPRITE,sprite_code(safe_edges,isolated)),(TEMPLATE,template()),(NATIVE_PANEL,panel_code(native_hp)),
             (COMPACT,hud.panel(styled=True,base=COMPACT,repaired=True))]
 
 

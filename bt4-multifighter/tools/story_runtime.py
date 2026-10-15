@@ -558,13 +558,23 @@ def destruction_blocks(ram,mission):
 
 
 def dependency_override(ram,address,expected):
-    """Authenticate a scenario's outer guard for the existing strict validators."""
+    """Authenticate the scenario/tag contact wrappers for strict validators."""
+    import cinematic_contact_guard as contact
+    if len(expected)!=8 or address not in (contact.PROTECTED,abi.DAMAGE_ENTRY,A(0x1D4F30)):
+        return expected
+    actual=bytes(ram[address:address+8])
+    expected=_protection_override(ram,address,expected,actual)
+    import tag_rush_safety
+    return tag_rush_safety.dependency_override(ram,address,expected)
+
+
+def _protection_override(ram,address,expected,actual):
+    """Check a scenario guard, including when a later contact wrapper retains it."""
     import cinematic_contact_guard as contact
     guards={contact.PROTECTED:(CONTACT,'contact'),abi.DAMAGE_ENTRY:(DAMAGE,'damage'),
             A(0x1D4F30):(COMMAND,'command')}
     if address not in guards or len(expected)!=8:return expected
     wrapper,kind=guards[address]
-    actual=bytes(ram[address:address+8])
     if actual!=jump(wrapper):return expected
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     if (u(CONTROL),u(CONTROL+4),u(CONTROL+8))!=(MAGIC,u(core.ACTORS),u(core.MODE+4)):
