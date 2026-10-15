@@ -30,7 +30,8 @@ MAGIC, PREPARED = 0x54465831, 0x46585031
 C=dict(magic=0,manager=4,count=8,ready=12,pool=16,spawned=20,failed=24,init_status=28)
 R=dict(node=0,body=4,source=8,target=12,source_model=16,target_model=20,
        source_index=24,target_index=28,manager=32,source_bone=36,pool=40,
-       stopping=44,ticks=48,prepared=52,source_character=56,target_character=60,ignited=64,charged=68,flavor=72)
+       stopping=44,ticks=48,prepared=52,source_character=56,target_character=60,ignited=64,charged=68,flavor=72,
+       native=76)
 HEADER, META, DESC, CONTEXT, REQUEST = 0x100, 0x180, 0x220, 0x540, 0x7A0
 SOURCE, DIRECTION, TARGET = 0x7E0, 0x7F0, 0x800
 # The live arena reader also rejects coordinates at this magnitude. Keeping
@@ -392,7 +393,7 @@ def spawn_code(color=False,charging=False,special=False):
     a=Assembler(CHARGE_SPAWN if charging else SPAWN);tag.save(a);a.move(17,4);a.move(18,5);gate(a,'no')
     row_pointer(a,17,16,'no');a.addiu(8,18,-1);a.i(11,8,8,MAX_TICKS);a.branch(4,8,0,'no')
     a.lw(8,16,R['prepared']);a.li(9,PREPARED);a.branch(5,8,9,'no')
-    a.lw(8,16,R['node']);a.branch(5,8,0,'no')
+    a.lw(8,16,R['node']);a.branch(5,8,0,'no');a.sw(0,16,R['native'])
     for offset,value in ((HEADER+36,META),(DESC+796,HEADER)):
         a.lw(8,16,offset);a.addiu(9,16,value);a.branch(5,8,9,'no')
     a.li(8,tag.CONTROL);a.r(0,9,0,17,2);a.r(0x21,9,8,9);a.lw(19,9,tag.C['initiator']);a.lw(20,8,tag.C['victim'])
@@ -422,6 +423,16 @@ def spawn_code(color=False,charging=False,special=False):
     a.label('source_ready');a.sw(19,16,R['source_bone'])
     if special:
         import tag_rush_special_beam as sbc
+        # Early/End Piccolo fire the game's own Special Beam Cannon object
+        # (family0, his slot4 record/descriptor). It owns charge, fingers,
+        # drill core and spiral; this row keeps no private emitter. If it
+        # cannot start, the ordinary private recipe below is used instead.
+        a.lw(8,16,R['source_character']);a.li(9,22);a.branch(4,8,9,'native_sbc')
+        a.li(9,23);a.branch(5,8,9,'scoped_select')
+        a.label('native_sbc');a.move(4,16);a.li(5,int(charging));a.call(sbc.NATIVE_SPAWN)
+        a.branch(4,2,0,'scoped_select')
+        a.li(8,1);a.sw(8,16,R['native']);a.sw(0,16,R['flavor']);a.jump('native_started')
+        a.label('scoped_select')
         a.move(4,16);a.lw(5,16,R['source_character']);a.call(sbc.SELECT);a.branch(4,2,0,'no')
         a.i(11,8,3,2);a.branch(4,8,0,'no');a.sw(3,16,R['flavor'])
     else:a.sw(0,16,R['flavor'])
@@ -469,6 +480,7 @@ def spawn_code(color=False,charging=False,special=False):
     a.addiu(4,16,HEADER);a.addiu(5,21,64);a.call(A(0x1512C8))
     a.sw(0,16,R['ignited']);a.sw(0,16,R['charged'])
     a.move(4,16);a.call(CHARGE if charging else IGNITE);a.branch(4,2,0,'stop')
+    a.label('native_started')
     a.li(8,CONTROL);a.lw(9,8,C['spawned']);a.addiu(9,9,1);a.sw(9,8,C['spawned'])
     a.li(2,1);a.jump('done')
     a.label('stop');a.lw(4,16,R['node']);a.call(TERMINATE);a.li(8,1);a.sw(8,16,R['stopping'])
@@ -481,7 +493,7 @@ def spawn_code(color=False,charging=False,special=False):
     assert len(result)<=0x2000;return result
 
 
-def ignite_code(charging=False):
+def ignite_code(charging=False,special=False):
     """a0 owned row -> advance its reviewed native charge or firing event.
 
     A native beam parent normally reads special-move event bits in14D7A0.
@@ -493,7 +505,15 @@ def ignite_code(charging=False):
     # (kind1). Firing also stops charge rules whose native end event is2.
     # Both stages share one authenticated emitter and its ordinary children.
     flag='charged' if charging else 'ignited'
-    a=Assembler(CHARGE if charging else IGNITE);tag.save(a);a.move(16,4);a.call(OWNED);a.branch(4,2,0,'no');a.move(17,2)
+    a=Assembler(CHARGE if charging else IGNITE);tag.save(a);a.move(16,4)
+    if special and not charging:
+        # A native Special Beam Cannon row fires that object's own event.
+        import tag_rush_special_beam as sbc
+        a.li(8,ROWS);a.branch(4,16,8,'native_row');a.li(8,ROWS+STRIDE);a.branch(5,16,8,'private_row')
+        a.label('native_row');a.lw(8,16,R['native']);a.branch(4,8,0,'private_row')
+        a.call(sbc.NATIVE_IGNITE);a.jump('done')
+        a.label('private_row')
+    a.move(4,16);a.call(OWNED);a.branch(4,2,0,'no');a.move(17,2)
     a.lw(8,16,R[flag]);a.branch(5,8,0,'yes')
     a.lw(8,16,R['prepared']);a.li(9,PREPARED);a.branch(5,8,9,'no')
     if not charging:
@@ -552,7 +572,7 @@ def fire_bind_code():
     assert FIRE_BIND+len(result)<=CHARGE_END;return result
 
 
-def stop_code():
+def stop_code(special=False):
     """Request native teardown of only our two nodes; return nodes still live.
 
     There is no spin loop and no descriptor free. Native update/destructor must
@@ -577,6 +597,11 @@ def stop_code():
     a.addiu(18,18,1);a.jump('next')
     a.label('retired');a.sw(0,16,R['node']);a.sw(0,16,R['body']);a.sw(0,16,R['stopping']);a.sw(0,16,R['ticks'])
     a.label('next');a.addiu(16,16,STRIDE);a.addiu(17,17,1);a.li(8,2);a.branch(5,17,8,'slot')
+    if special:
+        # The native Special Beam Cannon object retires through its own end
+        # event and destructor; count it until that destructor has run.
+        import tag_rush_special_beam as sbc
+        a.call(sbc.NATIVE_STOP);a.r(0x21,18,18,2)
     a.move(2,18);tag.restore(a,2);a.jr();return a.finish()
 
 
@@ -735,8 +760,8 @@ def impact_code(explosion=False):
 def pieces(beam=None):
     plan=beam.get('color_plan') if beam else None
     special=bool(beam and beam.get('special_beam'))
-    result=[(SPAWN,spawn_code(bool(plan),special=special)),(UPDATE,update_code()),(STOP,stop_code()),
-            (OWNED,owned_code()),(GEOMETRY,geometry_code()),(SELECT_SOURCE,select_source_code()),(IGNITE,ignite_code()),(INIT,init_code(beam)),(IMPACT,impact_code()),
+    result=[(SPAWN,spawn_code(bool(plan),special=special)),(UPDATE,update_code()),(STOP,stop_code(special)),
+            (OWNED,owned_code()),(GEOMETRY,geometry_code()),(SELECT_SOURCE,select_source_code()),(IGNITE,ignite_code(special=special)),(INIT,init_code(beam)),(IMPACT,impact_code()),
             (EXPLOSION,white_start_code()),(WHITE_DRAW,white_draw_code()),(WHITE_ALPHA,white_alphas()),(CONTROL,bytes(END-CONTROL)),
             (CHARGE_SPAWN,spawn_code(bool(plan),charging=True,special=special)),(CHARGE,ignite_code(charging=True)),
             (FIRE_BIND,fire_bind_code())]
