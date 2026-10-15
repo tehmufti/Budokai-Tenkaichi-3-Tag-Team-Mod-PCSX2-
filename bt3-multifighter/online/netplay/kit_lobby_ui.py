@@ -1359,7 +1359,8 @@ class App:
         row=tk.Frame(parent,bg=th.PANEL)
         row.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(px(10),0))
         row.columnconfigure(1,weight=1)
-        wrap_label(tk.Label(row,text=self.T('adv.pad'),bg=th.PANEL,fg=th.GOLD,font=heading(10))).grid(
+        # This column cannot grow; wrapping here splits the label into single letters.
+        tk.Label(row,text=self.T('adv.pad'),bg=th.PANEL,fg=th.GOLD,font=heading(10),anchor='w').grid(
             row=0,column=0,sticky='w',padx=(0,px(8)))
         box=ttk.Combobox(row,textvariable=self.adv['pad'],state='readonly',width=1,values=list(self.pad_names))
         box.grid(row=0,column=1,sticky='ew')
