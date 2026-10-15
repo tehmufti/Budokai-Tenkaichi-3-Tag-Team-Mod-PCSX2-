@@ -1,5 +1,7 @@
 ## Version 13.3
 
+You can now block while reviving teammates. Damage taken through a block no longer resets revival progress.
+
 Fixed some issues on the HUD displays in splitscreen, and de-fusions no longer make your health red as it is adjusting.
 
 Fixed an issue that could disable transformations, Body Change and fusion timers when starting a match.

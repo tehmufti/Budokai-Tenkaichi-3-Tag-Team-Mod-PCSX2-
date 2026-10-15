@@ -549,8 +549,8 @@
       "shared": true
     },
     "tools/four_player_mode.py": {
-      "bt3": "902b862685d6718b328b3ef96eef76362a2c444badef81f1496c4f629bcb936e",
-      "bt4": "902b862685d6718b328b3ef96eef76362a2c444badef81f1496c4f629bcb936e",
+      "bt3": "c9e79dfc9ea35b5fa58f2ff96e7c8b4a2e4bb9d88aed53ce2131272eab72da04",
+      "bt4": "c9e79dfc9ea35b5fa58f2ff96e7c8b4a2e4bb9d88aed53ce2131272eab72da04",
       "shared": true
     },
     "tools/fresh_memory.py": {
@@ -1584,8 +1584,8 @@
       "shared": true
     },
     "tools/teammate_revive.py": {
-      "bt3": "4680d4195d02620792fe5aba65c3b10e2b2c3a74e43371d692e080aee5d88b57",
-      "bt4": "4680d4195d02620792fe5aba65c3b10e2b2c3a74e43371d692e080aee5d88b57",
+      "bt3": "c3f2e9e419a1395140dd35f5d9f1d5a852ab737bfcd901e3fad56674c5b68a59",
+      "bt4": "c3f2e9e419a1395140dd35f5d9f1d5a852ab737bfcd901e3fad56674c5b68a59",
       "shared": true
     },
     "tools/teammate_revive_ring.py": {

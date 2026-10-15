@@ -34,10 +34,11 @@ RING,QUAD,ANGLES,BANDS,RING_TEMPLATE=0x070B8800,0x070BA800,0x070BD100,0x070BD300
 WAVE_TABLE=0x070BD500
 MAGIC=0x52565631
 # 2 is the flat Sept 19 release, 3 added the ring wave and 4 adds only the
-# command pre-scan. Version 5 permits locomotion/taunts while channeling.
+# command pre-scan. Version 5 permits locomotion/taunts while channeling;
+# version 6 also permits native guard and its blocked chip damage.
 # Every accepted older version keeps emitting its exact bytes.
-OPTIONS_VERSION=5
-VERSIONS=(2,3,4,OPTIONS_VERSION)
+OPTIONS_VERSION=6
+VERSIONS=(2,3,4,5,OPTIONS_VERSION)
 # The pre-scan walks at most this many rows. The value is fixed (not the
 # capacity of the build being emitted) so version 4 has one byte image; any
 # larger count takes the full barrier, which remains the authority.
@@ -139,7 +140,7 @@ def close(a,source,target,fail):
     a.li(8,CONTROL);a.i(49,2,8,CFG['radius_squared'])
     a.emit((17<<26)|(16<<21)|(2<<16)|(0<<11)|0x36);a.branch(17,8,0,fail)
 
-def channel_action(a,fail,*,pending=False):
+def channel_action(a,fail,*,pending=False,guarding=False):
     """t0 native action: ordinary locomotion 11..26 or the idle taunt 67.
 
     Native idle handler 1EE968 requests 67 after 90 idle updates; 1ECFC0
@@ -149,19 +150,20 @@ def channel_action(a,fail,*,pending=False):
     ready=f'channel_action{len(a.words)}'
     if pending:a.addiu(9,0,-1);a.branch(4,8,9,ready)
     a.addiu(9,8,-11);a.i(11,9,9,16);a.branch(5,9,0,ready)
+    if guarding:a.addiu(9,0,56);a.branch(4,8,9,ready)
     a.addiu(9,0,67);a.branch(5,8,9,fail);a.label(ready)
 
-def eligible(a,actor,index,dead,fail,mobile=False):
+def eligible(a,actor,index,dead,fail,mobile=False,guarding=False):
     """Busy queues/resources and existing hit/bind state must be fully empty."""
     a.lw(8,actor,0x948)
     if dead:a.addiu(9,0,216);a.branch(5,8,9,fail)
-    elif mobile:channel_action(a,fail)
+    elif mobile:channel_action(a,fail,guarding=guarding)
     else:
         tag=f'idle{len(a.words)}';a.addiu(9,0,11);a.branch(4,8,9,tag)
         a.addiu(9,0,15);a.branch(5,8,9,fail);a.label(tag)
     for off in (2380,2388,2392,2396,2400):
         a.lw(8,actor,off)
-        if mobile and not dead:channel_action(a,fail,pending=True)
+        if mobile and not dead:channel_action(a,fail,pending=True,guarding=guarding)
         else:a.addiu(9,0,-1);a.branch(5,8,9,fail)
     for off in (3480,3500,3512,0xFE0):a.lw(8,actor,off);a.branch(5,8,0,fail)
     for flag in map(FLAG,(0xB,0xBE,0x94,0x125,0x126,0x135)):
@@ -185,7 +187,7 @@ def eligible(a,actor,index,dead,fail,mobile=False):
     for off in (768,772):a.lw(9,14,off);a.branch(4,8,9,fail)
     a.label(tag)
 
-def tick(waves=True,quad_support=False,mobile=True):
+def tick(waves=True,quad_support=False,mobile=True,guarding=True):
     a=Assembler(TICK);save(a);a.call(GATE);a.branch(4,2,0,'reset_all')
     a.li(8,core.PAIR+4);a.lw(8,8);a.branch(5,8,0,'done')
     a.li(8,start.CONTROL);a.lw(8,8);a.branch(5,8,0,'done')
@@ -227,7 +229,7 @@ def tick(waves=True,quad_support=False,mobile=True):
         nxt=f'port{port}';a.lw(8,11,takeover.F['human_ports']);a.i(12,8,8,1<<port);a.branch(4,8,0,nxt)
         a.lw(8,11,takeover.F['owned']+4*port);a.branch(4,8,18,'human');a.label(nxt)
     a.jump('clear');a.label('human')
-    eligible(a,20,18,False,'clear',mobile=mobile)
+    eligible(a,20,18,False,'clear',mobile=mobile,guarding=guarding)
     # Find a retained teammate in reach; first physical ID is deterministic if
     # several bodies overlap. The HP write prevents a second ally double-charge.
     a.move(22,0)
@@ -241,7 +243,16 @@ def tick(waves=True,quad_support=False,mobile=True):
     a.branch(4,8,0,'enough');a.addiu(8,0,1);a.sw(8,19,F['insufficient'])
     a.sw(0,19,F['progress']);a.sw(0,19,F['target']);a.jump('next')
     a.label('enough');a.sw(0,19,F['insufficient']);a.addiu(25,22,1)
-    a.lw(8,19,F['target']);a.branch(5,8,25,'begin');a.lw(8,21);a.lw(9,19,F['hp']);a.branch(5,8,9,'begin')
+    a.lw(8,19,F['target']);a.branch(5,8,25,'begin');a.lw(8,21);a.lw(9,19,F['hp'])
+    if guarding:
+        # Native guard56 keeps its action during blocked-hit clips240/242/244.
+        # Accept only HP loss in that admitted state; an unguarded hit, guard
+        # break, KO or queued cinematic still fails the ordinary checks above.
+        # Track the new baseline so letting go after chip damage keeps progress.
+        a.branch(4,8,9,'hp_ready');a.r(0x2B,10,8,9);a.branch(4,10,0,'begin')
+        a.lw(10,20,0x948);a.addiu(11,0,56);a.branch(5,10,11,'begin')
+        a.sw(8,19,F['hp']);a.label('hp_ready')
+    else:a.branch(5,8,9,'begin')
     a.r(0,8,0,18,2);a.li(9,core.TABLE);a.r(0x2D,8,8,9);a.lw(26,8)
     a.lw(9,19,F['lock_target']);a.branch(5,26,9,'begin')
     # Admission always uses the corpse's live position above. A supported or
@@ -367,7 +378,7 @@ def program(previous,version=OPTIONS_VERSION):
     import teammate_revive_ring
     if version not in VERSIONS:raise ValueError('Unknown revival executable version')
     waves=version>=3
-    pieces=[(GATE,gate()),(ACTOR,actor()),(PREDICATE,predicate()),(TICK,tick(waves,mobile=version>=5)),
+    pieces=[(GATE,gate()),(ACTOR,actor()),(PREDICATE,predicate()),(TICK,tick(waves,mobile=version>=5,guarding=version>=6)),
             (FRAME,frame(previous[0])),(DRAW,draw())]
     pieces+=teammate_revive_ring.pieces(waves)
     for base,tail,kind in zip(WRAPPERS[1:],previous[1:],('contact','damage','command','request')):

@@ -23,6 +23,8 @@ Version 13.3 fixes some issues on the HUD displays in splitscreen, and de-fusion
 no longer make your health red as it is adjusting. It also fixes an issue that
 could disable transformations, Body Change and fusion timers at match startup.
 
+You can also block while reviving teammates; damage taken through a block keeps your revival progress.
+
 Version 13.2 lets you lock onto downed teammates using the normal target cycle
 and lock-off controls, wherever teammate revival is enabled. Revived allies and
 fighters permanently eliminated by ring-out leave the target list.
@@ -31,7 +33,7 @@ The refreshed 13.2 downloads also use Piccolo's native Special Beam Cannon
 effect for tag attacks in BT3 and BT4.
 
 Version 13.1 adds editable keyboard controls for offline and online play.
-Use Mod Settings → Controls → Keyboard bindings locally, or choose Keyboard
+Use Mod Settings â†’ Controls â†’ Keyboard bindings locally, or choose Keyboard
 on the online start screen and open Keyboard bindings. Pick keys directly,
 capture a key press, use the WASD preset or test your layout before playing.
 

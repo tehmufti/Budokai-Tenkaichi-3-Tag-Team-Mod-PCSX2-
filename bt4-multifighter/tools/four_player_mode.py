@@ -19,6 +19,8 @@ def variants(ram):
     import hud_subject
     revive_mobile=(struct.unpack_from('<I',ram,revive.CONTROL)[0]!=revive.MAGIC or
                    struct.unpack_from('<I',ram,revive.CONTROL+24)[0]>=5)
+    revive_guarding=(struct.unpack_from('<I',ram,revive.CONTROL)[0]!=revive.MAGIC or
+                     struct.unpack_from('<I',ram,revive.CONTROL+24)[0]>=6)
     previous=struct.unpack_from('<I',ram,hud.CONTROL+16)[0]
     result=[(display.feed.SMALL_TEXT,bytes(len(display.feed.text_code(compact=True))),display.feed.text_code(compact=True)),
               (fusion.SYNC,fusion.sync_code(),fusion.sync_code(quad_support=True)),
@@ -33,7 +35,8 @@ def variants(ram):
               (display.FEED_DRAW,display.relocated(display.feed.draw_code,display.feed.DRAW,display.FEED_DRAW),
                display.relocated(display.feed.draw_code,display.feed.DRAW,display.FEED_DRAW,quad=True)),
               (revive.RING,ring.ring(),ring.ring(quad_support=True)),
-              (revive.TICK,revive.tick(mobile=revive_mobile),revive.tick(quad_support=True,mobile=revive_mobile))]
+              (revive.TICK,revive.tick(mobile=revive_mobile,guarding=revive_guarding),
+               revive.tick(quad_support=True,mobile=revive_mobile,guarding=revive_guarding))]
     if struct.unpack_from('<I',ram,policy.CONTROL+12)[0]==policy.COOP:
         import coop_controller as coop
         result.append((coop.ACTOR_PAD,coop.payload(takeover=True),
