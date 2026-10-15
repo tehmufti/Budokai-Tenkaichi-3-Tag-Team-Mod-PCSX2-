@@ -1,3 +1,7 @@
+## Version 13.2 refresh
+
+Piccolo's tag attacks now use his native Special Beam Cannon effect in BT3 and BT4. The refreshed updater also works if you already installed 13.2.
+
 ## Version 13.2
 
 You can now lock onto downed teammates to find them and revive them. They appear in the normal target cycle, using the same targeting and lock-off controls you already use.

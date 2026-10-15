@@ -528,7 +528,10 @@ class AssetCacheTests(unittest.TestCase):
         sbc=install.special_beam;pack=special_assets();checked=install._asset_plan(install._asset_payload(pack))
         info=checked['special_beam_asset'];spans=install._special_beam_mutable(checked)
         self.assertEqual(spans,sbc.mutable_ranges(info))
-        self.assertTrue(all(hi-lo==4 for lo,hi in spans[3:]))
+        # The native SBC object's receipt leads; the private parse state and the
+        # texture relocation exceptions follow unchanged.
+        self.assertEqual(spans[0],(sbc.NSTATE,sbc.NSTATE_END))
+        self.assertTrue(all(hi-lo==4 for lo,hi in spans[4:]))
         for change in ('top removed','nested removed','nested mismatch','extra exception','count','script','code block'):
             changed=copy.deepcopy(checked)
             if change=='top removed':changed.pop('special_beam_asset')

@@ -1419,8 +1419,8 @@
       "shared": true
     },
     "tools/tag_rush_effects.py": {
-      "bt3": "fd43c1329e42a99732adac9517e09321f2eca8850ec0b72087ff41c87181748f",
-      "bt4": "fd43c1329e42a99732adac9517e09321f2eca8850ec0b72087ff41c87181748f",
+      "bt3": "77a90c7699c13e4d925318f824193b12935d0b6a85a363dfde798cdfd4ac40b8",
+      "bt4": "77a90c7699c13e4d925318f824193b12935d0b6a85a363dfde798cdfd4ac40b8",
       "shared": true
     },
     "tools/tag_rush_full_nelson_native.py": {
@@ -1484,8 +1484,8 @@
       "shared": true
     },
     "tools/tag_rush_special_beam.py": {
-      "bt3": "9556387ebc38b3284adad58496221dbe77a11f7be06d2910ad657832f331004b",
-      "bt4": "9556387ebc38b3284adad58496221dbe77a11f7be06d2910ad657832f331004b",
+      "bt3": "81bbbfff913da8ec44b39def20cc4625b85a5c6ff54fd6fb39f8fbcf9721f2af",
+      "bt4": "81bbbfff913da8ec44b39def20cc4625b85a5c6ff54fd6fb39f8fbcf9721f2af",
       "shared": true
     },
     "tools/tag_rush_special_pair.py": {

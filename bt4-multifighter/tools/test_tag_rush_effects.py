@@ -254,7 +254,7 @@ class TagEffectsTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
         import tag_rush_colors as colors
-        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000)
+        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000,NATIVE_SPAWN=0x06EC4000)
         for charging in (False,True):
             c=machine();calls=[]
             with patch.dict(sys.modules,{'tag_rush_special_beam':sbc}):
@@ -265,6 +265,9 @@ class TagEffectsTests(unittest.TestCase):
                 m.r[2]=1;m.r[3]=int(m.r[5]in(22,23))
             def color(m):calls.append(('color',m.r[4]));m.r[2]=1
             c.callbacks[sbc.SELECT]=select;c.callbacks[colors.APPLY]=color
+            # The native Special Beam Cannon object is refused here: this checks the
+            # private recipe selection that remains its fallback.
+            c.callbacks[sbc.NATIVE_SPAWN]=lambda m:m.r.__setitem__(2,0)
             for character in (22,23,0):
                 c.w(c.models[0]+12,character);c.r[4:6]=[0,60]
                 run(c,fx.CHARGE_SPAWN if charging else fx.SPAWN)
@@ -280,13 +283,16 @@ class TagEffectsTests(unittest.TestCase):
         import sys
         from types import SimpleNamespace
         from unittest.mock import patch
-        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000)
+        sbc=SimpleNamespace(SELECT=0x06E92000,INIT=0x06E90000,NATIVE_SPAWN=0x06EC4000)
         for success,flavor in ((0,0),(1,2)):
             c=machine()
             with patch.dict(sys.modules,{'tag_rush_special_beam':sbc}):
                 c.write(fx.SPAWN,fx.spawn_code(special=True))
             def select(m):m.r[2]=success;m.r[3]=flavor
             c.callbacks[sbc.SELECT]=select
+            # The native Special Beam Cannon object is refused here: this checks the
+            # private recipe selection that remains its fallback.
+            c.callbacks[sbc.NATIVE_SPAWN]=lambda m:m.r.__setitem__(2,0)
             self.assertEqual(spawn(c),0);self.assertFalse(c.requests)
 
     def test_sbc_manual_fire_accepts_25_rules_but_preserves_smaller_standard_bound(self):

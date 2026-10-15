@@ -38,6 +38,8 @@ class NativeSpiralTests(unittest.TestCase):
         c.write(fx.CHARGE_SPAWN,fx.spawn_code(charging=True,special=True))
         def select(m):m.r[2]=1;m.r[3]=1
         c.callbacks[sbc.SELECT]=select
+        # Refuse the native SBC object: this pins the scoped private fallback.
+        c.callbacks[sbc.NATIVE_SPAWN]=lambda m:m.r.__setitem__(2,0)
         c.r[4:6]=[0,90];run(c,fx.CHARGE_SPAWN)
         self.assertEqual(c.r[2],1);row=fx.ROWS;body=c.u(row+fx.R['body'])
         self.assertEqual(c.u(row+fx.R['flavor']),1)

@@ -256,7 +256,9 @@ def update(root,setup=HERE):
         adapter=receipt.get('adapter');require(adapter in ADAPTERS,'This installation has an unsupported adapter.')
         require(receipt.get('schema')==1 and isinstance(receipt.get('files'),dict),'Invalid installation receipt.')
         def version(s):return version_key(s)
-        require(version(receipt['version'])<version(release['version']),'This installation is already this version or newer.')
+        # Published releases can receive a same-version refresh. Managed file
+        # hashes below still determine replacements; downgrades stay blocked.
+        require(version(receipt['version'])<=version(release['version']),'This installation is newer than this updater.')
         lockname='requirements-player.lock' if os.name=='nt' else 'requirements-player-linux.lock'
         require((root/'requirements-player.lock').read_bytes()==(setup/lockname).read_bytes(),
                 'This release changes Python dependencies. Use its full installer and import your previous installation.')
