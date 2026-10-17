@@ -27,6 +27,10 @@ DENIED = 0x077D7800
 RESERVED, CONTACT = 0x077D9000, 0x077DA000
 EXTRA_COMMIT, EXTRA_ELIGIBILITY, EXTRA_BEGIN, SIDE = 0x077DB000,0x077DD000,0x077DD400,0x077DD800
 ADMIT_BEGIN=0x077DDC00
+# An extra that chose its native leader as partner: resolve the leader path.
+ROUTE=0x077DE000
+# a1 of a commit-time SYNC: re-check only identity and reload records.
+COMMIT_SYNC=0x53594E43
 CONTROL, END = 0x077DF000, 0x077E0000
 # Zero preserves the historical enabled behavior in existing checkpoints. Only
 # new initiation is gated: accepted queues, model commits and timed defusion
@@ -107,8 +111,8 @@ def contact_code():
 
 def sync_code(quad_support=False):
     """a0 leader; v0=side+1 if scoped, else0. Mirror real bench scalar data."""
-    a=Assembler(SYNC);a.addiu(29,29,-0xB0)
-    regs=(3,8,9,10,11,12,13,14,15,24,25)
+    a=Assembler(SYNC);a.addiu(29,29,-0xC0)
+    regs=(3,7,8,9,10,11,12,13,14,15,24,25)
     for i,r in enumerate(regs):a.i(31,r,29,i*16)
     a.move(2,0);a.li(8,CONTROL);a.lw(9,8);a.addiu(10,0,1);a.branch(5,9,10,'done')
     a.lw(11,8,4);a.lw(9,28,-22364);a.branch(5,9,11,'done')
@@ -132,10 +136,16 @@ def sync_code(quad_support=False):
     import extra_reload_forms as forms
     for at in (forms.CONTROL, forms.FORM_ENABLE):
         a.li(8,at);a.lw(11,8);a.addiu(10,0,1);a.branch(5,11,10,'done')
-    a.label('owner_ready');a.i(12,14,14,1)
+    a.label('owner_ready');a.move(7,14);a.i(12,14,14,1)
     a.lw(11,4,8);a.branch(5,11,14,'done')
     a.lw(11,4,0x994);a.lw(10,4,0x998);a.r(0x2B,10,11,10);a.branch(4,10,0,'done')
     a.lw(24,9,12);a.lw(25,9,16);a.addiu(15,14,2)
+    # An extra's row slot 0 holds its native leader. Left as initialised, it kept
+    # the leader alive and idle forever: an extra could pick a dead or busy leader
+    # and then fuse as the survivor, which no commit can consume (leaders are
+    # never removed), so the private reload commit held the match (status 145).
+    # Mirror the leader as it really is; BEGIN routes such a pair to the leader.
+    a.i(11,11,7,2);a.branch(5,11,0,'slot');a.move(15,14)
     a.label('slot');a.r(0x2B,9,15,12);a.branch(4,9,0,'scoped')
     a.r(2,13,0,15,1);a.lw(9,4,0x998);a.r(0x2B,9,13,9);a.branch(4,9,0,'next')
     a.lw(9,4,0x994);a.branch(4,9,13,'next') # Never mirror over the owner's live row.
@@ -146,6 +156,10 @@ def sync_code(quad_support=False):
     a.r(0,9,0,15,6);a.li(11,PART_ROWS);a.r(0x21,11,11,9)
     a.lw(9,11);a.branch(5,9,10,'absent');a.lw(9,10);a.branch(5,9,15,'absent')
     a.lw(9,10,8);a.branch(5,9,14,'absent')
+    a.branch(4,10,4,'absent') # Never offer the owner itself as its partner.
+    # A leader is never consumed: the fusion goes through the leader path, whose
+    # survivor keeps its controller. Only extras need the human guards below.
+    a.i(11,11,15,2);a.branch(5,11,0,'human_guard_done')
     # The two-player consent controller only owns the native leader pair.
     # An autonomous extra must never silently consume a human teammate.
     a.lw(9,4);a.i(11,9,9,2);a.branch(5,9,0,'extra_human_ok')
@@ -166,7 +180,7 @@ def sync_code(quad_support=False):
         a.li(8,policy.CONTROL);a.lw(9,8);a.li(11,policy.MAGIC);a.branch(5,9,11,'absent')
         a.lw(9,8,12);a.addiu(11,0,policy.COOP);a.branch(5,9,11,'absent')
         a.addiu(9,0,2);a.branch(5,15,9,'absent')
-        a.label('human_guard_done')
+    a.label('human_guard_done')
     a.lw(9,10,12);a.i(11,11,9,12);a.branch(4,11,0,'absent')
     a.r(0,9,0,9,2);a.li(11,core.MODELS);a.r(0x21,11,11,9);a.lw(11,11)
     pointer(a,11,0x1670,'absent',8,9)
@@ -175,22 +189,67 @@ def sync_code(quad_support=False):
     a.lw(13,10,0x994);a.lw(9,10,0x998);a.i(11,11,9,6);a.branch(4,11,0,'absent')
     a.r(0x2B,11,13,9);a.branch(4,11,0,'absent')
     # Pending/active worker transactions and paired moves cannot be consumed.
+    a.i(11,11,15,2);a.branch(4,11,0,'extra_requests')
+    # The leader is offered only while it could start the fusion itself: idle
+    # (ground/air) with nothing queued, so the routed BEGIN never cuts a move.
+    a.lw(8,10,2376);a.addiu(9,0,11);a.branch(4,8,9,'leader_idle')
+    a.addiu(9,0,15);a.branch(5,8,9,'leader_busy');a.label('leader_idle')
+    for off in (2380,2388,2392,2396,2400):
+        a.lw(8,10,off);a.addiu(9,0,-1);a.branch(5,8,9,'leader_busy')
+    for off in (3480,3500,3512):
+        a.lw(8,10,off);a.branch(5,8,0,'leader_busy')
+    # A busy leader stays mirrored as it is (HP, character) but leaves the native
+    # partner search (+8 = 0): that search stops at the FIRST row holding the
+    # partner character, so a merely refused leader would hide an extra partner.
+    a.jump('mirror');a.label('leader_busy');a.addiu(2,0,1);a.jump('mirror')
+    a.label('extra_requests')
     a.addiu(8,15,-2);a.r(0,8,0,8,6);a.li(11,requests.RECORDS);a.r(0x21,11,11,8)
     a.lw(8,11,4);a.addiu(8,8,-1);a.i(11,8,8,4);a.branch(5,8,0,'absent')
+    a.label('requests_done')
+    # At commit the partner is already reserved and merged: consume it even if a
+    # move or pending damage slipped in during the load (else the commit consumes
+    # nobody: a duplicate partner, or status 145 for an extra survivor).
+    a.li(8,COMMIT_SYNC);a.branch(4,5,8,'mirror')
     for off in (2376,2380,2388,2392,2396,2400):
         a.lw(8,10,off);a.addiu(9,8,-236);a.i(11,9,9,8);a.branch(5,9,0,'absent')
         a.addiu(9,8,-180);a.i(11,9,9,8);a.branch(5,9,0,'absent')
     for off in (3480,3500,3512):
         a.lw(8,10,off);a.branch(5,8,0,'absent')
-    row_address(a,11,10,13,9)
+    a.label('mirror');row_address(a,11,10,13,9)
     for off in FIELDS:a.lw(9,11,off);a.sw(9,3,off)
+    a.branch(4,2,0,'next');a.sw(0,3,8);a.move(2,0)
     a.jump('next')
     a.label('absent');a.sw(0,3,8);a.sw(0,3,64)
     a.label('next');a.addiu(15,15,2);a.jump('slot')
     a.label('scoped');a.addiu(2,14,1)
     a.label('done')
     for i,r in enumerate(regs):a.i(30,r,29,i*16)
-    a.addiu(29,29,0xB0);a.jr();b=a.finish();assert len(b)<0x1000;return b
+    a.addiu(29,29,0xC0);a.jr();b=a.finish();assert len(b)<0x1000;return b
+
+
+def route_code():
+    """a0 extra survivor, a1 its variant, its native partner the team leader.
+
+    Leaders are never consumed, so the pair fuses through the leader path: the
+    leader becomes the survivor with this extra as its partner (as
+    multiplayer_fusion.resolve does for 3/4-player requests). The leader recipe
+    must give the same character, be eligible and find this very extra; the
+    requester's own eligibility already checked (the CPU command charged) the
+    cost. Returns v0 leader actor (0: refuse) and v1 its variant.
+    """
+    a=Assembler(ROUTE);save(a);a.move(16,4);a.move(17,5)
+    a.lw(8,16,8);a.i(12,8,8,1);a.r(0,8,0,8,2);a.li(9,core.POINTERS);a.r(0x21,9,9,8);a.lw(18,9)
+    pointer(a,18,0x1600,'no');a.lw(8,18);a.lw(9,16,8);a.branch(5,8,9,'no')
+    a.move(4,16);a.move(5,17);a.call(A(0x20E340));a.addiu(8,0,255);a.branch(4,2,8,'no')
+    a.move(19,2);a.lw(20,16);a.r(2,20,0,20,1);a.move(21,0)
+    a.label('variant');a.move(4,18);a.move(5,21);a.call(A(0x20E340));a.branch(5,2,19,'next')
+    a.addiu(8,0,-1);a.sw(8,29,0x300)
+    a.move(4,18);a.move(5,21);a.move(6,0);a.move(7,0);a.addiu(8,29,0x300);a.call(ELIGIBILITY)
+    a.branch(4,2,0,'next');a.lw(8,29,0x300);a.branch(5,8,20,'next')
+    a.i(31,18,29,OFFSETS[2]);a.i(31,21,29,OFFSETS[3]);restore(a);a.jr()
+    a.label('next');a.addiu(21,21,1);a.i(11,8,21,3);a.branch(5,8,0,'variant')
+    a.label('no');a.i(31,0,29,OFFSETS[2]);restore(a);a.jr()
+    b=a.finish();assert len(b)<0x1000;return b
 
 
 def eligibility_code():
@@ -241,6 +300,15 @@ def begin_code(timed=False):
     a.branch(4,2,0,'denied');a.lw(9,29,0x300)
     a.lw(8,29,OFFSETS[6]);a.branch(1,8,0,'reserved_partner');a.branch(5,8,9,'denied')
     a.label('reserved_partner')
+    # Slot 0 of an extra is its native leader, which no commit may consume.
+    # Restart this BEGIN as the leader's, with this extra as the partner.
+    a.branch(5,9,0,'partner_extra');a.lw(8,29,OFFSETS[4]);a.lw(8,8)
+    a.i(11,10,8,2);a.branch(5,10,0,'partner_extra');a.r(2,8,0,8,1);a.i(31,8,29,OFFSETS[6])
+    # A human extra keeps its own body: only its consent controller may offer it.
+    a.lw(10,29,OFFSETS[4]);a.lw(10,10,0x1278);a.branch(4,10,0,'denied')
+    a.lw(4,29,OFFSETS[4]);a.lw(5,29,OFFSETS[5]);a.call(ROUTE);a.branch(4,2,0,'denied')
+    a.i(31,2,29,OFFSETS[4]);a.i(31,3,29,OFFSETS[5]);restore(a);a.jump(BEGIN)
+    a.label('partner_extra')
     # Eligibility mirrors roster values, but reservations are actual actors.
     # Validate immediately before BEGIN so concurrent requests cannot consume
     # the same teammate or consume one another.
@@ -266,7 +334,7 @@ def commit_code(timed=False,extra=False):
     a=Assembler(EXTRA_COMMIT if extra else COMMIT);save(a);a.sw(0,29,0x300);a.lw(9,4,2376)
     a.sw(9,29,0x314)  # accepted native fusion kind, before resource/stat refresh
     a.addiu(9,9,-241);a.i(11,9,9,2);a.branch(4,9,0,'native')
-    a.call(SYNC);a.branch(4,2,0,'native');a.addiu(8,2,-1)
+    a.li(5,COMMIT_SYNC);a.call(SYNC);a.branch(4,2,0,'native');a.addiu(8,2,-1)
     # leader+4856 is the partner's native roster slot: 1..capacity-1 is a
     # teammate this build places (three-a-side builds stop at slot 2).
     a.lw(10,4,4856);a.addiu(9,10,-1);a.i(11,9,9,policy.emitted_capacity()-1);a.branch(4,9,0,'native')
@@ -377,7 +445,7 @@ def pieces():
     import extra_reload_forms as forms
     return [(SYNC,sync_code()),(ELIGIBILITY,eligibility_code()),(BEGIN,begin_code()),
             (COMMIT,commit_code()),(CLEANUP,cleanup_code()),(RESERVED,reserved_code()),(CONTACT,contact_code()),
-            (EXTRA_COMMIT,commit_code(True,True)),
+            (EXTRA_COMMIT,commit_code(True,True)),(ROUTE,route_code()),
             (EXTRA_ELIGIBILITY,scoped_entry(A(0x203788),EXTRA_ELIGIBILITY,OLD_ELIGIBILITY)),
             (EXTRA_BEGIN,scoped_entry(A(0x2039B0),EXTRA_BEGIN,OLD_BEGIN,True)),
             (ADMIT_BEGIN,forms.admission(A(0x2039B0),ADMIT_BEGIN,OLD_BEGIN)),(SIDE,side_code()),

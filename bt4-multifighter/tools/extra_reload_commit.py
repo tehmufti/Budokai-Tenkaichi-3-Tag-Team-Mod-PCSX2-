@@ -161,9 +161,13 @@ def payload(c):
     a.move(4,17)
     if c.get('form') and w['owner_action'] in (241,242):
         import fusion_partner_lifecycle as fusion
+        # +24 keeps the survivor of the last successful commit, so it alone could pass
+        # a refused commit of that same fighter: also require this call's count.
+        a.li(8,fusion.CONTROL);a.lw(9,8,16);a.sw(9,29,0x140)
         a.call(fusion.EXTRA_COMMIT)
         a.li(8,fusion.CONTROL);a.lw(9,8,28);a.branch(5,9,0,'error145')
         a.lw(9,8,24);a.branch(5,9,17,'error145')
+        a.lw(9,8,16);a.lw(10,29,0x140);a.addiu(10,10,1);a.branch(5,9,10,'error145')
     else:a.call(REFRESH)
     if c.get('body_pose'):
         # Body exchanges may now commit during ordinary recovery/movement.

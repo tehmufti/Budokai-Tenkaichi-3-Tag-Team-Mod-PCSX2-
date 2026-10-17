@@ -439,8 +439,8 @@
       "shared": true
     },
     "tools/extra_reload_commit.py": {
-      "bt3": "f9770ba4f38b5cfab563a5f11dd38f3c3098aa2f714972fa8cc9de35926fc501",
-      "bt4": "a730d326dc96070b368ff932add157692918fec6060133fbfc9583647f4c6159",
+      "bt3": "024a79c045ebf34e736d8e308e8a19fa6a75e58ccd01e0fe8d31ee4ff9739cd4",
+      "bt4": "b27d35e92c05814bee970a34e66ddbc138feb512b69d2a146a208fa16f4ba05a",
       "shared": false
     },
     "tools/extra_reload_form_contacts.py": {
@@ -624,8 +624,8 @@
       "shared": false
     },
     "tools/fusion_partner_lifecycle.py": {
-      "bt3": "24c66067409a4504c00965fc235c8f3f691bf86bce1d50adf4b99343b7448503",
-      "bt4": "24c66067409a4504c00965fc235c8f3f691bf86bce1d50adf4b99343b7448503",
+      "bt3": "9d923456735b22635220a202485c40fbf349213cdde8db1b59d75c7de9519396",
+      "bt4": "9d923456735b22635220a202485c40fbf349213cdde8db1b59d75c7de9519396",
       "shared": true
     },
     "tools/fusion_rules.py": {

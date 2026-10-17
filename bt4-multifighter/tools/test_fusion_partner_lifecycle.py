@@ -68,7 +68,7 @@ def machine(side=0,slot=1,mask=63):
     c.callbacks[0x20E3A0]=lambda m:m.r.__setitem__(2,m.u(fix.PART_ROWS+64*partner+16) and m.u(m.u(fix.PART_ROWS+64*partner+16)))
     def find(m):
         rows=[m.r[4]+0x9A4+164*s for s in range(m.u(m.r[4]+0x998))]
-        m.r[2]=next((i for i,p in enumerate(rows) if m.u(p)==m.r[5]),0xFFFFFFFF)
+        m.r[2]=next((i for i,p in enumerate(rows) if m.u(p+8) and m.u(p)==m.r[5]),0xFFFFFFFF) # native: +8 present
     c.callbacks[0x1CE108]=find
     c.callbacks[0x1CE030]=lambda m:m.r.__setitem__(2,m.r[4]+0x9A4+164*m.r[5])
     c.callbacks[0x1CE198]=lambda m:m.r.__setitem__(2,m.r[4]+0x9E4+164*m.r[5])
