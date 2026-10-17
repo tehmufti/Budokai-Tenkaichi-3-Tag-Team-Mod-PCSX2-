@@ -1,3 +1,9 @@
+## Version 13.6
+
+- Fixed a freeze (TTM-MATCH-08) when a CPU teammate fuses with the team leader, for example Vegeta + Goku into Vegito. Team Battles and other matches with fusions now carry on with the fused fighter (BT3 and BT4).
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.6.
+
 ## Version 13.5
 
 - Added new BT4 tag attacks for Goku Blue + Vegeta Blue and Future Trunks (Super) + Vegeta, with their own animations, cameras and beam finishes.
