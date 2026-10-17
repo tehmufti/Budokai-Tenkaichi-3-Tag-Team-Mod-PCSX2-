@@ -5,7 +5,7 @@ preparation work. This module creates no connection, process, thread, UI input
 or savestate operation. A job is claimed only after quiet is acknowledged.
 Failures leave quiet owned by the caller for explicit checkpoint recovery.
 """
-from native_map import A
+from native_map import A, ticks
 import struct
 import time
 
@@ -35,6 +35,13 @@ BACKGROUND_START_FRAMES=40
 BACKGROUND_START_SECONDS=6.0
 # Transient background refusals: the claim is simply released and retried.
 BACKGROUND_RETRY=(112,130,131)
+# A published form request nobody can claim (Worker._stalled): cancelled with
+# the no-swap handshake after this many active native frames without room,
+# or after PENDING_FORM_LIMIT whatever keeps it waiting. row+52 then reads
+# FORM_CANCELLED.
+PENDING_FORM_FRAMES=ticks(90)
+PENDING_FORM_LIMIT=ticks(600)
+FORM_CANCELLED=136
 
 
 def u(ram,p):return struct.unpack_from('<I',ram,p)[0]
@@ -89,6 +96,29 @@ def free_record(records):
     return False
 
 
+def free_records(records):
+    """How many loads io could make one after another: io always takes the first free record,
+    so count free records in order up to the first one whose buffers remain."""
+    count=0
+    for i in range(12):
+        if u(records,56*i+48)&1:continue
+        if any(u(records,56*i+off) for off in (0,16,32)):break
+        count+=1
+    return count
+
+
+def defusion_pending(ram,claimant=None):
+    """A timed fusion is accepted, fused or expiring: its defusion will need one more record and
+    texture group for the original body (fusion_duration_worker.defusion_shortage)."""
+    import fusion_duration as timer
+    if u(ram,timer.CONTROL)!=timer.MAGIC:return False
+    count=u(ram,timer.CONTROL+8)
+    # The claimant's own accepted receipt (1) is the fusion being loaded: admission let it in
+    # with one record, and its defusion postpones itself without room (fusion_duration_worker).
+    return any(u(ram,timer.RECORDS+i*timer.STRIDE) in ((2,3) if i==claimant else (1,2,3))
+               for i in range(min(count,policy.MAX_ACTORS)))
+
+
 def largest_free_block(ram):
     """Largest free heap1 block's header size (the guest admission compares
     exactly this word with its budget), or0 if the bounded chain does not validate."""
@@ -103,18 +133,33 @@ def largest_free_block(ram):
     return 0
 
 
-def capacity_shortage(ram):
+def capacity_shortage(ram,form=False,claimant=None,reserve=True):
     """Why a NEW reload could not complete now, or None.
 
     io and stage check these only after the claim and the guest hold, and a
     failure there keeps the match held. Every completed reload keeps its old
-    bundle, record and texture group, so at eight or ten fighters they can run
-    out; the request then simply waits and the fighter keeps its costume.
+    bundle and record (and its texture group while another live model shares
+    it), so at eight or ten fighters they can run out; a costume request then
+    simply waits and the fighter keeps its costume.
+
+    form=True is an ordinary form or fusion the guest admission already
+    accepted with two spare groups (extra_reload_forms.admission). Its own
+    pose and the native fusion scene create temporary models meanwhile, so
+    re-applying the two-spare rule here refused exactly the forms admission
+    let in and parked them in their pose. Such a claim only needs one group
+    no live model uses; a fighter that cannot get it is cancelled after a
+    bounded wait (PENDING_FORM_FRAMES, Worker._stalled) instead of waiting forever.
     """
     pool=u(ram,preload.REGISTRY_GLOBAL)
     if not 0x100000<=pool<=len(ram)-preload.REGISTRY_OFFSET-REGISTRY_BYTES:return 'the model pool is unreadable'
     registry=pool+preload.REGISTRY_OFFSET
     if not free_record(ram[registry:registry+REGISTRY_BYTES]):return 'no free resource record'
+    # A live timed fusion will reload its original body when it ends; a new load
+    # leaves that room (one record, one group) instead of stranding the fusion.
+    # Only a new unheld claim keeps it; a held recheck (Cell's form after its
+    # auxiliary load) adds no veto.
+    reserve=reserve and defusion_pending(ram,claimant)
+    if reserve and free_records(ram[registry:registry+REGISTRY_BYTES])<2:return 'room kept for a fusion to end'
     models=[u(ram,runner.core.MODELS+4*i) for i in range(12)]
     occupied=sum(1 for m in models if 0x100000<=m<=len(ram)-8 and u(ram,m+4))
     if occupied>=12 or not u(ram,pool+69128):return 'no spare model slot'
@@ -124,9 +169,12 @@ def capacity_shortage(ram):
     # The two-spare policy reads the raw mask, exactly as the guest form
     # admission does. Staging also needs one group no live model uses: a
     # transient's destructor can clear a live group's bit, which staging
-    # re-marks (extra_reload_stage.texture_groups).
-    if ((u(ram,pool+439156)&0x7FFF).bit_count()>=13 or
-            stage.texture_groups(ram)['group'] is None):return 'no spare texture group'
+    # re-marks (extra_reload_stage.texture_groups). An admitted form applied
+    # the two-spare rule at its own admission (see form above).
+    groups=stage.texture_groups(ram)
+    if ((not form and (u(ram,pool+439156)&0x7FFF).bit_count()>=13) or
+            groups['group'] is None):return 'no spare texture group'
+    if reserve and (~groups['used']&0x7FFF).bit_count()<2:return 'room kept for a fusion to end'
     # Host-side: the real per-file ceiling, whatever the installed build.
     if largest_free_block(ram)<heap.NEED:return 'not enough free memory'
     return None
@@ -161,8 +209,14 @@ def candidate(ram,statuses=(1,),specific=None):
     # and release their own quiet hold if the arena acquired ownership meanwhile.
     if statuses==(1,) and u(ram,SCENE_FLAGS)&SCENE_RELOAD_MASK:return None
     # Only a new claim needs the room; a claimed form (statuses (4,)) has
-    # already used it, and refusing it now would hold the match.
-    if statuses==(1,) and capacity_shortage(ram):return None
+    # already used it, and refusing it now would hold the match. The room a
+    # row needs depends on its kind (capacity_shortage form=), so it is
+    # decided per row below, at most once per kind.
+    shortages={}
+    def short(form,physical):
+        key=(form,physical if defusion_pending(ram) else None)
+        if key not in shortages:shortages[key]=capacity_shortage(ram,form=form,claimant=physical,reserve=specific is None)
+        return shortages[key]
     # The background start is gated on an idle native loader. Refusing a NEW
     # scan keeps hold A' from being taken in a state the guest will not start
     # in; the recheck under an existing hold (specific=) must not add a veto,
@@ -178,6 +232,7 @@ def candidate(ram,statuses=(1,),specific=None):
         if status not in statuses or not generation:continue
         is_form=values[14]==1;action=values[15] if is_form else 11
         if values[14] not in (0,1) or (is_form and action not in range(236,243)):continue
+        if statuses==(1,) and short(is_form,physical):continue
         if not (0x100000<=actor<=0x8000000-0x1600 and 0x100000<=model<=0x8000000-0x1670 and mid<12):continue
         if (u(ram,runner.core.POINTERS+4*physical)!=actor or u(ram,actor)!=physical or
                 u(ram,actor+12)!=mid or u(ram,runner.core.MODELS+4*mid)!=model or
@@ -191,7 +246,12 @@ def candidate(ram,statuses=(1,),specific=None):
                     u(ram,actor+0x12E0)!=damaged):continue
         elif u(ram,model+12)!=character:continue
         if any(x not in (0xFFFFFFFF,character) for x in values[8:11]):continue
-        if u(ram,actor+0x948)!=action or u(ram,runner.core.PAIR+4):continue
+        if u(ram,actor+0x948)!=action:continue
+        # The private AI alias lives only inside a CPU decision slice. An
+        # unheld snapshot can land in one at any moment, which used to defer
+        # every scan by a second ('the private AI is aliased'). The held
+        # recheck (specific=) runs at the dispatch boundary and keeps the veto.
+        if u(ram,runner.core.PAIR+4) and (specific is not None or statuses!=(1,)):continue
         # These two only gate a NEW claim. A claimed form (statuses (4,)) is
         # committed under the guest hold, where neither can clear - the hold
         # stops the native reload queue and the throw clock - and its commit
@@ -208,12 +268,14 @@ def candidate(ram,statuses=(1,),specific=None):
     return None
 
 
-def room_hint(p):
-    """Cheap reads of the capacity_shortage counters, all but the heap walk."""
+def room_hint(p,form=False):
+    """Cheap reads of the capacity_shortage counters, all but the heap walk
+    and the live-group scan (an admitted form only needs one clear bit here)."""
     pool=p.read_u32(preload.REGISTRY_GLOBAL)
     if not 0x100000<=pool<=0x08000000-preload.REGISTRY_OFFSET-REGISTRY_BYTES:return False
     if not free_record(p.read(pool+preload.REGISTRY_OFFSET,REGISTRY_BYTES)):return False
-    if not p.read_u32(pool+69128) or (p.read_u32(pool+439156)&0x7FFF).bit_count()>=13:return False
+    used=(p.read_u32(pool+439156)&0x7FFF).bit_count()
+    if not p.read_u32(pool+69128) or used>=(15 if form else 13):return False
     return True
 
 
@@ -222,18 +284,20 @@ def pending_hint(p,rows):
     if p.read_u32(SCENE_FLAGS)&SCENE_RELOAD_MASK:return False
     manager=p.read_u32(requests.CONTROL+4);count=p.read_u32(requests.CONTROL+8)
     if count not in ACTOR_COUNTS or not 0x100000<=manager<0x08000000-640:return False
+    # No PAIR+4 veto: a transient AI alias is rechecked under the hold (candidate).
     if (p.read_u32(requests.CONTROL)!=1 or p.read_u32(runner.core.ACTORS)!=manager or
-            p.read_u32(runner.core.MODE)!=1 or p.read_u32(runner.core.MODE+8)!=manager or
-            p.read_u32(runner.core.PAIR+4)):
+            p.read_u32(runner.core.MODE)!=1 or p.read_u32(runner.core.MODE+8)!=manager):
         return False
     if any(p.read_u32(manager+off) for off in (600,612,628)) or p.read_u32(manager+604)!=p.read_u32(manager+608):return False
     if loader_busy_live(p):return False
-    if not room_hint(p):return False
+    hints={}
     for i in range(min(count-2,len(rows)//requests.STRIDE)):
         status,actor=struct.unpack_from('<2I',rows,i*requests.STRIDE+4)
         if status!=1 or not 0x100000<=actor<=0x08000000-0x1600:continue
         kind,action=struct.unpack_from('<2I',rows,i*requests.STRIDE+56)
         if kind not in (0,1):continue
+        if kind not in hints:hints[kind]=room_hint(p,form=bool(kind))
+        if not hints[kind]:continue
         action=action if kind else 11
         if kind and action not in range(236,243):continue
         if (p.read_u32(runner.core.POINTERS+4*(i+2))==actor and p.read_u32(actor)==i+2 and
@@ -267,6 +331,9 @@ class Worker:
         self.retry_at=0
         # What the last full read found missing, for waiting_reason.
         self.shortage=None
+        # physical -> the published form request (generation) waiting for a
+        # claim and the active native frames it has waited (_stalled).
+        self.pending_forms={};self.form_shortage=None;self.shortage_frame=0
         self._ram_buffer=None;self._analysis_buffer=None
         self.timings=[];self._held_since=None
 
@@ -512,13 +579,18 @@ class Worker:
         if any(p.read_u32(manager+off) for off in (600,612,628)) or p.read_u32(manager+604)!=p.read_u32(manager+608):
             return 'a native leader reload is in flight'
         if loader_busy_live(p):return 'the native loader is still busy'
-        if p.read_u32(runner.core.PAIR+4):return 'the private AI is aliased'
+        # The alias is set only inside a CPU decision slice: one read is almost
+        # always a transient that no longer blocks a claim (see candidate).
+        if all(p.read_u32(runner.core.PAIR+4) for _ in range(3)):return 'the private AI is aliased'
         if p.read_u32(requests.CONTROL)!=1:return 'the request service is disabled'
         pool=p.read_u32(preload.REGISTRY_GLOBAL)
         if 0x100000<=pool<=0x08000000-preload.REGISTRY_OFFSET-REGISTRY_BYTES:
             if not free_record(p.read(pool+preload.REGISTRY_OFFSET,REGISTRY_BYTES)):return 'no free resource record'
             if not p.read_u32(pool+69128):return 'no spare model slot'
-            if (p.read_u32(pool+439156)&0x7FFF).bit_count()>=13:return 'no spare texture group'
+            # A costume keeps two spare groups; an admitted form needs one free
+            # group no live model uses (capacity_shortage form=, self.shortage).
+            used=(p.read_u32(pool+439156)&0x7FFF).bit_count()
+            if used>=15 or (used>=13 and not self.pending_forms):return 'no spare texture group'
         if self.forms and not p.read_u32(form_module.FORM_ENABLE):return 'ordinary forms are disabled'
         refusals,reason,actor=struct.unpack('<3I',p.read(form_module.CONTROL+form_module.REFUSALS,12))
         if refusals:
@@ -534,6 +606,8 @@ class Worker:
     def _poll(self,p):
         if not self.active or self.failure:return False
         if self.form_job is not None:
+            # Requests queued behind this job are not stalled meanwhile.
+            for entry in self.pending_forms.values():entry['paused']=True
             if self.form_phase=='io':return self._background_form(p)
             result=self._finish_form(p)
             if self.form_job is None:self.form_phase=None
@@ -542,16 +616,20 @@ class Worker:
         # guest hold. Avoid large RAM snapshots during ordinary combat.
         if p.read_u32(native.CONTROL+16):return False
         auxiliary_result=auxiliary.poll(self,p)
-        if auxiliary_result is not None:return auxiliary_result
+        if auxiliary_result is not None:
+            for entry in self.pending_forms.values():entry['paused']=True
+            return auxiliary_result
         rows=p.read(requests.RECORDS,requests.ROWS*requests.STRIDE)
         if not any(struct.unpack_from('<I',rows,i*requests.STRIDE+4)[0]==1 for i in range(requests.ROWS)):
-            self.waiting=None;return False
-        if not pending_hint(p,rows):return self._waiting(p)
-        if self.clock()<self.retry_at:return self._waiting(p)
+            self.waiting=None;self.pending_forms={};return False
+        if not pending_hint(p,rows):return self._stalled(p,rows)
+        if self.clock()<self.retry_at:return self._stalled(p,rows)
         ram=self._snapshot(p);job=candidate(ram)
         if job is None:
-            self.shortage=capacity_shortage(ram)
-            self.retry_at=self.clock()+1.0;return self._waiting(p)
+            forms=any(struct.unpack_from('<2I',rows,i*requests.STRIDE+4)[0]==1 and
+                      struct.unpack_from('<I',rows,i*requests.STRIDE+56)[0]==1 for i in range(requests.ROWS))
+            self.shortage=capacity_shortage(ram,form=forms)
+            self.retry_at=self.clock()+1.0;return self._stalled(p,rows)
         self.shortage=None
         self.waiting=None
         # Allocate the reusable analysis workspace before taking combat's
@@ -571,7 +649,11 @@ class Worker:
         try:
             ram=self._snapshot(p);current=candidate(ram,specific=job['physical'])
             if current!=job:
+                # Retry in a second (a transient alias under the hold, a changed
+                # world); the stall bound keeps counting meanwhile.
+                self.retry_at=self.clock()+1.0
                 self._release(p);return False
+            getattr(self,'pending_forms',{}).pop(job['physical'],None)
             # Refuse known-bad disc variants before claiming any native IO or
             # storage. The completed/no-swap handshake lets an ordinary form
             # animation finish on its existing body instead of freezing combat.
@@ -619,6 +701,73 @@ class Worker:
         if reason!=self.waiting:
             self.waiting=reason
             self.progress(f'Waiting to load a transformation: {reason}')
+        return False
+
+    def _stalled(self,p,rows):
+        """Bound the wait of every published form request nobody can claim.
+
+        The native transformation/fusion handler has no timeout: a fighter
+        whose request is never claimed keeps its power-up pose for the rest of
+        the match. Each pending form row counts the active native frames
+        (native.CONTROL+40, pauses and holds excluded, the counter the form
+        budget uses) it has waited. Past PENDING_FORM_FRAMES while the last full
+        read found no room for it, or past PENDING_FORM_LIMIT for any reason,
+        it is ended with the reviewed no-swap handshake: the fighter plays its
+        burst on its current body, nothing is loaded, a fusion consumes nobody
+        (only the reload commit calls the partner commit) and its timed receipt
+        cancels itself when the action ends. The decision reads game state only;
+        online, the host's writes reach every PC on one frame.
+        """
+        try:
+            frame=p.read_u32(native.CONTROL+40);count=p.read_u32(requests.CONTROL+8)
+            paused=bool(p.read_u32(SCENE_FLAGS)&0x3900 or p.read_u32(native.CONTROL+16))
+            seen={}
+            for i in range(min(max(count-2,0),requests.ROWS)):
+                generation,status,actor=struct.unpack_from('<3I',rows,i*requests.STRIDE)
+                kind,action=struct.unpack_from('<2I',rows,i*requests.STRIDE+56)
+                if status!=1 or kind!=1 or action not in range(236,243) or not 0x100000<=actor<=0x08000000-0x1600:continue
+                if p.read_u32(actor+0x948)!=action:continue
+                physical=i+2;old=self.pending_forms.get(physical)
+                if old is None or old['generation']!=generation:
+                    seen[physical]=dict(generation=generation,frame=frame,elapsed=0,paused=paused);continue
+                delta=(frame-old['frame'])&0xFFFFFFFF
+                elapsed=old['elapsed']+(delta if not paused and not old['paused'] and delta<0x80000000 else 0)
+                seen[physical]=dict(generation=generation,frame=frame,elapsed=elapsed,paused=paused)
+            self.pending_forms=seen
+            for physical,entry in sorted(seen.items()):
+                if entry['elapsed']<=PENDING_FORM_FRAMES:continue
+                shortage=None
+                if entry['elapsed']<=PENDING_FORM_LIMIT:
+                    # The cheap hint can stop the scan before any full read
+                    # named the shortage; read it, at most every 30 frames.
+                    if (frame-self.shortage_frame)&0xFFFFFFFF>=30:
+                        self.form_shortage=capacity_shortage(self._snapshot(p),form=True);self.shortage_frame=frame
+                    shortage=self.form_shortage
+                    if not shortage:continue
+                self._cancel_pending(p,physical,entry,shortage or self.waiting or 'its load was never claimed')
+                return False
+        except Exception as exc:
+            import player_errors;self.failure=player_errors.short(exc);self.progress(self.failure);raise
+        return self._waiting(p)
+
+    def _cancel_pending(self,p,physical,entry,reason):
+        """End one stalled form request with the no-swap handshake (5), under our hold."""
+        self.quiet(p)
+        self._held_since=time.perf_counter();self.timings=[]
+        try:
+            ram=self._snapshot(p);row=requests.RECORDS+(physical-2)*requests.STRIDE
+            values=struct.unpack_from('<16I',ram,row)
+            actor,action=values[2],values[15]
+            if (values[0]!=entry['generation'] or values[1]!=1 or values[14]!=1 or
+                    u(ram,runner.core.POINTERS+4*physical)!=actor or u(ram,actor+0x948)!=action):
+                self.pending_forms.pop(physical,None);return False
+            self.apply(p,dict(blocks=[word_block(ram,row+52,FORM_CANCELLED),word_block(ram,row+4,5)]))
+            self.pending_forms.pop(physical,None)
+            kind='fusion' if action in (241,242) else 'transformation'
+            self.progress(f'Cancelled a {kind} for physical {physical} after {entry["elapsed"]} frames: {reason}; '
+                          'the fighter keeps its current body')
+        finally:
+            self._release(p)
         return False
 
     def _group_note(self,p):

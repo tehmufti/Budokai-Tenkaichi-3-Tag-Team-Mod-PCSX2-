@@ -127,6 +127,9 @@ def inventory():
     for name in sorted(closure(port/'tools',SEEDS+('modder_gui','bt4_preflight'))-modules):
         relative=f'tools/{name}.py'
         result[relative]=dict(bt4=normalized_file_digest(relative,(port/relative).read_bytes()),shared=False)
+    # Explicit authored motion data used by the BT4-only director.
+    name='tools/tag_rush_blue_motion.bin'
+    result[name]=dict(bt4=digest((port/name).read_bytes()),shared=False)
     # BT3's map entry point lives at the workspace root and uses a different
     # adapter. Keep BT4's intentional launcher in the review inventory too.
     result['Build expanded maps.cmd']=dict(bt4=normalized_file_digest('Build expanded maps.cmd',

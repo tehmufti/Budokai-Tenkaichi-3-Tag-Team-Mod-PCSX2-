@@ -19,8 +19,9 @@ import beam_struggle as fp
 BASE, END = 0x06D60000, 0x06D73000
 SPAWN, UPDATE, STOP, OWNED, GEOMETRY = (BASE, BASE+0x2000, BASE+0x4000, BASE+0x5000, BASE+0x6000)
 INIT, RELEASE = BASE+0x8000, BASE+0xA000
-IGNITE = BASE+0x7000
-SELECT_SOURCE = GEOMETRY+0x880
+IGNITE = BASE+0x7100
+BALL_GROW = BASE+0x7C00
+SELECT_SOURCE = GEOMETRY+0x900
 CHARGE_SPAWN, CHARGE, CHARGE_END = 0x06D96000, 0x06D98000, 0x06D99000
 FIRE_BIND = CHARGE+0x800
 IMPACT = RELEASE  # Native copied-position one-shot; no private actor ownership.
@@ -47,13 +48,23 @@ HARD_RETIRE=A(0x16A6F0)
 TERMINATE=A(0x16A900); ALIVE=A(0x16A9C0); BONE=A(0x2058E0)
 CALLBACKS=A(0x2C3AD8); NATIVE_UPDATE=A(0x16A400)
 NATIVE_IMPACT=A(0x187B00)
+NATIVE_BURST=A(0x187BE0)
 EXPLOSION = BASE+0xB000
+FINISH_BURST = BASE+0xB800
 WHITE_DRAW, WHITE_ALPHA = BASE+0x1000, BASE+0x1F00
 WHITE_MAGIC = 0x54465731
-W = dict(magic=32,manager=36,count=40,request=44,start=48,descriptor=52)
+W = dict(magic=32,manager=36,count=40,request=44,start=48,descriptor=52,burst=56)
 WHITE_TICKS = (3*ACTOR_HZ+4)//5
 WHITE_RISE = max(2,(ACTOR_HZ+7)//8)
 WHITE_PEAK = 32  # PS2 alpha128 is opaque: a gentle25% white, once.
+WHITE_ULTIMATE_PEAK = 128
+
+
+def galick_flash_delay():
+    """Peak as the beams clear, then finish fading before control returns."""
+    import tag_rush_galick_pair as galick
+    beam_tail=galick.BEAM_END-(galick.EDGES[galick.BURST_PHASE]+galick.BURST_FRAME)
+    return max(0,(beam_tail*ACTOR_HZ+59)//60-WHITE_RISE)
 
 
 def white_alphas():
@@ -75,7 +86,9 @@ def white_start_code():
 
     A native172480 ultimate flash forces owner=-1 and shares one global fade
     node. This receipt instead lets the normal per-view native GS submission
-    fade only cameras watching our scene. No native explosion/cloud is spawned.
+    fade only cameras watching our scene. The Father-Son Galick ending also
+    creates one ordinary native explosion, whose copied request and lifetime
+    belong to the game's existing effect pool.
     """
     import tag_rush_camera as camera
     import tag_rush_scene as scene
@@ -97,14 +110,18 @@ def white_start_code():
     for off,key in ((W['manager'],'manager'),(W['count'],'count'),(W['request'],'start_requests')):
         a.lw(8,16,off);a.lw(9,18,tag.C[key]);a.branch(5,8,9,'publish')
     a.lw(8,16,W['descriptor']);a.branch(4,8,19,'yes')
-    a.label('publish');a.sw(0,16,W['magic'])
+    a.label('publish');a.sw(0,16,W['magic']);a.sw(0,16,W['burst'])
     for off,key in ((W['manager'],'manager'),(W['count'],'count'),(W['request'],'start_requests')):
         a.lw(8,18,tag.C[key]);a.sw(8,16,off)
     a.sw(19,16,W['descriptor']);white_clock(a,20,17);a.sw(20,16,W['start'])
     a.li(8,WHITE_MAGIC);a.sw(8,16,W['magic'])
+    import tag_rush_beam_audio as beam_audio
+    a.lw(8,18,tag.C['variant']);a.li(9,6);a.branch(5,8,9,'yes')
+    a.call(beam_audio.IMPACT)
+    a.li(4,2);a.li(5,17);a.call(FINISH_BURST);a.sw(2,16,W['burst'])
     a.label('yes');a.li(2,1);a.jump('done')
     a.label('no');a.move(2,0);a.label('done');tag.restore(a,2);a.jr()
-    data=a.finish();assert EXPLOSION+len(data)<=CONTROL;return data
+    data=a.finish();assert EXPLOSION+len(data)<=FINISH_BURST;return data
 
 
 def white_draw_code():
@@ -130,8 +147,13 @@ def white_draw_code():
     a.lw(8,16,W['descriptor']);a.lw(9,17,scene.S['descriptor']);a.branch(5,8,9,'done')
     a.li(8,A(0x333700));a.lw(8,8);a.branch(5,8,0,'done')
     white_clock(a,20,17);a.lw(8,16,W['start']);a.r(0x23,20,20,8)
+    a.lw(22,18,tag.C['variant']);a.li(8,6);a.branch(5,22,8,'white_elapsed')
+    a.addiu(20,20,-galick_flash_delay())
+    a.label('white_elapsed')
     a.i(11,8,20,WHITE_TICKS);a.branch(4,8,0,'done')
     a.li(8,WHITE_ALPHA);a.r(0x21,8,8,20);a.i(36,20,8,0);a.branch(4,20,0,'done')
+    a.li(8,6);a.branch(5,22,8,'white_opacity');a.r(0,20,0,20,2)
+    a.label('white_opacity')
     a.lw(17,28,-22176);full.pointer(a,17,832,'done')
     # The same rectangle-to-physical-subject binding used by tag HUD handles
     # ordinary split, quad, spectator takeover and either layout orientation.
@@ -244,7 +266,8 @@ def geometry_code():
     source,target,direction=0x300,0x310,0x320
     a.lw(17,16,R['source_model']);a.lw(18,16,R['target_model'])
     a.lw(19,16,R['source_bone']);a.li(8,31);a.branch(4,19,8,'hand');a.li(8,45);a.branch(4,19,8,'hand')
-    a.li(8,54);a.branch(5,19,8,'no')
+    a.li(8,54);a.branch(4,19,8,'hand');a.li(8,52);a.branch(5,19,8,'no')
+    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.addiu(8,8,-5);a.i(11,8,8,2);a.branch(4,8,0,'no')
     a.label('hand');a.r(0,8,0,19,2);a.r(0x21,8,17,8);a.lw(10,8,3436);full.pointer(a,10,80,'no')
     bounded_point(a,10,(64,68,72),'no')
     a.lw(10,18,3436+4*17);full.pointer(a,10,80,'no');bounded_point(a,10,(64,68,72),'no')
@@ -304,6 +327,14 @@ def publish_firing_scale(a,row,body,label,force=False):
     placement (600units). Keep the genuine texture, rotating shape and color;
     fit that visual to the actual endpoint distance. Charge remains full size.
     """
+    import tag_rush_galick_pair as galick
+    import tag_rush_scene as scene
+    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.li(9,6)
+    a.branch(5,8,9,label+'_sbc')
+    if not force:
+        a.lw(8,row,R['ignited']);a.branch(4,8,0,label+'_done')
+    a.move(4,body);a.call(BALL_GROW);a.jump(label+'_done')
+    a.label(label+'_sbc')
     a.lw(8,row,R['flavor']);a.li(9,1);a.branch(5,8,9,label+'_done')
     if not force:
         a.lw(8,row,R['ignited']);a.branch(4,8,0,label+'_done')
@@ -320,6 +351,33 @@ def publish_firing_scale(a,row,body,label,force=False):
     a.branch(17,8,0,label+'_publish');fp.fop(a,6,0,1)
     a.label(label+'_publish');a.i(57,0,body,1420)
     a.label(label+'_done')
+
+
+def ball_grow_code():
+    """a0 authenticated native beam body: late Galick impact-ball growth."""
+    import tag_rush_galick_pair as galick
+    import tag_rush_scene as scene
+    a=Assembler(BALL_GROW)
+    fp.fconst(a,0,1.)
+    a.li(8,scene.STATE);a.lw(9,8,scene.S['phase']);a.li(10,8)
+    a.r(0x2B,11,9,10);a.branch(5,11,0,'publish')
+    a.branch(4,9,10,'grow');fp.fconst(a,0,galick.BEAM_FINAL_SCALE)
+    a.jump('publish')
+    a.label('grow')
+    a.lw(9,8,scene.S['ticks']);a.emit((17<<26)|(4<<21)|(9<<16));a.emit(0x46800020)
+    fp.fconst(a,1,60./ACTOR_HZ);fp.fop(a,2,0,0,1)
+    fp.fconst(a,1,galick.FRAMES[4]-galick.BEAM_GROW_FRAMES);fp.fop(a,1,0,0,1)
+    fp.fconst(a,1,1./galick.BEAM_GROW_FRAMES);fp.fop(a,2,0,0,1)
+    fp.fconst(a,1,0.);fp.fop(a,0x34,0,0,1);a.branch(17,8,0,'zero');fp.fop(a,6,0,1)
+    a.label('zero');fp.fconst(a,1,1.);fp.fop(a,0x34,0,1,0)
+    a.branch(17,8,0,'unit');fp.fop(a,6,0,1)
+    a.label('unit')
+    fp.fconst(a,1,2.);fp.fop(a,2,1,0,1);fp.fconst(a,2,3.);fp.fop(a,1,1,2,1)
+    fp.fop(a,2,0,0,0);fp.fop(a,2,0,0,1)
+    fp.fconst(a,1,galick.BEAM_FINAL_SCALE-1.);fp.fop(a,2,0,0,1)
+    fp.fconst(a,1,1.);fp.fop(a,0,0,0,1)
+    a.label('publish');a.i(57,0,4,1420);a.jr()
+    data=a.finish();assert BALL_GROW+len(data)<=INIT;return data
 
 
 def select_source_code():
@@ -420,7 +478,10 @@ def spawn_code(color=False,charging=False,special=False):
     a.li(19,45)
     a.jump('source_ready')
     a.label('own_source');a.move(4,16);a.call(SELECT_SOURCE);a.branch(4,2,0,'no');a.move(19,2)
-    a.label('source_ready');a.sw(19,16,R['source_bone'])
+    a.label('source_ready')
+    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.addiu(8,8,-5);a.i(11,8,8,2)
+    a.branch(4,8,0,'ordinary_source');a.li(19,52);a.label('ordinary_source')
+    a.sw(19,16,R['source_bone'])
     if special:
         import tag_rush_special_beam as sbc
         # Early/End Piccolo fire the game's own Special Beam Cannon object
@@ -561,7 +622,11 @@ def fire_bind_code():
     """
     a=Assembler(FIRE_BIND);tag.save(a);a.move(16,4);a.call(OWNED)
     a.branch(4,2,0,'no');a.move(17,2);identity(a,16,'no')
+    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.addiu(8,8,-5);a.i(11,8,8,2)
+    a.branch(4,8,0,'ordinary_fire_hand');a.li(19,52);a.jump('fire_hand_ready')
+    a.label('ordinary_fire_hand')
     a.move(4,16);a.call(SELECT_SOURCE);a.branch(4,2,0,'no');a.move(19,2);a.sw(19,16,R['source_bone'])
+    a.label('fire_hand_ready')
     for phase in (0,1):
         a.addiu(4,17,64);a.li(5,phase);a.move(6,19);a.move(7,0);a.call(A(0x1517A0))
     a.addiu(4,16,HEADER);a.addiu(5,17,64);a.call(A(0x1512C8))
@@ -699,7 +764,7 @@ def init_code(beam=None):
     a.label('no');a.move(2,0);a.label('done');tag.restore(a,2);a.jr();return a.finish()
 
 
-def impact_code(explosion=False):
+def impact_code(explosion=False,*,finishing=False):
     """a0 captured role0..2,a1 encoded native bone -> visual success.
 
     Ordinary contacts use1D3170's type16 impact through187B00. The beam ending
@@ -710,8 +775,11 @@ def impact_code(explosion=False):
     if explosion:return white_start_code()
     import tag_rush_camera as camera
     import tag_rush_scene as scene
-    entry=EXPLOSION if explosion else IMPACT
+    entry=FINISH_BURST if finishing else IMPACT
     a=Assembler(entry);tag.save(a);a.move(16,4);a.move(17,5)
+    if finishing:
+        a.li(8,tag.CONTROL);a.lw(9,8,tag.C['variant']);a.li(8,6);a.branch(5,9,8,'no')
+        a.li(8,2);a.branch(5,16,8,'no');a.li(8,17);a.branch(5,17,8,'no')
     a.li(8,A(0x333700));a.lw(8,8);a.branch(5,8,0,'no')
     camera.emit_active(a,'no');a.i(11,9,16,3);a.branch(4,9,0,'no')
     a.i(11,9,17,32);a.branch(4,9,0,'no')
@@ -742,27 +810,37 @@ def impact_code(explosion=False):
     a.lw(18,28,-22512);full.pointer(a,18,24,'no')
     a.lw(10,18,12);full.pointer(a,10,64,'no');a.lw(9,10,32);a.branch(5,9,18,'no')
     a.lw(19,28,-22516);full.pointer(a,19,11208,'no')
-    descriptor=4008
+    # Native1872E0 maps ordinary type16 contacts to0xFA8. The mode1/type1
+    # energy burst uses mode1/type0 (0x12C8), rather than the orange fire
+    # explosion in mode1/type1 or mode0's directional contact sparks.
+    descriptor=0x12C8 if finishing else 4008
     for off in (descriptor,descriptor+8):a.lw(10,19,off);full.pointer(a,10,64,'no')
     a.lw(4,23,16);a.move(5,17);a.addiu(6,29,0x300);a.call(BONE)
     finite(a,29,(0x300,0x304,0x308),'no')
     a.li(8,0x3F800000);a.sw(8,29,0x30C)
     a.i(49,12,23,2404);a.call(A(0x11F588));a.i(57,0,29,0x310)
     a.i(49,12,23,2404);a.call(A(0x11F620));a.i(57,0,29,0x318)
-    a.sw(0,29,0x314);a.sw(0,29,0x31C);a.li(8,16);a.sw(8,29,0x320)
+    a.sw(0,29,0x314);a.sw(0,29,0x31C);a.li(8,0 if finishing else 16);a.sw(8,29,0x320)
     a.lw(8,23,16);a.sw(8,29,0x324);a.sw(0,29,0x328);a.sw(0,29,0x32C)
-    a.addiu(4,29,0x300);a.call(NATIVE_IMPACT)
+    a.addiu(4,29,0x300)
+    if finishing:
+        #187BE0 copies the projectile explosion request, explicit size and
+        # vertical drift. Keep this one at the hit point (f13=0).
+        # No hitstop, damage, gameplay collision or global fade is requested.
+        a.li(8,0x3FA00000);a.emit(0x44886000);a.emit(0x44806800);a.call(NATIVE_BURST)
+    else:a.call(NATIVE_IMPACT)
     a.jump('done')
     a.label('no');a.move(2,0);a.label('done');tag.restore(a,2);a.jr();data=a.finish()
-    assert entry+len(data)<=(CONTROL if explosion else EXPLOSION);return data
+    assert entry+len(data)<=(CONTROL if finishing else EXPLOSION);return data
 
 
 def pieces(beam=None):
     plan=beam.get('color_plan') if beam else None
     special=bool(beam and beam.get('special_beam'))
     result=[(SPAWN,spawn_code(bool(plan),special=special)),(UPDATE,update_code()),(STOP,stop_code(special)),
-            (OWNED,owned_code()),(GEOMETRY,geometry_code()),(SELECT_SOURCE,select_source_code()),(IGNITE,ignite_code(special=special)),(INIT,init_code(beam)),(IMPACT,impact_code()),
-            (EXPLOSION,white_start_code()),(WHITE_DRAW,white_draw_code()),(WHITE_ALPHA,white_alphas()),(CONTROL,bytes(END-CONTROL)),
+            (OWNED,owned_code()),(BALL_GROW,ball_grow_code()),(GEOMETRY,geometry_code()),(SELECT_SOURCE,select_source_code()),(IGNITE,ignite_code(special=special)),(INIT,init_code(beam)),(IMPACT,impact_code()),
+            (EXPLOSION,white_start_code()),(FINISH_BURST,impact_code(finishing=True)),
+            (WHITE_DRAW,white_draw_code()),(WHITE_ALPHA,white_alphas()),(CONTROL,bytes(END-CONTROL)),
             (CHARGE_SPAWN,spawn_code(bool(plan),charging=True,special=special)),(CHARGE,ignite_code(charging=True)),
             (FIRE_BIND,fire_bind_code())]
     if plan:

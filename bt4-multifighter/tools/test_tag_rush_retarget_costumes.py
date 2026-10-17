@@ -112,6 +112,26 @@ class NativeSingleBindTests(unittest.TestCase):
         for source in self.clips:
             with self.subTest(source=source):self.assertEqual(self.machine(skeleton,source),self.machine(skeleton,source,False))
 
+    def test_goku_early_and_kid_gohan_outfits_keep_native_retarget_output(self):
+        # The reported pairing must work for either attack role and for a
+        # victim using either rig, including the damaged costume resources.
+        outfits=[dict(character=character,costume=costume,damaged=damaged)
+                 for character in (0,13) for costume in range(4) for damaged in (False,True)]
+        self.assertTrue(all(row['supported'] for row in assets.character_admission(self.iso,outfits)))
+        sources=(assets.ClipSource(101,363),assets.LEAD[352],assets.LEAD[354],
+                 assets.PARTNER[414],assets.LEAD[357],assets.LEAD[358],assets.LEAD[359])
+        for outfit in outfits:
+            skeleton=assets.read_skeleton(self.iso,**outfit)
+            for source in sources:
+                with self.subTest(outfit=outfit,source=source):
+                    actual=self.machine(skeleton,source)
+                    self.assertEqual(actual,self.machine(skeleton,source,False))
+                    clip=animations.AnimationClip.from_decoded(source.animation,actual)
+                    for track in clip.tracks:
+                        for key in track.keys:
+                            if key.translation is not None:
+                                self.assertTrue(all(math.isfinite(value) for value in key.translation))
+
     def test_requested_bt4_costumes_all_roles_retarget_each_translation_once(self):
         if SERIAL!='SLUS-21978':self.skipTest('BT4 imported costume fixture')
         sources=(assets.ClipSource(101,356),assets.ClipSource(101,363),assets.ClipSource(101,352),assets.PARTNER[414],assets.ClipSource(101,357),assets.ClipSource(101,358),assets.ClipSource(101,359))

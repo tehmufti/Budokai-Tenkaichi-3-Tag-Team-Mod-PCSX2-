@@ -1,3 +1,14 @@
+## Version 13.5
+
+- Added new BT4 tag attacks for Goku Blue + Vegeta Blue and Future Trunks (Super) + Vegeta, with their own animations, cameras and beam finishes.
+- Fixed water and lava being misplaced on expanded maps, including Namek and Dying Planet. Rebuild expanded maps after updating to get the corrected surfaces.
+- Fixed CPU fusions and transformations getting stuck when large fights run short on texture space, and improved defusion loading.
+- The Tag Attack meter stays visible after transformations and sits in your own status panel in split-screen. You can turn it off under Mod Settings → HUD.
+- Fixed BT4 split-screen portraits and blast-stock displays, and an effect-texture issue between split-screen views.
+- Fixed an online rejoin error that could happen during the first session after installing.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.5.
+
 ## Version 13.4
 
 Online play has been reimplemented and is now more stable.

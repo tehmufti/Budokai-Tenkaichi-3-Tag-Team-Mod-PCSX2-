@@ -31,7 +31,7 @@ import lockon_threat as threat
 MANAGER=0x1900000
 PREVIOUS=0x07254000
 OPTIONS={'tag_team_rush_enabled':True}
-VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
+from tag_rush_choreography import VARIANTS
 
 
 def w(ram,address,value):struct.pack_into('<I',ram,address,value)
@@ -40,9 +40,9 @@ def put(ram,address,data):ram[address:address+len(data)]=data
 
 
 def assets():
-    return dict(blocks=[(install.assets.BASE,bytes(0x500))],
+    return dict(blocks=[(install.assets.BASE,bytes(0x100*len(VARIANTS)))],
                 variants={n:dict(address=install.assets.BASE+i*0x100,count=4) for i,n in enumerate(VARIANTS)},
-                bytes_used=0x500,limitations=[])
+                bytes_used=0x100*len(VARIANTS),limitations=[])
 
 
 
@@ -54,6 +54,7 @@ def profile_assets():
 def fixture(*,four=False):
     ram=bytearray(0x8000000)
     for address,native,_ in install.cpu_tags.hooks():put(ram,address,native)
+    address,native,_=install.blue.aura_size_hook();put(ram,address,native)
     put(ram,install.recovery.HOOK,install.recovery.NATIVE_HOOK)
     put(ram,install.audio_queue.HOOK,install.audio_queue.NATIVE_HOOK)
     put(ram,install.beam_audio.HOOK,install.beam_audio.NATIVE_HOOK)
@@ -190,7 +191,8 @@ class TagInstallTests(unittest.TestCase):
                 self.assertEqual(ram,before);ram[address]=original
 
     def test_user_authored_hold_table_is_immutable_on_reinstall(self):
-        hp=install.authored_hold;bank=install.beam_audio.disc_bank(str(install.selected_iso()))
+        import fusion_audio_restore
+        hp=install.authored_hold;bank=install.beam_audio.isolate_bank(fusion_audio_restore.bank_file(0,False))
         table=hp.data()
         self.assertEqual(len(table),hp.HEADER+12*hp.STRIDE)
         self.assertLessEqual(hp.DATA+len(table),hp.END)
@@ -331,7 +333,8 @@ class TagInstallTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'native contact predecessor'):self.build(ram)
 
     def test_private_beam_bank_is_local_opt_in_with_exact_exit_hook(self):
-        bank=install.beam_audio.disc_bank(str(install.selected_iso()));ram=fixture()
+        import fusion_audio_restore
+        bank=install.beam_audio.isolate_bank(fusion_audio_restore.bank_file(0,False));ram=fixture()
         with patch.object(scene,'installation',return_value=complete_plan()),\
              patch.object(install,'review_playtest_assets'),\
              patch.object(install.beam_audio,'disc_bank',return_value=bank):
@@ -397,7 +400,8 @@ class TagInstallTests(unittest.TestCase):
     def test_reviewed_match_keeps_ordinary_fighters_when_one_outfit_cannot_tag(self):
         ram=fixture();actors=[u(ram,install.core.POINTERS+4*i) for i in range(4)]
         before=[bytes(ram[p:p+0x1600]) for p in actors]
-        bank=install.beam_audio.disc_bank(str(install.selected_iso()))
+        import fusion_audio_restore
+        bank=install.beam_audio.isolate_bank(fusion_audio_restore.bank_file(0,False))
         def admission(iso,roster):
             return [dict(row,supported=row['index']!=2,reason='Ambiguous imported limb' if row['index']==2 else '') for row in roster]
         with patch.object(install.assets,'character_admission',side_effect=admission),\

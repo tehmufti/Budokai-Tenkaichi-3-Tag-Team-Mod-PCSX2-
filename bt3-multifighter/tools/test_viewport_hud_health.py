@@ -1,15 +1,4 @@
 """Split-screen native HP panels: tiers, pips, trail and resets pinned against executed native 21C5B0/21CA60."""
-# Native execution tests require the developer's extracted executable.
-from pathlib import Path as _TestPath
-import unittest as _TestUnit
-from native_map import elf_path as _test_elf_path
-_test_root = _TestPath(__file__).resolve().parents[1]
-if not _test_elf_path(_test_root).is_file():
-    raise _TestUnit.SkipTest('An extracted game executable is required for native tests')
-if not all((_test_root/'tools'/name).is_file() for name in
-           ('test_viewport_hud.py','test_viewport_hud_layers.py')):
-    raise _TestUnit.SkipTest('Developer HUD fixtures and execution helpers are required')
-
 import struct
 import unittest
 from prototype import ROOT, elf_reader
@@ -236,6 +225,25 @@ class NativeHealthTests(unittest.TestCase):
         self.assertEqual(c.read(art.METERS, art.METER_BYTES), before)
         self.assertEqual(c.read(art.NATIVE_PANEL, len(art.panel_code())), art.panel_code())
         self.assertEqual(hud.build_memory(c.buffer)['blocks'], [])
+
+    def test_earlier_status_layout_upgrades_in_place_keeping_live_health_records(self):
+        # Earlier panels: no own-panel record and, in BT4 captures, BT3's status positions (portrait 13 px right of
+        # the hexagon's centre). Only the panel code changes; the live meter, identity and pass records stay.
+        for earlier in hud.PANEL_LAYOUTS()[1:]:
+          with self.subTest(**earlier):
+            c = old.captured_machine(split=True); c.write(hud.feed.WORLD, hud.feed.world_code())
+            for b in hud.build_memory(c.buffer)['blocks']: c.write(b['address'], bytes.fromhex(b['data_hex']))
+            for p, d in hud.pieces(hud.feed.DRAW): c.write(p, bytes(len(d)))
+            for p, d in hud.pieces(hud.feed.DRAW, **earlier): c.write(p, d)
+            c.write(art.METERS, bytes(range(24))); c.write(art.IDENTITY, bytes(range(1, 17)))
+            before = c.read(art.METERS, art.PASSES+8-art.METERS)
+            blocks = hud.build_memory(c.buffer)['blocks']
+            self.assertTrue(blocks)
+            self.assertEqual({b['address'] for b in blocks} - {art.NATIVE_PANEL}, set())
+            for b in blocks: c.write(b['address'], bytes.fromhex(b['data_hex']))
+            self.assertEqual(c.read(art.METERS, art.PASSES+8-art.METERS), before)
+            self.assertEqual(c.read(art.NATIVE_PANEL, len(art.panel_code())), art.panel_code())
+            self.assertEqual(hud.build_memory(c.buffer)['blocks'], [])
 
 
 if __name__ == '__main__': unittest.main()

@@ -138,14 +138,22 @@ def draw(extensions=()):
             if side:omit_fourth('effects_done')
             a.addiu(4,0,side);a.call(A(0x23EF98));a.addiu(4,0,1);a.call(A(0x23EFD0))
             a.addiu(4,0,int(side==0));a.call(A(0x12CCD0));a.call(A(0x102708))
+        a.label('effects_done')
+    pair_pass('world_effects',effects)
+    def overlays():
+        for side in range(2):
+            if side:omit_fourth('overlays_done')
+            a.addiu(4,0,side);a.call(A(0x23EF98));a.addiu(4,0,1);a.call(A(0x23EFD0))
             # Revival rings use world projection and must be submitted while
-            # each actual camera is bound, rather than once after the last view.
+            # each actual camera is bound. Draw text only AFTER every native
+            # world-effect view: its fixed font/portrait uploads otherwise
+            # replace aura textures that the next view still considers cached.
             import teammate_revive as revive
             a.li(8,revive.CONTROL);a.lw(9,8);a.li(10,revive.MAGIC)
             a.branch(5,9,10,f'no_revive{side}');a.call(revive.DRAW);a.label(f'no_revive{side}')
             hud.extension_calls(a,extensions,f'no_extension{side}_')
-        a.label('effects_done')
-    pair_pass('world_effects',effects)
+        a.label('overlays_done')
+    pair_pass('world_overlays',overlays)
     a.sw(0,16,16);a.call(A(0x247688))
     a.call(MATTE)
     # Menus, HUD, fades and flash cleanup are once per complete frame.

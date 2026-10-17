@@ -380,8 +380,10 @@ def ntext_code():
     a.addiu(8, 0, 6); a.jump('styled')
     assert a.pc <= NTEXT_75
     while a.pc < NTEXT_75: a.emit(0)
-    # NTEXT_75: the tag caption (tag_rush_hud places it; no offset here).
-    a.li(10, TRAMP['caption']); a.addiu(8, 0, 6); a.addiu(11, 0, BIT['tag']); a.jump('styled')
+    # NTEXT_75: the tag caption (tag_rush_hud places and sizes it: t0 = 4..6 units per atlas pixel, else 6 = 75%).
+    a.li(10, TRAMP['caption']); a.addiu(11, 0, BIT['tag'])
+    a.addiu(9, 8, -4); a.i(11, 9, 9, 3); a.branch(5, 9, 0, 'caption_size'); a.addiu(8, 0, 6)
+    a.label('caption_size'); a.jump('styled')
     assert a.pc <= NTEXT_SCALED
     while a.pc < NTEXT_SCALED: a.emit(0)
     a.move(10, 0)                                                         # NTEXT_SCALED (t0 = units)

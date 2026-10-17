@@ -133,6 +133,9 @@ REVIVE, REVIVE_MAGIC = 0x070BF000, 0x52565631                  # teammate_revive
 # native_hud_style CONTROL ('NHS1'): +4 is its style word, one bit per element group; 'lockon' (4) is the target
 # marker's look. Draw only (no simulation state reads it): each PC keeps its own look in its own copy.
 HUD_STYLE, HUD_STYLE_MAGIC, HUD_ALL, HUD_LOCKON = 0x07153000, 0x4E485331, 0x7F, 0x04
+# tag_team_rush CONTROL ('TAG1') and tag_rush_hud.SHOW: the tag attack meter's draw-only switch (1 shown, 0 hidden).
+# Tag attacks are forced off online today, so the word is only written once a match installs them.
+TAG, TAG_MAGIC, TAG_METER_SHOW = 0x06D08000, 0x54414731, 0x06D75FF0
 LOCAL = {
     'show_friendly_healthbars': Patch(DISPLAY + 0x08, DISPLAY, DISPLAY_MAGIC, _bool),
     'show_enemy_healthbars': Patch(DISPLAY + 0x0C, DISPLAY, DISPLAY_MAGIC, _bool),
@@ -152,6 +155,8 @@ LOCAL = {
     'show_revive_ring': Patch(REVIVE + 0x50, REVIVE, REVIVE_MAGIC, _bool),
     'lockon_target_look': Patch(HUD_STYLE + 4, HUD_STYLE, HUD_STYLE_MAGIC,
                                 lambda v: {'native': HUD_ALL, 'classic': HUD_ALL & ~HUD_LOCKON}[v]),
+    # only on when the match was built with the meter (BUILD_LOCAL), like the target marker
+    'tag_team_rush_show_meter': Patch(TAG_METER_SHOW, TAG, TAG_MAGIC, _bool, require=(TAG_METER_SHOW, 1)),
     'revive_ring_opacity': Patch(REVIVE + 0x54, REVIVE, REVIVE_MAGIC, lambda v: round(float(v) * 128)),
     'revive_ring_wave_height': Patch(REVIVE + 0x58, REVIVE, REVIVE_MAGIC, float, kind='f32'),
     'revive_ring_wave_speed': Patch(REVIVE + 0x5C, REVIVE, REVIVE_MAGIC, lambda v: round(float(v) * 65536 / 30)),
@@ -162,7 +167,7 @@ BUILD_LOCAL = {'show_friendly_healthbars': True, 'show_enemy_healthbars': True, 
                'show_kill_feed': True, 'show_kill_score': True, 'lockoff_target_hud': 'show',
                'lockon_target_marker': True, 'lockon_target_style': 'both',
                'show_takeover_hints': True, 'show_takeover_confirmation': True, 'show_revive_ring': True,
-               'lockon_target_look': 'native'}
+               'lockon_target_look': 'native', 'tag_team_rush_show_meter': True}
 
 
 def classes():

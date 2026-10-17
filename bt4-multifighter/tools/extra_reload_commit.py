@@ -3,8 +3,9 @@
 This is a dormant diagnostic service, not a transformation unlock. It preserves
 the active model's address/ID, uses native destruction/reinitialization and
 refreshes the owner's special resources and private AI. Old resource buffers
-and their texture reservation remain retained. Any failure after destruction
-requires checkpoint recovery; the caller must keep the whole match held.
+remain retained; their texture group stays reserved only while another live
+model (a resident copy) shares it. Any failure after destruction requires
+checkpoint recovery; the caller must keep the whole match held.
 """
 from native_map import A, CRC, SERIAL, elf_path
 import argparse
@@ -64,6 +65,27 @@ def ai_code(physical):
     code=a.finish();assert len(code)<0x1000;return code
 
 
+def group_in_use(a,group,shared,unused,tag):
+    """Branch to `shared` when a live registered model's geometry draws from texture `group`, else to `unused`.
+
+    Bounded scan of the twelve native model slots (pointer, alignment and +4 == 1 checks as
+    extra_reload_stage.group_choice). Clobbers t0..t4 only.
+    """
+    a.li(8,stage.prior.core.MODELS);a.addiu(9,8,48)
+    a.label(tag+'_scan');a.lw(10,8)
+    a.li(11,0x100000);a.r(0x2B,11,10,11);a.branch(5,11,0,tag+'_next')
+    a.li(11,0x8000000-0x1670);a.r(0x2B,11,10,11);a.branch(4,11,0,tag+'_next')
+    a.i(12,11,10,3);a.branch(5,11,0,tag+'_next')
+    a.lw(11,10,4);a.addiu(12,0,1);a.branch(5,11,12,tag+'_next')
+    a.lw(10,10,64)
+    a.li(11,0x100000);a.r(0x2B,11,10,11);a.branch(5,11,0,tag+'_next')
+    a.li(11,0x8000000-64);a.r(0x2B,11,10,11);a.branch(4,11,0,tag+'_next')
+    a.i(12,11,10,3);a.branch(5,11,0,tag+'_next')
+    a.lw(10,10,40);a.addiu(11,0,group);a.branch(4,10,11,shared)
+    a.label(tag+'_next');a.addiu(8,8,4);a.branch(5,8,9,tag+'_scan')
+    a.jump(unused)
+
+
 def payload(c):
     w,row=c['world'],c['resource'];a=Assembler(ENTRY);a.addiu(29,29,-0x150)
     leader=bool(c.get('leader'))
@@ -112,7 +134,20 @@ def payload(c):
     a.addiu(8,0,2);a.sw(8,16,4)
     a.li(17,w['actor']);a.li(20,w['model'])
     a.move(4,20);a.call(A(0x1135F0))
+    # The destructor cleared the old group's bare bit. The worker's own reload
+    # (return_unshared_group) restores it only while another live registered
+    # model still draws from that group (a resident copy sharing the bundle);
+    # a group nobody uses any more is returned. Keeping every retired body's
+    # group reserved left a 5v5 match without a free group after three first
+    # transformations (every later form refused, an admitted fusion parked in
+    # its pose). Staging re-marks live groups and takes the highest free one
+    # (extra_reload_stage.group_choice). Body Change and defusion reuse this
+    # payload with their own receipts and keep the unconditional reservation.
+    if c.get('return_unshared_group'):
+        group_in_use(a,c['old_group'],'old_group_shared','old_group_done','old_group')
+        a.label('old_group_shared')
     a.li(4,c['old_group']);a.call(A(0x249000))
+    if c.get('return_unshared_group'):a.label('old_group_done')
     if c.get('adopt_entry'):a.call(c['adopt_entry'])
     a.li(21,row['collision']);a.li(22,c['new_collision'] if row['collision_size'] else 0)
     copy_words(a,'backup',21,22,row['collision_size'])
@@ -352,7 +387,7 @@ def capture(ram,quiet=False,form=False):
     # Existing input hold is caller-owned; this module never releases it.
     return dict(world=w,resource=row,staged_model=staged_model,staged_id=staged_id,
                 new_collision=allocation+PRIVATE_COLLISION_OFF,old_scratch=old_scratch,
-                old_group=old_group,new_group=new_group,guards=guards,zero_regions=[],
+                old_group=old_group,new_group=new_group,guards=guards,zero_regions=[],return_unshared_group=True,
                 allocator=allocator,arena=arena,record=record,effect_row=effect_row,
                 root=root,rootpool=rootpool,visuals=visuals,selected_row=selected,generic=gen,ground=gnd,form=form)
 
@@ -383,7 +418,7 @@ def build_memory(ram,source='<offline-held-reload>',quiet=False,retire_staged=Fa
                 blocks=[dict(address=p,expected_hex=ram[p:p+len(data)].hex(),data_hex=data.hex()) for p,data in pieces],
                 requirements=['Caller keeps every actor held idle before, throughout and after the single ENTRY invocation.',
                               'Enable CONTROL then invoke once; status5 and AI_META5 are required before any later release.',
-                              'Any failure requires checkpoint restoration. Old buffers, staging model and groups remain retained.'],
+                              'Any failure requires checkpoint restoration. Old buffers and the staging model remain retained; an unshared old texture group is returned.'],
                 limitations=['Same-character costume only; no automatic damage event or transformation routing.',
                              'No resource retirement/cache eviction. This diagnostic is one transaction per checkpoint.',
                              'Native model/render/AI helpers still require live validation together.'])

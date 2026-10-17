@@ -49,7 +49,8 @@ class SettingsPreviewTests(unittest.TestCase):
                         view = (left, right, top, bottom)
                         where = dict(split=seat if players > 1 else None, subject=subject, coop=coop, views=players)
                         self.assertEqual(preview.tag_meter_placement(view, settings, **where),
-                                         tag.placement(view, settings=native_settings, **where),
+                                         tag.placement(view, settings=native_settings, wide=preview.aspect_wide(settings),
+                                                       **where),
                                          (mod_settings.ADAPTER, style, layout, coop_layout, wide, scale, players, seat, subject, coop))
 
     def settings(self):

@@ -553,6 +553,11 @@ def bios_identity(path):
 # ---- this PC's identity and the comparison ----------------------------------------------------------------------------------
 def local_identity(*, disc, bios, ini_text, pcsx2=None, bios_policy='note', disc_policy='quick', name=''):
     """What this PC sends to the other one. File names and paths stay on this PC (only contents are described)."""
+    # Preboot also needs this patch. Publish it before taking the handshake
+    # snapshot, so the first connection and a later rejoin describe the same set.
+    if kit_paths.INTEGRATED:
+        import kit_install
+        kit_install.installation_pnach()
     private = ('name', 'path')
     return dict(protocol=PROTOCOL, kit_version=KIT_VERSION, code=code_identity(), pcsx2=pcsx2 or pcsx2_identity(),
                 patches=patches_identity(), settings=settings_identity(ini_text),

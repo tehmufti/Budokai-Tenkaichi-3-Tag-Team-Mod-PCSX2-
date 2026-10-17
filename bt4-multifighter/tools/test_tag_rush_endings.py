@@ -44,7 +44,9 @@ def machine(variant):
     cursor=0x3110000
     for index,name in enumerate(names):
         phases=assets.timeline(name);base=0x06D14000+index*0x800
-        table=tag.CONTROL+special.TABLE_OFFSET if name==special.NAME else scene.TABLE+8*index
+        import tag_rush_blue_native as blue
+        table=(tag.CONTROL+blue.TABLE_OFFSETS[blue.NAMES.index(name)] if name in blue.NAMES else
+               tag.CONTROL+special.TABLE_OFFSET if name==special.NAME else scene.TABLE+8*index)
         c.w(table,base);c.w(table+4,len(phases));tables[name]=phases
         for phase,p in enumerate(phases):
             roles=[0x06D20000,0x06D21000,0x06D22000]

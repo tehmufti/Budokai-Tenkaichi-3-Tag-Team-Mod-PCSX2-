@@ -22,7 +22,7 @@ import tag_rush_audio_queue as deferred
 BASE, RESET, TICK = 0x06D0C000, 0x06D0C000, 0x06D0C400
 TABLE, STATE, END = 0x06D0CE00, 0x06D0D700, 0x06D0D800
 ROWS, STRIDE, MAGIC = STATE+0x20, 16, 0x54534131
-VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
+from tag_rush_choreography import VARIANTS
 C=dict(magic=0,manager=4,count=8,played=12)
 R=dict(phase=0,frame=4)
 SOUND=deferred.ENQUEUE
@@ -53,17 +53,34 @@ def cue_rows(pack=None):
                 if flags&assets.FINISHER and flags&(assets.BEAM_LEAD|assets.BEAM_PARTNER):
                     frames=row.get('source_frames')
                     import tag_rush_choreography as choreography
-                    burst=choreography.beam_burst_frame(frames,custom=bool(flags&assets.CUSTOM_FINISHER))
+                    burst=(row['burst_frame'] if 'burst_frame'in row else
+                           choreography.beam_burst_frame(frames,custom=bool(flags&assets.CUSTOM_FINISHER)))
+                    if type(burst)is not int or not 0<=burst<=frames:
+                        raise ValueError('Tag beam burst falls outside its firing phase')
                     # Match FX_BODY's final burst, once at the victim even
                     # when both attackers fire. The normal cursor handles
                     # pauses and skipped frames without replaying the sound.
-                    cues=tuple(cues)+(dict(role=2,frame=burst,bank=0,
-                        sound_id=EXPLOSION_SOUND,bone=3,near=200.,far=1500.),)
+                    if name!='super_galick_pair':
+                        cues=tuple(cues)+(dict(role=2,frame=burst,bank=0,
+                            sound_id=EXPLOSION_SOUND,bone=3,near=200.,far=1500.),)
+            import tag_rush_blue_native as blue
             if phase<len(phase_rows) and phase_rows[phase].get('flags',0)&assets.OWN_CLASH_POSE:
                 flags=phase_rows[phase]['flags']
                 charge=tuple(dict(role=role,frame=0,bank=0,sound_id=21,bone=3,near=200.,far=1500.)
                              for role,bit in enumerate((assets.BEAM_LEAD,assets.BEAM_PARTNER)) if flags&bit)
                 cues=tuple(cues)+charge
+            elif name in blue.NAMES and phase<len(phase_rows) and phase_rows[phase].get('flags',0)&0x200:
+                # Authored paired beams: each charge sound starts exactly when
+                # that fighter's own charge begins (the same schedule as FX).
+                cues=tuple(cues)+tuple(dict(role=role,frame=frame,bank=0,sound_id=21,bone=3,near=200.,far=1500.)
+                                       for role,frame in blue.charge_cues(name,phase))
+            if (name==blue.NAMES[0] and phase<len(phase_rows) and phase_rows[phase].get('flags',0)&0x200
+                    and blue.INTRO<=phase<blue.INTRO+4):
+                # The flying pursuit after the shared opening uses the same
+                # sound as the ordinary L2+Cross dash. The charging sound
+                # belongs only to the actual beam phase.
+                cues=tuple(cues)+(dict(role=phase%2,frame=0,bank=0,sound_id=blue.DASH_SOUND,
+                                      bone=3,near=200.,far=1500.),)
             seen=set()
             for cue in cues:
                 role,frame,sound=cue.get('role'),cue.get('frame'),cue.get('sound_id')
@@ -78,7 +95,7 @@ def cue_rows(pack=None):
                 elif sound==73:
                     if effect!=16 or type(impact_bone)is not int or not 0<=impact_bone<32 or alternate not in(None,0)or flag:
                         raise ValueError('Unreviewed tag impact visual')
-                elif sound not in (21,24,30,31,EXPLOSION_SOUND) or alternate not in (None,0) or flag:
+                elif sound not in (21,24,28,30,31,EXPLOSION_SOUND) or alternate not in (None,0) or flag:
                     raise ValueError('Unreviewed tag sound event')
                 if sound!=73 and (effect or impact_bone):raise ValueError('Unexpected tag sound visual')
                 key=(phase,role,frame,sound,(alternate or 0)|(impact_bone<<8)|(effect<<16))

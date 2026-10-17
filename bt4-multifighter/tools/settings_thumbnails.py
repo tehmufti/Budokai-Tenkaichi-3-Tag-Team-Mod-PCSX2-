@@ -768,6 +768,33 @@ def scene_tag(ctx, v):
     ctx.gauge((110, box[3]+12, 110+420, box[3]+34), 1 if full else .58, 4 if full else 5)
 
 
+def scene_meter(ctx, v):
+    """The tag attack meter where the match draws it: under the player's own status panel (one view, the selected
+    game's layout, settings_preview.tag_meter), its label in the game font and its bar in the native meter art."""
+    from PIL import Image
+    s = dict(v, split_hud_style='native')
+    if hasattr(settings_preview, 'tag_meter'):
+        m = settings_preview.tag_meter((0, 512, 0, 448), s)
+    else:                                                       # an older settings_preview: placement only
+        x, y, bar = settings_preview.tag_meter_placement((0, 512, 0, 448), s)
+        m = dict(x=x, y=y, bar=bar, width=64, units=6, label='TAG ATTACK')
+    k = 2                                                       # native_panel is drawn at twice the 256 x 64 frame
+    canvas = Ctx(ctx.art, s)
+    height = max(128, k*m['bar']+24)                           # BT4's meter sits below the 64-row frame
+    canvas.layer = Image.new('RGBA', (512, height))
+    if v.get('show_native_hud', True):
+        canvas.layer.alpha_composite(native_panel(ctx, s))
+    colour = abgr(0x80FFC050)[:3]                               # charging (tag_rush_hud.BLUE)
+    # In a match the caption is about 6 frame pixels tall at 75% and never wider than its meter (tag_rush_hud).
+    label = tight(canvas.caption_image(m['label'], colour, 9.5*k*m['units']/6))
+    if label.width > k*m['width']:
+        label = label.resize((k*m['width'], max(1, round(label.height*k*m['width']/label.width))), Image.Resampling.LANCZOS)
+    canvas.layer.alpha_composite(label, (round(k*m['x']), round(k*m['bar'])-label.height-3))
+    canvas.gauge((k*m['x'], k*m['bar'], k*(m['x']+m['width']), k*(m['bar']+3)), .62, 5)
+    x0 = max(0, k*m['x']-110)
+    fit_into(ctx, canvas.layer.crop((x0, 0, min(512, x0+340), height)), (24, 24, VW-24, VH-24))
+
+
 def lines_beam(ctx, v):
     step = int(v.get('beam_assist_multiplier_percent', 150))-100
     try:
@@ -1006,6 +1033,10 @@ SPECS = {
                                'field', _marker, {'lockon_target_marker': True}),
     'lockon_threat_marks': Spec(('lockon_threat_marks',), scene_threat, 'field', _threat,
                                 {'lockon_threat_marks': 'marks'}),
+    'tag_team_rush_show_meter': Spec(('tag_team_rush_show_meter', 'tag_team_rush_enabled', 'show_native_hud',
+                                      'show_hud_portraits', 'language'), scene_meter, 'sky',
+                                     _all(_tag, _off('tag_team_rush_show_meter')),
+                                     {'tag_team_rush_enabled': True, 'tag_team_rush_show_meter': True}),
     # Split-screen HUD
     'split_hud_style': Spec(('split_hud_style', 'show_native_hud', 'show_hud_portraits'), scene_panel(), 'sky',
                             _hud_on, {'show_native_hud': True}),

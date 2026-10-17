@@ -16,7 +16,7 @@ import tag_rush_recovery as recovery
 RESET,TICK,FINAL,APPLY = 0x06DAC000,0x06DAC800,0x06DAE000,0x06DAE800
 TABLE,STATE,END = 0x06DAF400,0x06DAFC00,0x06DB0000
 MAGIC=0x54444831
-VARIANTS=('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
+from tag_rush_choreography import VARIANTS
 C=dict(magic=0,manager=4,count=8,bank=12,cursor=16,budget=20,paid=24,
        loss=28,finalized=32,table=36,events=40,goku_bank=44,goku_loss=48,sacrifice=52)
 SACRIFICE = 0x06E7C000
@@ -54,8 +54,12 @@ def schedules(pack=None):
             if row['flags']&assets.FINISHER and row['flags']&(assets.BEAM_LEAD|assets.BEAM_PARTNER):
                 if burst is not None:raise ValueError('Invalid tag damage beam finisher')
                 import tag_rush_choreography as choreography
-                burst=(phase,choreography.beam_burst_frame(duration,custom=bool(row['flags']&assets.CUSTOM_FINISHER)))
-        if not contacts and not (name=='early_goku_piccolo' and burst):
+                frame=(row['burst_frame'] if 'burst_frame'in row else
+                       choreography.beam_burst_frame(duration,custom=bool(row['flags']&assets.CUSTOM_FINISHER)))
+                if type(frame)is not int or not 0<=frame<=duration:
+                    raise ValueError('Tag beam burst falls outside its firing phase')
+                burst=(phase,frame)
+        if not contacts and not (name in ('early_goku_piccolo','blue_galick_kamehameha','super_galick_pair') and burst):
             raise ValueError('Tag attack has no reviewed damage contacts')
         if burst:
             contacts.discard(burst)

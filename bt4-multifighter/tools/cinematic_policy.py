@@ -117,6 +117,21 @@ HOLD_UPDATES, HOLD_RELEASE, HOLD_FORGET, HOLD_MATCH = ticks(900), ticks(120), ti
 # the latches refused or dropped for a foreign camera.
 PROTECT, FOREIGN, PENDING = 0x0711A400, 0x0711A800, 0x0711AC00
 PROTECT_LAST, PROTECT_UPDATES, LATCH_REFUSED = 116, 120, 124
+# Admitted-form gate (form_gate emissions). An extra's transformation or fusion
+# pose waits in the native handler until the private worker claims its reload
+# row; a stop that began at the pose held every fighter while the request was
+# refused (no texture group) or was never even published (the fighter whose
+# live special the pose waited behind was itself held), until the 900-update
+# bound (TTM-MATCH-21). FORM_GATE answers whether the pose may own the shared
+# stop: native leaders and matches without the private worker always may; an
+# extra may once a form request published during this pose has been claimed
+# (status 2..6). FORM_LIVE[physical] holds the row generation FORM_TRACK saw
+# while the fighter was last outside the form family.
+FORM_GATE, FORM_TRACK = 0x0711AE00, 0x0711AF00
+FORM_LIVE = 0xC0
+# Set by prepare for the frame an extra's admitted (worker-claimed) form forced the whole native
+# activation stop; store() then never stops another activation's participants (see store).
+FORM_FORCE = 0xBC
 # Native return addresses with their proven actor register and displacement.
 SCRIPT_ACTORS = {
     (16,0):(A(0x1C1E2C),A(0x1D64CC),A(0x200AB4)),
@@ -216,12 +231,13 @@ def classify():
     return a.finish()
 
 
-def prepare(shared_stop=True,participants=False):
+def prepare(shared_stop=True,participants=False,form_gate=False):
     import special_camera_arbitration as arbitration
     bail='bail' if shared_stop else 'done'
     a=Assembler(PREPARE);save(a)
     a.call(OLD_PREPARE)
     a.li(8,CONTROL);a.sw(0,8,24);a.sw(0,8,28);a.sw(0,8,32)
+    if form_gate:a.sw(0,8,FORM_FORCE)
     if shared_stop:
         a.sw(0,8,SHARED_STOP)
         # One frame, one step of the latched presentation's bounded life.
@@ -267,6 +283,16 @@ def prepare(shared_stop=True,participants=False):
     a.addiu(23,0,1);a.r(4,23,17,23);a.r(0x25,18,18,23);a.r(0x25,20,20,23)
     a.lw(4,22,2376);a.call(CLASSIFY);a.addiu(8,0,3);a.branch(4,2,8,bail)
     a.branch(4,2,0,'ordinary')
+    if form_gate:
+        # An extra's form whose reload was never claimed keeps the unchecked
+        # (independent) treatment: nobody is stopped for a pose that waits.
+        a.addiu(8,0,2);a.branch(5,2,8,'category_checked')
+        a.move(4,17);a.call(FORM_GATE);a.branch(4,2,0,'protected_pair')
+        a.i(11,8,17,2);a.branch(5,8,0,'gate_leader')
+        a.li(8,CONTROL);a.lw(9,8,20);a.branch(4,9,0,'gate_leader')
+        a.addiu(9,0,1);a.sw(9,8,FORM_FORCE)
+        a.label('gate_leader');a.addiu(2,0,2)
+        a.label('category_checked')
     a.r(0,8,0,2,2);a.li(9,CONTROL+12);a.r(0x2D,8,8,9);a.lw(8,8)
     a.branch(4,8,0,'protected_pair');a.addiu(21,0,1)
     if shared_stop:
@@ -314,10 +340,22 @@ def prepare(shared_stop=True,participants=False):
     data=a.finish();assert len(data)<STORE-PREPARE;return data
 
 
-def store():
+def store(form_gate=False):
+    """form_gate: while an extra's admitted form forced the whole native stop (FORM_FORCE), a fighter
+    in another live activation or its rush pair (pause CONTROL+52: owners and their reciprocal
+    partners) is never stopped by it, nor is the transformation stopped by that fighter's activation. Each needed the other to finish: the
+    form never acknowledged its staged body, every fighter stood still until the 900-update bound and
+    the worker then failed the interrupted acknowledgment (TTM-MATCH-08). The shared hold still holds
+    the other performer (ultimate_stop) until the form ends."""
     a=Assembler(STORE);regs=(8,9,10,11);save(a,regs,0x20)
     a.li(8,CONTROL);a.lw(9,8,24);a.branch(4,9,0,'old')
-    a.lw(9,8,32);a.branch(5,9,0,'native')
+    if form_gate:
+        a.lw(9,8,32);a.branch(4,9,0,'masked')
+        a.lw(9,8,FORM_FORCE);a.branch(4,9,0,'native')
+        a.addiu(9,17,-1);a.addiu(10,0,1);a.r(4,10,9,10)
+        a.li(11,pause.CONTROL);a.lw(11,11,52);a.r(0x24,11,11,10);a.branch(5,11,0,'skip')
+        a.jump('native');a.label('masked')
+    else:a.lw(9,8,32);a.branch(5,9,0,'native')
     a.addiu(9,17,-1);a.addiu(10,0,1);a.r(4,10,9,10)
     a.lw(9,8,28);a.r(0x24,9,9,10);a.branch(4,9,0,'skip')
     a.li(8,pause.CONTROL);a.lw(9,8,28);a.r(0x25,9,9,10);a.sw(9,8,28)
@@ -738,7 +776,7 @@ def priority(enhanced=True,complete_ultimates=True,shared_stop=True,rush_support
     data=a.finish();assert len(data)<SHARED_FORM-PRIORITY;return data
 
 
-def shared_form_owner(script_stop_fix=True):
+def shared_form_owner(script_stop_fix=True,form_gate=False):
     """v0=the one living transformation owning the shared view, v1=1.
 
     Transformation close-ups are actor-local by design, so this needs no
@@ -769,6 +807,7 @@ def shared_form_owner(script_stop_fix=True):
     a.branch(4,8,0,'next')
     a.lw(4,19,2376);a.call(CLASSIFY);a.addiu(8,0,2);a.branch(5,2,8,'next')
     a.move(4,18);a.call(continuity.LOOKUP);a.branch(4,3,0,'next')
+    if form_gate:a.move(4,18);a.call(FORM_GATE);a.branch(4,2,0,'next')
     a.addiu(21,21,1);a.move(22,19);a.move(23,18)
     a.label('next');a.addiu(18,18,1);a.branch(5,18,16,'scan')
     a.addiu(8,0,1);a.branch(5,21,8,'no')
@@ -1202,11 +1241,67 @@ def pending():
     contact.paired_pending(a,4,'yes')
     a.move(2,0);a.jr()
     a.label('yes');a.addiu(2,0,1);a.jr()
-    data=a.finish();assert len(data)<CLONES[0]-PENDING;return data
+    data=a.finish();assert len(data)<FORM_GATE-PENDING;return data
 
 
-def ultimate_frame(script_stop_fix=True):
+def form_gate_code():
+    """a0 = physical -> v0 = 1 while its form may own the shared stop (see FORM_LIVE).
+
+    Leaf: v0 only, t0..t2 restored. Native leaders and matches without the
+    private form worker keep today's answer (1). An extra's pose answers 1 only
+    for a form row (kind 1) published during this pose (its generation differs
+    from the one FORM_TRACK saw while the fighter was outside the form family)
+    that the worker has claimed: status 2..5, or 6 for this pose's own burst
+    after FINISH. A pending (1) or never published request answers 0, and so
+    does an earlier pose's or a costume reload's final status.
+    """
+    import extra_reload_requests as requests
+    import extra_reload_forms as forms
+    a=Assembler(FORM_GATE);a.addiu(29,29,-0x20)
+    for i,r in enumerate((8,9,10)):a.i(63,r,29,8*i)
+    a.addiu(2,0,1);a.i(11,8,4,2);a.branch(5,8,0,'done')
+    a.li(8,forms.CONTROL);a.lw(8,8);a.branch(5,8,2,'done')
+    a.i(11,8,4,modes.emitted_actors());a.branch(4,8,0,'done')
+    a.move(2,0)
+    a.addiu(8,4,-2);a.r(0,8,0,8,6);a.li(9,requests.RECORDS);a.r(0x2D,8,8,9)
+    a.lw(9,8,56);a.addiu(10,0,1);a.branch(5,9,10,'done')
+    a.lw(9,8);a.li(10,CONTROL+FORM_LIVE);a.r(0,2,0,4,2);a.r(0x2D,10,10,2);a.lw(10,10)
+    a.move(2,0);a.branch(4,9,10,'done')
+    a.lw(9,8,4);a.addiu(9,9,-2);a.i(11,2,9,5)
+    a.label('done')
+    for i,r in enumerate((8,9,10)):a.i(55,r,29,8*i)
+    a.addiu(29,29,0x20);a.jr()
+    data=a.finish();assert len(data)<FORM_TRACK-FORM_GATE;return data
+
+
+def form_track():
+    """Once per update: FORM_LIVE[physical] = the extra's reload-row generation while it is outside
+    236..242 (or not registered), so FORM_GATE can tell a request published during the pose.
+
+    Leaf; every register it uses is restored, so it runs before PREPARE's save."""
+    import extra_reload_requests as requests
+    a=Assembler(FORM_TRACK);a.addiu(29,29,-0x30)
+    for i,r in enumerate((8,9,10,11,12)):a.i(63,r,29,8*i)
+    a.li(8,core.MODE);a.lw(9,8);a.addiu(10,0,1);a.branch(5,9,10,'done')
+    a.lw(9,8,4);a.i(11,10,9,modes.emitted_actors()+1);a.branch(4,10,0,'done')
+    a.addiu(10,0,2)
+    a.label('scan');a.r(0x2B,11,10,9);a.branch(4,11,0,'done')
+    a.li(11,core.POINTERS);a.r(0,12,0,10,2);a.r(0x2D,11,11,12);a.lw(11,11)
+    a.li(12,0x100000);a.r(0x2B,12,11,12);a.branch(5,12,0,'outside')
+    a.li(12,0x08000000-0x1600);a.r(0x2B,12,11,12);a.branch(4,12,0,'outside')
+    a.lw(11,11,2376);a.addiu(11,11,-236);a.i(11,11,11,7);a.branch(5,11,0,'next')
+    a.label('outside');a.addiu(11,10,-2);a.r(0,11,0,11,6);a.li(12,requests.RECORDS);a.r(0x2D,11,11,12);a.lw(11,11)
+    a.li(12,CONTROL+FORM_LIVE);a.r(0,8,0,10,2);a.r(0x2D,12,12,8);a.sw(11,12)
+    a.label('next');a.addiu(10,10,1);a.jump('scan')
+    a.label('done')
+    for i,r in enumerate((8,9,10,11,12)):a.i(55,r,29,8*i)
+    a.addiu(29,29,0x30);a.jr()
+    data=a.finish();assert FORM_TRACK+len(data)<=CLONES[0];return data
+
+
+def ultimate_frame(script_stop_fix=True,form_gate=False):
     a=Assembler(ULTIMATE_FRAME);a.addiu(29,29,-16);a.i(63,31,29,0)
+    if form_gate:a.call(FORM_TRACK)
     save(a,pause.SAVED,0x100);a.call(PREPARE);restore(a,pause.SAVED,0x100)
     a.call(pause.NATIVE)
     if script_stop_fix:a.call(BYSTANDERS)
@@ -1314,16 +1409,18 @@ def result_bridge(base,native,kind):
 
 
 def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activation_cameras=True,shared_stop=True,script_stop_fix=True,rush_support=True,
-            participants=False,independent=True):
+            participants=False,independent=True,form_gate=False):
     """participants=False is exactly the beta.36 emission (old receipts and installs); build_memory always
-    asks for participants=True, which adds PROTECT/FOREIGN and their call sites."""
+    asks for participants=True, which adds PROTECT/FOREIGN and their call sites, and form_gate=True,
+    which adds FORM_GATE/FORM_TRACK and their call sites (form_gate=False is the 13.3 emission)."""
     old_prep=fresh.rebound(pause.prepare_code,PREPARE=OLD_PREPARE)(legacy=False)
     old_store=fresh.rebound(pause.store_code,STORE=OLD_STORE)(legacy=False)
     assert OLD_STORE+len(old_store)<=PROTECT
     activation_cameras=activation_cameras and native_cameras and complete_ultimates
     shared_stop=shared_stop and activation_cameras
     participants=participants and complete_ultimates
-    parts=[(CODE,selector(complete_ultimates,activation_cameras,shared_stop,rush_support=rush_support)),(PREPARE,prepare(shared_stop,participants and shared_stop)),(STORE,store()),(CLASSIFY,classify()),
+    form_gate=form_gate and participants and shared_stop and script_stop_fix
+    parts=[(CODE,selector(complete_ultimates,activation_cameras,shared_stop,rush_support=rush_support)),(PREPARE,prepare(shared_stop,participants and shared_stop,form_gate)),(STORE,store(form_gate)),(CLASSIFY,classify()),
             (VIEW,view(enhanced)),(BIND,bind(complete_ultimates,shared_stop,rush_support)),(SUBJECT,subject(enhanced)),(PRIORITY,priority(enhanced,complete_ultimates,shared_stop,rush_support)),
             (RESULT_ACTOR,result_bridge(RESULT_ACTOR,A(0x1DC178),'actor')),
             (RESULT_MODEL,result_bridge(RESULT_MODEL,A(0x12B1D0),'model')),
@@ -1333,13 +1430,14 @@ def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activati
     if complete_ultimates:
         parts += [(ULTIMATE_OWNER,ultimate_owner(native_cameras,activation_cameras,shared_stop,script_stop_fix,
                                                  participants=participants)),
-                  (ULTIMATE_STOP,ultimate_stop(shared_stop,rush_support,participants)),(ULTIMATE_FRAME,ultimate_frame(script_stop_fix))]
+                  (ULTIMATE_STOP,ultimate_stop(shared_stop,rush_support,participants)),(ULTIMATE_FRAME,ultimate_frame(script_stop_fix,form_gate))]
         if native_cameras:parts.append((NATIVE_CAMERA_OWNER,native_camera_owner()))
-        if shared_stop:parts.append((SHARED_FORM,shared_form_owner(script_stop_fix)))
+        if shared_stop:parts.append((SHARED_FORM,shared_form_owner(script_stop_fix,form_gate)))
         if script_stop_fix:parts += [(SCRIPT_STOP,script_stop()),(BYSTANDERS,bystanders(rush_support))]
         if participants:
             parts += [(PROTECT,protect(independent)),(PENDING,pending())]
             if independent:parts.append((PROTECT_ACTIVE,protect_active()))
+            if form_gate:parts += [(FORM_GATE,form_gate_code()),(FORM_TRACK,form_track())]
         if participants and shared_stop:parts.append((FOREIGN,foreign()))
     return parts
 
@@ -1382,14 +1480,15 @@ def validate_memory(ram,manager=None,count=None):
         raise ValueError('Cinematic policy belongs to another capture')
     recognized=complete=None
     # participants=True is the beta.37 emission; False is every earlier one, upgraded in place by build_memory.
-    for options in [(c,n,e,a,s,f,r,q) for c in (True,False) for n in ((True,False) if c else (False,))
+    # form_gate=True (FORM_GATE) is the current emission; the same options without it are 13.3's.
+    for options in [(c,n,e,a,s,f,r,q,g) for c in (True,False) for n in ((True,False) if c else (False,))
                     for e in (True,False) for a in ((True,False) if n else (False,))
                     for s in ((True,False) if a else (False,)) for f in (True,False) for r in (True,False)
-                    for q in ((True,False) if c else (False,))]:
-        complete,native_cameras,enhanced,activation,shared,stop_fix,rush_support,participants=options
+                    for q in ((True,False) if c else (False,)) for g in ((True,False) if q and s and f else (False,))]:
+        complete,native_cameras,enhanced,activation,shared,stop_fix,rush_support,participants,gated=options
         candidate=program(enhanced,complete_ultimates=complete,native_cameras=native_cameras,
                           activation_cameras=activation,shared_stop=shared,script_stop_fix=stop_fix,rush_support=rush_support,
-                          participants=participants)+hooks(complete,stop_fix)
+                          participants=participants,form_gate=gated)+hooks(complete,stop_fix)
         candidate=[(p,selector_dependency(ram,p,b)) for p,b in candidate]
         if all(ram[p:p+len(data)]==data for p,data in candidate):
             recognized=candidate;break
@@ -1448,7 +1547,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
     installed=u(CONTROL)==MAGIC
     if installed:
         installed_parts=validate_memory(ram,manager,count)
-        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True)+hooks()]
+        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True,form_gate=True)+hooks()]
         parts=[]
         if installed_parts!=current:
             old=dict(installed_parts)
@@ -1479,7 +1578,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
             if ram[p:p+len(data)]!=data:raise ValueError(f'Pre-cinematic hook changed at{p:08X}')
         control=bytearray(0x100);struct.pack_into('<6I',control,0,MAGIC,manager,count,battle,int(ultimate),int(transformation))
         struct.pack_into('<I',control,TRANSFORM_VIEW,shared_form)
-        parts=program(participants=True)+hooks()+[(CONTROL,bytes(control))]
+        parts=program(participants=True,form_gate=True)+hooks()+[(CONTROL,bytes(control))]
     if installed:
         for off,value in ((16,ultimate),(20,transformation),(TRANSFORM_VIEW,shared_form)):
             data=struct.pack('<I',int(value))

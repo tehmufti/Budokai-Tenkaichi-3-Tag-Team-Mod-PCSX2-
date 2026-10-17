@@ -93,6 +93,8 @@ OPTIONS = {
     'tag_team_rush_charge_seconds': (25,'int',1,600,'Tag-team rush','Time to fill the tag meter (seconds)'),
     'tag_team_rush_keep_meter_on_miss': (False,'bool',None,None,'Tag-team rush','Keep meter after a missed rush'),
     'tag_team_rush_training_full': (False,'bool',None,None,'Training','Always full tag meter in Modded Training'),
+    # The meter under each status panel (tag_rush_hud). Off installs no meter drawing; tag attacks are unchanged.
+    'tag_team_rush_show_meter': (True,'bool',None,None,'HUD','Tag attack meter'),
     'tag_team_rush_shared_camera': (False,'bool',None,None,'Tag-team rush','Tag-team rush: shared camera and pause'),
     'tag_team_rush_sacrifice_enabled': (True,'bool',None,None,'Tag-team rush','Goku and Piccolo: sacrifice damage'),
     'tag_team_rush_sacrifice_multiplier': (2.0,'float',1.0,5.0,'Tag-team rush','Sacrifice damage multiplier (Goku and enemy)'),

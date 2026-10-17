@@ -113,6 +113,8 @@ def payload_files(root=ROOT):
         add(project/'tools/vendor/game_controller_db-LICENSE.txt',prefix+'tools/vendor/game_controller_db-LICENSE.txt')
         for path in bundled_fonts(project):add(path,prefix+'tools/vendor/fonts/'+path.name)
         add(project/'assets/native-menu-pre-settings.json',prefix+'assets/native-menu-pre-settings.json')
+        if adapter=='bt4-b14-rev2-eng':
+            add(project/'tools/tag_rush_blue_motion.bin',prefix+'tools/tag_rush_blue_motion.bin')
         # Ship authored presets, never the private next-battle queue or a
         # player's custom mission files. Keep this list explicit for releases.
         scenarios=['Examples/namek-piccolo-arrives.json','Examples/saiyans-goku-arrives.json',

@@ -27,6 +27,7 @@ import tag_rush_recovery as fall_recovery
 import tag_rush_damage as damage_schedule
 import tag_rush_retarget as retarget
 import tag_rush_special_pair as special
+import tag_rush_blue_native as blue
 
 START, STEP, FINISH = tag.START, tag.STEP, tag.FINISH
 START_BODY,STEP_BODY,BODIES_END=0x06D89800,0x06D8B800,0x06D8D800
@@ -244,9 +245,28 @@ def start_code():
     a.sw(9,29,0x300);a.sw(8,29,0x304)
     a.label('special_variant');a.li(20,special.VARIANT)
     a.label('ordinary_variant')
+    # Exact BT4 forms only. Normalize cinematic roles after consent, retaining
+    # the coordinator's physical meter owners even when Vegeta initiated.
+    for variant,leads,partners in zip(blue.VARIANTS,blue.LEADS,blue.PARTNERS):
+        for lead in leads:a.li(8,lead);a.branch(4,24,8,f'blue_lead{variant}')
+        a.jump(f'blue_reverse{variant}')
+        a.label(f'blue_lead{variant}')
+        for partner in partners:a.li(8,partner);a.branch(4,25,8,f'blue_forward{variant}')
+        a.label(f'blue_reverse{variant}')
+        for lead in leads:a.li(8,lead);a.branch(4,25,8,f'blue_partner{variant}')
+        a.jump(f'blue_next{variant}')
+        a.label(f'blue_partner{variant}')
+        for partner in partners:a.li(8,partner);a.branch(4,24,8,f'blue_swap{variant}')
+        a.jump(f'blue_next{variant}')
+        a.label(f'blue_swap{variant}');a.lw(8,29,0x300);a.lw(9,29,0x304)
+        a.sw(9,29,0x300);a.sw(8,29,0x304)
+        a.label(f'blue_forward{variant}');a.li(20,variant);a.jump('blue_selected')
+        a.label(f'blue_next{variant}')
+    a.label('blue_selected')
     a.lw(8,19,tag.C['scene_table']);a.li(9,TABLE);a.branch(5,8,9,'reject')
-    a.li(9,special.VARIANT);a.branch(5,20,9,'ordinary_table')
-    a.li(8,CONTROL+special.TABLE_OFFSET);a.jump('selected_table')
+    for variant,offset in ((special.VARIANT,special.TABLE_OFFSET),*zip(blue.VARIANTS,blue.TABLE_OFFSETS)):
+        a.li(9,variant);a.branch(5,20,9,f'table_next{variant}')
+        a.li(8,CONTROL+offset);a.jump('selected_table');a.label(f'table_next{variant}')
     a.label('ordinary_table');a.r(0,9,0,20,3);a.r(0x21,8,8,9)
     a.label('selected_table');a.lw(21,8);a.lw(25,8,4)
     a.addiu(9,25,-5);a.i(11,9,9,choreography.MAX_PHASES-4);a.branch(4,9,0,'reject');a.sw(25,29,0x318)
@@ -268,6 +288,10 @@ def start_code():
     a.li(12,STAGING);a.lw(12,12);full.pointer(a,12,4*choreography.MAX_PHASES*16,'reject')
     a.li(22,0);a.li(10,TABLE)
     a.label('previous_staging');a.branch(4,22,20,'staging_base')
+    for variant,offset in ((special.VARIANT,special.TABLE_OFFSET),*zip(blue.VARIANTS,blue.TABLE_OFFSETS)):
+        a.li(9,variant);a.branch(5,22,9,f'previous_next{variant}')
+        a.li(10,CONTROL+offset);a.jump('previous_table_ready');a.label(f'previous_next{variant}')
+    a.label('previous_table_ready')
     a.lw(9,10,4);a.addiu(8,9,-5);a.i(11,8,8,choreography.MAX_PHASES-4);a.branch(4,8,0,'reject')
     a.r(0,9,0,9,4);a.r(0x21,12,12,9);a.addiu(10,10,8);a.addiu(22,22,1);a.jump('previous_staging')
     a.label('staging_base')
@@ -305,6 +329,7 @@ def start_code():
     copy_words(a,23,2384,21,R['original'],16);copy_words(a,23,2400,21,R['rotation'],16)
     copy_words(a,22,2420,21,R['bookkeeping'],64);copy_words(a,23,3184,21,R['clocks'],28)
     a.sw(0,21,R['borrowed']);a.sw(0,21,R['loaded_clip']);a.sw(0,21,R['recovering'])
+    a.sw(0,21,blue.END_FACING)
     for off in (native_pose.ACTIVE,native_pose.CLIP,native_pose.POINTER):a.sw(0,21,off)
     a.addiu(20,20,1);a.addiu(21,21,STRIDE);a.li(8,3);a.branch(5,20,8,'capture')
     # Capture the entire cast before the first outgoing native action cleanup.
@@ -330,6 +355,8 @@ def start_code():
     a.li(21,tag.METERS);a.lw(22,19,8);a.li(8,-1)
     a.label('offers');a.sw(8,21,tag.T['inviter']);a.sw(0,21,tag.T['expiry'])
     a.addiu(21,21,tag.METER_STRIDE);a.addiu(22,22,-1);a.branch(5,22,0,'offers')
+    # The paired variants begin with the shared native opening; their own
+    # anchor and dash shells start at the split (blue.SPLIT), not here.
     a.call(audio.RESET);a.call(damage_schedule.RESET);a.call(STEP);a.li(2,1);a.jump('done')
     # This can only mean a synchronous native callback replaced a captured
     # model after all preflights. Never publish a partially captured scene.
@@ -354,6 +381,9 @@ def step_code():
     a.r(0,8,0,18,6);a.lw(19,17,S['base']);a.r(0x21,19,19,8);a.sw(19,17,S['descriptor'])
     a.lw(8,17,S['entered']);a.branch(4,8,18,'animate')
     a.sw(18,17,S['entered']);a.sw(0,17,S['ticks']);a.move(20,0);a.li(21,ROWS)
+    a.lw(8,19,28);a.i(12,8,8,blue.FLAG);a.branch(4,8,0,'split_done')
+    a.li(8,blue.INTRO);a.branch(5,18,8,'split_done');a.call(blue.SPLIT);a.branch(4,2,0,'cancel')
+    a.label('split_done')
     a.move(4,18);a.call(staging.QUERY);a.sw(2,17,S['placement'])
     a.lw(8,19,28);a.i(12,8,8,assets.CUSTOM_FINISHER);a.branch(4,8,0,'placement_valid')
     a.branch(4,2,0,'cancel');a.label('placement_valid')
@@ -409,15 +439,24 @@ def step_code():
     a.label('frame_ok');a.i(49,1,23,3192);a.i(57,1,23,3196);a.i(57,0,23,3192)
     a.sw(0,23,3200)
     a.move(4,23);a.call(A(0x24C958));a.move(4,23);a.call(A(0x24E2B0));a.move(4,23);a.call(A(0x24E3F8))
+    a.lw(8,19,28);a.i(12,8,8,blue.FLAG);a.branch(4,8,0,'blue_root_done')
+    a.move(4,20);a.move(5,21);a.call(blue.ROOT_STEP);a.branch(4,2,0,'cancel')
+    a.label('blue_root_done')
     a.label('pose_next');a.addiu(20,20,1);a.addiu(21,21,STRIDE);a.li(8,3);a.branch(5,20,8,'pose')
     a.lw(8,19,28);a.i(12,8,8,assets.CUSTOM_FINISHER);a.branch(5,8,0,'aligned')
     a.call(ALIGN);a.branch(4,2,0,'cancel');a.jump('placement_finished')
-    a.label('aligned');a.call(staging.TICK);a.branch(4,2,0,'cancel')
+    a.label('aligned');a.lw(8,19,28);a.i(12,8,8,blue.FLAG);a.branch(4,8,0,'ordinary_placement')
+    # Authored paired scenes: one overlap guard after all three poses.
+    a.call(blue.SEPARATE);a.branch(4,2,0,'cancel');a.jump('placement_finished')
+    a.label('ordinary_placement')
+    a.call(staging.TICK);a.branch(4,2,0,'cancel')
     a.lw(8,19,28);a.i(12,8,8,special.RESTRAIN);a.branch(4,8,0,'placement_finished')
     a.call(ALIGN);a.branch(4,2,0,'cancel');a.label('placement_finished')
     a.call(FX_STEP);a.branch(4,2,0,'cancel')
     a.call(audio.TICK)
     a.call(damage_schedule.TICK);a.branch(4,2,0,'cancel')
+    a.lw(8,19,28);a.i(12,8,8,blue.FLAG);a.branch(4,8,0,'ordinary_camera')
+    a.call(blue.CAMERA_STEP);a.branch(4,2,0,'cancel');a.jump('camera_ready');a.label('ordinary_camera')
     # Disc-authored shots use the real lead root and the same phase clock as
     # the borrowed poses. The fallback remains for incomplete research packs.
     a.lw(4,17,S['phase']);a.lw(5,17,S['ticks']);a.li(8,ROWS)
@@ -493,6 +532,9 @@ def finish_code():
     a.lw(8,16,tag.C['active']);a.li(9,1);a.branch(5,8,9,'done')
     a.lw(8,16,4);a.lw(9,28,-22364);a.branch(5,8,9,'stale_world')
     a.lw(8,17,S['cancelled']);a.r(0x25,18,18,8);a.sw(18,17,S['cancelled'])
+    a.lw(8,17,S['retiring']);a.branch(5,8,0,'aura_retired')
+    a.lw(8,17,S['descriptor']);a.lw(8,8,28);a.i(12,8,8,blue.FLAG);a.branch(4,8,0,'aura_retired')
+    a.call(blue.AURA_STOP);a.label('aura_retired')
     a.li(8,1);a.sw(8,17,S['retiring'])
     a.lw(8,17,S['settle_ticks']);a.addiu(8,8,1);a.sw(8,17,S['settle_ticks'])
     a.call(effects.STOP)
@@ -529,6 +571,8 @@ def finish_code():
     a.label('endpoints');identity(a,21,'end_next','end')
     copy_words(a,21,R['original'],21,R['end'],16)
     a.lw(8,21,R['borrowed']);a.branch(4,8,0,'end_next')
+    a.lw(8,17,S['descriptor']);a.lw(8,8,28);a.i(12,8,8,blue.FLAG);a.branch(4,8,0,'ordinary_endpoint')
+    copy_words(a,23,2384,21,R['end'],16);a.jump('end_next');a.label('ordinary_endpoint')
     a.lw(10,23,3436+4*2);full.pointer(a,10,80,'end_next');finite(a,10,(64,68,72),'end_next')
     for off in range(0,12,4):
         a.i(49,0,10,64+off);a.i(49,1,21,R['bone_offset']+off);fp.fop(a,1,0,0,1);a.i(57,0,21,R['end']+off)
@@ -565,7 +609,11 @@ def finish_code():
     a.move(4,22);a.lw(5,21,R['idle_animation'])
     a.emit((17<<26)|(4<<21)|(12<<11));a.call(A(0x1C3E60))
     a.label('restore_place')
-    a.move(4,22);a.addiu(5,21,R['end']);a.addiu(6,21,R['rotation']);a.call(safety.PLACE)
+    a.addiu(6,21,R['rotation']);a.branch(5,18,0,'restore_facing_ready')
+    a.lw(8,16,tag.C['variant']);a.li(9,6);a.branch(5,8,9,'restore_facing_ready')
+    a.lw(8,21,blue.END_FACING);a.li(9,blue.MAGIC);a.branch(5,8,9,'restore_facing_ready')
+    a.addiu(6,21,blue.END_ROTATION)
+    a.label('restore_facing_ready');a.move(4,22);a.addiu(5,21,R['end']);a.call(safety.PLACE)
     a.branch(5,2,0,'placed')
     # Invalid live terrain leaves the last safe original position as fallback.
     a.move(4,22);a.addiu(5,21,R['original']);a.addiu(6,21,R['rotation']);a.call(safety.PLACE)
@@ -639,7 +687,11 @@ def finish_code():
 def fx_step_code():
     """Internal STEP continuation; native FX own their updates/retirement."""
     a=Assembler(FX_BODY);tag.save(a)
-    a.lw(18,19,28);a.i(12,8,18,assets.BEAM_LEAD|assets.BEAM_PARTNER);a.branch(4,8,0,'update')
+    # Authored paired scenes keep one emitter per role across phases.
+    a.lw(18,19,28);a.i(12,8,18,blue.FLAG);a.branch(4,8,0,'generic_fx')
+    a.call(blue.FX);a.jump('done')
+    a.label('generic_fx')
+    a.i(12,8,18,assets.BEAM_LEAD|assets.BEAM_PARTNER);a.branch(4,8,0,'update')
     a.lw(8,17,S['fx_started']);a.li(9,1);a.branch(4,8,9,'update')
     a.li(20,160);a.i(12,8,18,assets.CUSTOM_FINISHER);a.branch(4,8,0,'native_fire')
     a.lw(8,17,S['placement']);full.pointer(a,8,64,'no',temp=10);a.lw(20,8,8)
@@ -678,7 +730,9 @@ def fx_step_code():
     a.lw(8,17,S['exploded']);a.branch(5,8,0,'updated')
     a.lw(8,17,S['fx_started']);a.li(9,1);a.branch(5,8,9,'updated')
     a.i(12,8,18,assets.CUSTOM_FINISHER);a.branch(4,8,0,'native_burst_time')
-    a.li(8,choreography.BEAM_BURST);a.jump('burst_time_ready')
+    a.li(8,choreography.BEAM_BURST)
+    a.i(12,9,18,blue.FLAG);a.branch(4,9,0,'burst_time_ready')
+    a.lw(8,17,S['placement']);a.lw(8,8,12);a.jump('burst_time_ready')
     a.label('native_burst_time');a.lw(8,19);a.addiu(8,8,-30)
     a.label('burst_time_ready');a.li(9,ACTOR_HZ)
     a.r(0x19,0,8,9);a.r(0x12,10,0,0)
@@ -787,6 +841,7 @@ def pieces():
     result=[(START,jump(START_BODY)),(START_BODY,start_code()),(STEP,jump(STEP_BODY)),(STEP_BODY,step_code()),
             (ANCHOR,anchor_code()),(FINISH,jump(FINISH_BODY)),(FINISH_BODY,finish_code()),(FX_STEP,jump(FX_BODY)),(FX_BODY,fx_step_code()),
             (ALIGN,jump(special.ALIGN_BODY)),(special.ALIGN_BODY,align_code()),(STATE,bytes(END-STATE)),(RECOVERY,recovery_code())]+shots.pieces()+staging.pieces()+native_pose.pieces()+fall_recovery.pieces()+damage_schedule.pieces()+retarget.pieces()+nelson.pieces()
+    result+=blue.pieces()
     result.sort()
     for (p,b),(q,_) in zip(result,result[1:]):assert p+len(b)<=q,(hex(p),len(b),hex(q))
     return result+approach.pieces()
@@ -813,7 +868,8 @@ def installation(pack, roster=None, settings=None, *, local_playtest=False, revi
         words[shots.TABLE_OFFSET]=camera_asset['table_address'];words[shots.MAGIC_OFFSET]=shots.MAGIC
     for index,name in enumerate(variants):
         row=pack['variants'][name]
-        at=special.TABLE_OFFSET if name==special.NAME else 0x80+8*index
+        at=(blue.TABLE_OFFSETS[blue.NAMES.index(name)] if name in blue.NAMES else
+            special.TABLE_OFFSET if name==special.NAME else 0x80+8*index)
         words[at]=row['address'];words[at+4]=row['count']
     import tag_rush_approach as approach
     import tag_rush_voices as voices

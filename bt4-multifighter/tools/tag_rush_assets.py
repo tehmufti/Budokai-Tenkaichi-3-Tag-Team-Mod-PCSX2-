@@ -80,6 +80,8 @@ def timeline(variant: str) -> tuple[Phase, ...]:
     """
     import tag_rush_choreography as choreography
     import tag_rush_special_pair as special
+    import tag_rush_blue_native as blue
+    if variant in blue.NAMES:return blue.timeline(variant)
     if variant==special.NAME:return special.timeline()
     sources={name:ClipSource(101,row[0]) for name,row in choreography.DERIVED.items()}
     def phase(name,frames,roles,flags=0):
@@ -550,11 +552,14 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
     import tag_rush_special_pair as special
     variants = {name: timeline(name) for name in choreography.VARIANTS}
     special_pack=special.build(iso)
+    import tag_rush_blue_native as blue
+    blue_pack=blue.build(iso)
     decoded = prepared_clips(iso)
     source_audio = {source: source_audio_cues(raw) for source, raw in decoded.items()}
     descriptor_size = sum(len(phases) for phases in variants.values()) * DESCRIPTOR_STRIDE
     clip_base = (base + descriptor_size + 15) & ~15
     data, pointers, provenance = bytearray(), dict(special_pack['pointers']), list(special_pack['clips'])
+    pointers.update(blue_pack['pointers']);provenance.extend(blue_pack['clips'])
     for source, raw in decoded.items():
         data.extend(bytes((-len(data)) % 16))
         pointers[source] = clip_base + len(data)
@@ -599,6 +604,7 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
     staging = read_native_staging(iso)
     for name,phases in variants.items():
         placements=(((0.,0.,0.,0.),)*len(phases) if name==special.NAME else
+                    blue.placements(name,staging) if name in blue.NAMES else
                     staging[:4]+((0.,0.,0.,0.),)*(len(phases)-4))
         for placement in placements:
             data.extend(struct.pack('<4f', *placement))
@@ -641,7 +647,7 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
             addr = base + len(descriptors)
             words = (phase.source_frames, *(pointers.get(role, 0) for role in phase.roles),
                 *phase.starts, phase.flags, *(role.animation if role else 0 for role in phase.roles),
-                *phase.ends, SOURCE_FPS, special_donors if name==special.NAME else
+                *phase.ends, SOURCE_FPS, blue.phase_donors(name,phase_index,dict(role_donors=role_donors,bindings=blue_pack['bindings'])) if name in blue.NAMES else special_donors if name==special.NAME else
                 custom_donors if phase.flags&CUSTOM_FINISHER else role_donors)
             descriptors.extend(struct.pack('<16I', *words))
             audio = tuple(dict(cue, role=role) for role, source in enumerate(phase.roles)
@@ -655,12 +661,13 @@ def build_assets(iso, *, base=BASE, end=END, include_beam=False, include_camera=
             phase_rows.append(dict(name=phase.name, address=addr, source_frames=phase.source_frames,
                 clips=tuple(pointers.get(role, 0) for role in phase.roles), starts=phase.starts,
                 ends=phase.ends, flags=phase.flags, audio_cues=audio))
+            if name in blue.NAMES and phase_index==blue.burst(name)[0]:phase_rows[-1]['burst_frame']=blue.burst(name)[1]
         mapping[name] = dict(address=start, count=len(phases), phases=phase_rows,
             source_frames=sum(phase.source_frames for phase in phases))
-    return dict(blocks=[(base, bytes(descriptors)), (clip_base, bytes(data)),*special_pack['blocks'],*special_beam_blocks], variants=mapping,
+    return dict(blocks=[(base, bytes(descriptors)), (clip_base, bytes(data)),*special_pack['blocks'],*special_beam_blocks,*blue_pack['blocks']], variants=mapping,
         clips=provenance, donor_models=donor_models, role_donors_address=role_donors, beam_asset=beam_info,
         camera_asset=camera_info,choreography_asset=choreography_info,special_beam_asset=special_beam_info,
-        approach=approach_info,
+        approach=approach_info,blue_pair={k:v for k,v in blue_pack.items() if k not in ('blocks','pointers','clips')},
         custom_role_donors_address=custom_donors,
         special_role_donors_address=special_donors,
         special_pair=dict(bytes_used=special_pack['bytes_used'],reviewed=True,donor_model=special_pack['donor_model']),

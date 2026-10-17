@@ -64,7 +64,12 @@ its stage mappings. It leaves an entire map at native size if either view's
 package cannot be converted, and also preserves native size when a destruction
 destination cannot be expanded. Player installs generate their optional image
 under `game/maps/`. The separate BT4 source project has its own build command;
-no expanded BT4 ISO has been generated or played in this pass.
+expanded BT4 Namek and Dying Planet have been checked in fresh matches.
+
+Builder revision 3 also scales the separate animated water/lava meshes,
+their visibility bounds and the gameplay water level. Run **Build expanded
+maps** after updating to replace an older generated image. Old battle
+savestates retain their old stage geometry; start a fresh match.
 
 ## Experimental larger maps (original BT3 build notes)
 

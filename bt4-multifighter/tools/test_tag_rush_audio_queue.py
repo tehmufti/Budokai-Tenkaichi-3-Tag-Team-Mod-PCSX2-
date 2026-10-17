@@ -54,6 +54,21 @@ def enqueue(c,sound=73,position=(10.,-30.,20.,1.)):
 
 
 class DeferredAudioTests(unittest.TestCase):
+    def test_paired_attacks_open_with_the_same_native_startup_as_every_tag(self):
+        from test_tag_rush_approach import machine as approach_machine
+        import tag_rush_approach as rush
+        import tag_rush_blue_native as blue
+        for character in (blue.GOKU,*blue.TRUNKS):
+            # Their dash belongs to variant5's own pursuit after the opening.
+            for reverse in (False,True):
+                c=native_machine(approach_machine());manager=c.u(tag.CONTROL+tag.C['manager'])
+                for index,ident in zip((0,2),(35,character) if reverse else (character,35)):
+                    c.w(c.models[index]+12,ident)
+                    c.write(c.u(scene.ADMISSION)+ident,b'\x03')
+                c.r[4:7]=[0,2,1];run(c,rush.BEGIN);self.assertEqual(c.r[2],1)
+                run(c,A(0x1DA058));run(c,queue.FLUSH)
+                self.assertEqual([r[1]for r in c.played],[rush.NATIVE_START_SOUND],(character,reverse))
+
     def test_native_prelude_sound_survives_frame_clear_once_for_actual_owner(self):
         from test_tag_rush_approach import machine as approach_machine
         import tag_rush_approach as rush

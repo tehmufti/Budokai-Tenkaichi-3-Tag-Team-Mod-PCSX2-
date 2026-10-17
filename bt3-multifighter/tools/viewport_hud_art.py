@@ -23,12 +23,23 @@ METERS, METER_BYTES = 0x072DE100,12*24
 IDENTITY, IDENTITY_BYTES = 0x072DE240,12*8
 PASSES = 0x072DE2C0
 SETTLE = round(.5*ACTOR_HZ)
-assert METERS+METER_BYTES<=IDENTITY and IDENTITY+IDENTITY_BYTES<=PASSES and PASSES+8<=0x072DF000
+# Where each view's own fighter panel was last drawn, per view (hud.VIEWS order): x, y, width | mirrored << 16 |
+# anamorphic << 17, and the HUD pass (hud.CONTROL+20) that drew it. The tag meter reads it to sit beside its own HP.
+OWN, OWN_STRIDE = 0x072DE300, 16
+assert METERS+METER_BYTES<=IDENTITY and IDENTITY+IDENTITY_BYTES<=PASSES and PASSES+8<=OWN
+assert OWN+OWN_STRIDE*hud.MAX_VIEWS<=0x072DF000
 # Native 21C5B0/21C940 use palette 5 (blue) from this layer up: slti 7 on BT3 (all regions), slti 4 on BT4.
 BLUE_LAYER = 4 if SERIAL == 'SLUS-21978' else 7
 # The native pip records' own palettes (21CA60 only shows/hides them): BT3 draws every pip green, BT4 colours
 # pip k like HP layer k (orange, yellow, green, green, blue, blue).
 PIP_PALETTES = (3,4,1,1,5,5) if SERIAL == 'SLUS-21978' else (1,)*6
+# Status-node positions relative to the atlas6 frame, read from each game's resident node tree (*(gp-22324): node
+# translations +16..+28, sprite records +32/+36, children +40/+44): portrait (64 x 64), stock digit (32 x 32), stock
+# frame (atlas 15, 48 x 12) and the stock fill's origin. Health (69,9), pips (73,2) and ki (64,27) are shared. BT4's
+# hexagonal frame holds its portrait at (3,-2) and its digit in a housing right of the ki bars, the blast-stock gauge
+# beside it; BT3's positions there put the portrait 13 px right of and 5 px below the hexagon's centre.
+LAYOUTS = dict(bt3=((16,3),(7,30),(27,46),(34,49)), bt4=((3,-2),(106,20),(132,25),(140,28)))
+LAYOUT = 'bt4' if SERIAL == 'SLUS-21978' else 'bt3'
 UPLOAD, INVALIDATE = A(0x224F00),A(0x21F438)
 PARAM=0x120
 NATIVE_RANGES=((UPLOAD,0x1C8),(INVALIDATE,0x48),(A(0x1006E8),8),(A(0x100738),8))
@@ -346,12 +357,35 @@ def _native_hp(a):
     a.label('hp_done')
 
 
-def panel_code(native_hp=True):
+def _own_record(a):
+    """Record this panel when it shows its view's own fighter: the enabled view whose rectangle holds the panel's
+    top-left (s1, s2) and whose subject is this fighter (s0). A target panel never matches its own view."""
+    a.li(8,hud.CONTROL);a.lw(9,8,12);a.i(11,10,9,hud.MAX_VIEWS+1);a.branch(4,10,0,'own_done')
+    a.li(14,hud.VIEWS);a.move(15,0)
+    a.label('own_view');a.branch(4,15,9,'own_done')
+    a.lw(12,14);a.branch(4,12,0,'own_next')
+    a.lw(12,14,4);a.r(0x2A,13,17,12);a.branch(5,13,0,'own_next')
+    a.lw(12,14,8);a.r(0x2A,13,12,17);a.branch(5,13,0,'own_next')
+    a.lw(12,14,12);a.r(0x2A,13,18,12);a.branch(5,13,0,'own_next')
+    a.lw(12,14,16);a.r(0x2A,13,12,18);a.branch(5,13,0,'own_next')
+    a.lw(12,14,20);pointer(a,12,4,'own_next');a.lw(12,12);a.branch(5,12,16,'own_next')
+    a.li(12,OWN);a.r(0,13,0,15,4);a.r(0x21,12,12,13)
+    a.sw(17,12);a.sw(18,12,4)
+    a.i(12,13,20,1);a.r(0,13,0,13,16);a.r(0x25,13,13,19)
+    a.lw(24,29,0x1D0);a.branch(4,24,0,'own_word');a.i(15,24,0,2);a.r(0x25,13,13,24)
+    a.label('own_word');a.sw(13,12,8);a.li(24,hud.CONTROL);a.lw(24,24,20);a.sw(24,12,12);a.jump('own_done')
+    a.label('own_next');a.addiu(14,14,hud.VIEW_STRIDE);a.addiu(15,15,1);a.jump('own_view')
+    a.label('own_done')
+
+
+def panel_code(native_hp=True,layout=None,own_record=True):
+    (portrait_x,portrait_y),(digit_x,digit_y),(stock_x,stock_y),(fill_x,fill_y)=LAYOUTS[layout or LAYOUT]
     a=Assembler(NATIVE_PANEL);hud.save(a)
     for dest,source in ((16,4),(17,5),(18,6),(19,7)):a.move(dest,source)
     a.i(55,20,29,hud.SAVED.index(8)*8)
     import widescreen_support as wide
     a.sw(0,29,0x1D0);wide.emit_detection(a,10,'aspect_ready');a.sw(10,29,0x1D0);a.label('aspect_ready')
+    if own_record:_own_record(a)
     a.call(hud.spectator.LOOKUP);a.branch(4,3,0,'done')
     a.li(8,hud.core.POINTERS);a.r(0,9,0,16,2);a.r(0x21,8,8,9);a.lw(23,8);a.move(4,23)
     a.call(hud.feed.ROW);a.branch(4,2,0,'done');a.move(21,2)
@@ -363,10 +397,12 @@ def panel_code(native_hp=True):
     a.lw(8,23,12);a.i(11,9,8,12);a.branch(4,9,0,'portrait_done')
     a.r(0,8,0,8,2);a.li(9,hud.core.MODELS);a.r(0x21,8,8,9);a.lw(24,8)
     pointer(a,24,84,'portrait_done');a.lw(24,24,80)
-    # Native status-node translations relative to the atlas6 frame:
-    # portrait (16,3), health (69,9), pips (73,2), ki (64,27).
-    # These are authored node offsets, not the visible texture bounds.
-    emit_sprite(a,0,0,(0,0,64,64),(16,3,80,67),bundle=24,portrait=True)
+    # Native status-node translations relative to the atlas6 frame (LAYOUTS):
+    # portrait, health (69,9), pips (73,2), ki (64,27).
+    # These are authored node offsets, not the visible texture bounds. A node above the frame's top (BT4) drops the
+    # cell's transparent top rows instead: sprite boxes scale unsigned.
+    top=max(0,-portrait_y)
+    emit_sprite(a,0,0,(0,top,64,64),(portrait_x,portrait_y+top,portrait_x+64,portrait_y+64),bundle=24,portrait=True)
     a.label('portrait_done')
     (_native_hp if native_hp else _legacy_hp)(a)
     # Native20B4E0 reads ordinary ki at row+0x0C, but charging to Sparking
@@ -384,21 +420,30 @@ def panel_code(native_hp=True):
             emit_sprite(a,8,palette,(16,25,30,33),(64+8*band,27,78+8*band,44),uv_registers=(1,),box_registers=(1,))
             a.label(tag)
     # Lower native stock frame, cyan fractional progress and actual digit art.
-    emit_sprite(a,15,0,(0,0,48,12),(27,46,75,58))
+    emit_sprite(a,15,0,(0,0,48,12),(stock_x,stock_y,stock_x+48,stock_y+12))
     clamp(a,24,21,20,10000000,'stocks_');clamp(a,25,21,24,10000000,'stockmax_')
     a.r(0x2B,8,25,24);a.branch(4,8,0,'stock_clamped');a.move(24,25);a.label('stock_clamped')
     a.li(8,100000);a.r(27,0,24,8);a.r(18,26,0);a.r(16,27,0)
     a.branch(5,24,25,'stock_fraction');a.branch(4,25,0,'stock_fraction');a.move(27,8);a.label('stock_fraction')
     a.sw(26,29,0x18C);a.addiu(8,0,26);a.r(25,0,27,8);a.r(18,27,0);a.li(8,100000);a.r(27,0,27,8);a.r(18,27,0)
-    a.addiu(25,27,161);a.addiu(26,27,34)
-    emit_sprite(a,8,1,(161,0,25,6),(34,49,26,55),uv_registers=(2,),box_registers=(2,))
+    a.addiu(25,27,161);a.addiu(26,27,fill_x)
+    emit_sprite(a,8,1,(161,0,25,6),(fill_x,fill_y,26,fill_y+6),uv_registers=(2,),box_registers=(2,))
     a.lw(24,29,0x18C);a.i(11,8,24,8);a.branch(4,8,0,'stock_text')
     a.i(12,25,24,3);a.r(0,25,0,25,5);a.r(2,26,0,24,2);a.r(0,26,0,26,5)
     a.addiu(27,25,32);a.addiu(24,26,32)
-    emit_sprite(a,14,0,(25,26,27,24),(7,30,39,62),uv_registers=(0,1,2,3),mirror_uv=False)
+    emit_sprite(a,14,0,(25,26,27,24),(digit_x,digit_y,digit_x+32,digit_y+32),uv_registers=(0,1,2,3),mirror_uv=False)
     a.jump('sparking')
     a.label('stock_text');a.move(4,24);a.addiu(5,29,0x1A0);a.call(hud.NUMBER)
-    a.addiu(25,29,0x1A0);a.move(24,18);a.addiu(24,24,22);a.move(26,17);a.addiu(26,26,4);hud.text(a,25,26,24,0x8050DFFF)
+    if (digit_x,digit_y)==LAYOUTS['bt3'][1]:
+        a.addiu(25,29,0x1A0);a.move(24,18);a.addiu(24,24,22);a.move(26,17);a.addiu(26,26,4)
+    else:
+        # The digit's own housing, scaled with the panel (and mirrored with it): 8+ stocks as text.
+        a.addiu(25,29,0x1A0)
+        a.addiu(8,0,digit_y+6);a.r(25,0,8,19);a.r(18,24,0);a.r(2,24,0,24,8);a.r(0x21,24,24,18)
+        a.addiu(8,0,digit_x+16);a.r(25,0,8,19);a.r(18,26,0);a.r(2,26,0,26,8)
+        a.branch(4,20,0,'stock_text_left');a.r(0x23,26,19,26)
+        a.label('stock_text_left');a.r(0x21,26,26,17);a.addiu(26,26,-6)
+    hud.text(a,25,26,24,0x8050DFFF)
     a.label('sparking');a.li(8,SETTINGS);a.lw(8,8,8);a.branch(4,8,0,'done')
     a.i(36,8,23,0x1085);a.i(36,9,23,0x10AD);a.r(0x25,8,8,9);a.i(12,8,8,64);a.branch(4,8,0,'done')
     # Native white frame-mask becomes an electric-blue translucent glow; the
@@ -418,8 +463,8 @@ def panel_code(native_hp=True):
     a.label('done');hud.restore(a);a.jr();data=a.finish();assert len(data)<COMPACT-NATIVE_PANEL;return data
 
 
-def pieces(safe_edges=True,isolated=True,native_hp=True):
-    return [(SPRITE,sprite_code(safe_edges,isolated)),(TEMPLATE,template()),(NATIVE_PANEL,panel_code(native_hp)),
+def pieces(safe_edges=True,isolated=True,native_hp=True,layout=None,own_record=True):
+    return [(SPRITE,sprite_code(safe_edges,isolated)),(TEMPLATE,template()),(NATIVE_PANEL,panel_code(native_hp,layout,own_record)),
             (COMPACT,hud.panel(styled=True,base=COMPACT,repaired=True))]
 
 

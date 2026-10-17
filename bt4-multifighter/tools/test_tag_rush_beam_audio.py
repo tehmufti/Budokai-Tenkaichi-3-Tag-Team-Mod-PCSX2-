@@ -24,7 +24,11 @@ from prototype import ROOT,elf_reader
 
 def machine():
     c=native_machine();manager=c.u(tag.CONTROL+tag.C['manager'])
-    for p,data in beam.pieces(selected_iso(),manager):c.write(p,data)
+    import tag_rush_blue_native as blue
+    address=blue.build(selected_iso())['beam_audio_address']
+    for p,data in beam.pieces(selected_iso(),manager,address=address):c.write(p,data)
+    address=c.u(beam.STATE+beam.S['bank_data'])
+    c.write(address,beam.disc_bank(str(selected_iso()))['data'])
     c.audio=0x3720000;c.r[28]=0x304270;c.w(c.r[28]-20708,c.audio)
     c.w(c.r[28]-20712,0x3740000)
     c.write(beam.SPU_TABLE,struct.pack('<6I',1,0x1C1000,0x34000,0,0,0))
@@ -57,25 +61,50 @@ def initialize(c):
 
 
 class BeamAudioTests(unittest.TestCase):
-    def test_bank_contains_only_two_reviewed_effects_and_silence(self):
+    def test_galick_ultimate_sounds_follow_the_emitters_across_camera_cuts_once(self):
+        import tag_rush_blue_native as blue
+        c=machine();initialize(c);meta=assets.BASE+0x1000;c.w(meta+8,0)
+        c.callbacks[staging.QUERY]=lambda m:m.r.__setitem__(2,meta)
+        c.w(tag.CONTROL+tag.C['variant'],6)
+        c.w(assets.BASE+28,assets.CUSTOM_FINISHER|blue.FLAG|assets.BEAM_LEAD)
+        for phase,states in((4,(2,0)),(4,(1,0)),(5,(1,2)),(6,(1,1)),(7,(1,1)),(8,(1,1)),(9,(1,1))):
+            c.w(scene.STATE+scene.S['phase'],phase)
+            for role,state in enumerate(states):c.w(scene.ROWS+role*scene.STRIDE+blue.FX_STATE,state)
+            run(c,beam.TICK);run(c,beam.TICK)
+        self.assertEqual([v[1]for v in c.played],[45,54,45,54])
+        self.assertEqual(c.u(beam.STATE+beam.S['charge']),2);self.assertEqual(c.u(beam.STATE+beam.S['fire']),2)
+        run(c,beam.IMPACT);self.assertEqual(c.played[-1][1],55)
+        self.assertLessEqual(beam.disc_bank(str(selected_iso()))['sizes'][0],61840)
+
+    def test_bank_contains_only_reviewed_beams_impacts_and_silence(self):
         import fusion_audio_restore as original
         source=original.bank_file(0,False);plan=beam.disc_bank(str(selected_iso()));data=plan['data']
-        self.assertLess(len(data),32768);self.assertEqual(beam.isolate_bank(source),plan)
-        self.assertEqual(set(plan['sample_sha256']),{45,46})
+        self.assertLess(len(data),96*1024);self.assertEqual(beam.isolate_bank(source,original.bank_file(16,False)),plan)
+        self.assertEqual(set(plan['sample_sha256']),{45,46,54,55})
+        ultimate=original.bank_file(16,False);uh=ultimate[beam._u(ultimate,8):beam._u(ultimate,12)];ut=beam._u(uh,48)
+        uo=[beam._u(uh,ut+beam._u(uh,ut+16+4*i))for i in range(57)]+[beam._u(uh,32)]
         for bank in (source,data):
             h=bank[beam._u(bank,8):beam._u(bank,12)];t=beam._u(h,48);rows=[t+beam._u(h,t+16+4*i)for i in range(57)]
             offsets=[beam._u(h,p)for p in rows]+[beam._u(h,32)]
             waves=[bank[64+a:64+b]for a,b in zip(offsets,offsets[1:])]
             if bank is source:original_waves=waves
             else:
-                for i,wave in enumerate(waves):self.assertEqual(wave,original_waves[i if i in(45,46)else 47],i)
+                for i,wave in enumerate(waves):
+                    start=beam._u(ultimate,4)
+                    expected=ultimate[start+uo[i]:start+uo[i+1]]if i in(54,55)else original_waves[i if i in(45,46)else 47]
+                    if i==55:
+                        from tag_rush_sound_sample import at_rate,decode
+                        rate=struct.unpack_from('<H',h,rows[i]+4)[0];self.assertEqual(rate,12000)
+                        self.assertLess(abs(len(decode(wave))/rate-len(decode(expected))/16000),.004)
+                        expected=at_rate(expected,16000,12000)
+                    self.assertEqual(wave,expected,i)
                 self.assertTrue(all(h[p+6]==0 for p in rows))
 
     def test_checked_allocation_real_header_bind_and_async_readiness(self):
         c=machine();run(c,beam.INIT);self.assertEqual(c.r[2],0)
         self.assertEqual(c.u(beam.STATE+beam.S['status']),beam.UPLOADING)
         self.assertEqual(len(c.allocations),2);self.assertEqual(c.registered[0][0],64)
-        row=c.u(beam.STATE+beam.S['row']);self.assertEqual(c.u(row+36),24768)
+        row=c.u(beam.STATE+beam.S['row']);self.assertEqual(c.u(row+36),beam.disc_bank(str(selected_iso()))['sizes'][0])
         self.assertEqual(c.read(row+57,16),bytes(16));self.assertEqual(c.read(row+56,1),bytes([56]))
         run(c,beam.INIT);self.assertEqual(c.r[2],0);self.assertEqual(len(c.allocations),2)
         c.w(row+48,0);run(c,beam.INIT);self.assertEqual(c.r[2],1)

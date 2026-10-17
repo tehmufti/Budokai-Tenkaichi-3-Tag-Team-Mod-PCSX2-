@@ -511,7 +511,7 @@ def post_code(sizing=True,placement=True,inset=True,outward=True,pair_offset=8,q
     a.label('done');restore(a);a.jr();data=a.finish();assert len(data)<PANEL-POST;return data
 
 
-def pieces(previous,legacy=False,styled=True,revival=True,native=True,repaired=True,layers=True,sizing=True,shared_ultimate=True,placement=True,inset=True,outward=True,safe_edges=True,shared_form=True,isolated=True,pair_offset=8,form_fallback=True,extensions=(),native_hp=True):
+def pieces(previous,legacy=False,styled=True,revival=True,native=True,repaired=True,layers=True,sizing=True,shared_ultimate=True,placement=True,inset=True,outward=True,safe_edges=True,shared_form=True,isolated=True,pair_offset=8,form_fallback=True,extensions=(),native_hp=True,panel_layout=None,own_record=True):
     import viewport_hud_art as art
     native=native and styled and revival and not legacy
     shared=shared_ultimate and native and repaired and layers and sizing
@@ -527,8 +527,22 @@ def pieces(previous,legacy=False,styled=True,revival=True,native=True,repaired=T
         if not sizing:
             import viewport_hud_art_v3
             return result+viewport_hud_art_v3.pieces()+[(POST,post_code(False)),(SCISSOR,scissor_code())]
-        return result+art.pieces(safe_edges,isolated,native_hp)+[(POST,post_code(placement=placement and shared_ultimate,inset=inset,outward=outward,pair_offset=pair_offset)),(SCISSOR,scissor_code())]
+        return result+art.pieces(safe_edges,isolated,native_hp,panel_layout,own_record)+[(POST,post_code(placement=placement and shared_ultimate,inset=inset,outward=outward,pair_offset=pair_offset)),(SCISSOR,scissor_code())]
     return result
+
+
+def PANEL_LAYOUTS():
+    """This panel, then the earlier ones an older prepared capture may hold: without the own-panel record and, on
+    BT4, with BT3's status positions (pieces keywords)."""
+    import viewport_hud_art as art
+    earlier=(dict(own_record=False),)+((dict(own_record=False,panel_layout='bt3'),) if art.LAYOUT!='bt3' else ())
+    return (dict(),)+earlier
+
+
+def PRIOR_PANELS():
+    """Earlier native panels that a strict in-place upgrade accepts (everything else byte for byte current)."""
+    return tuple(dict(panel,native_hp=hp) for panel in PANEL_LAYOUTS() for hp in (True,False)
+                 if (hp,panel)!=(True,dict()))
 
 
 def build_memory(ram,source='<prepared>',views=DEFAULT_VIEWS,settings=None):
@@ -570,10 +584,16 @@ def build_memory(ram,source='<prepared>',views=DEFAULT_VIEWS,settings=None):
             data=[(p,four_player_mode.dependency_override(ram,p,b)) for p,b in pieces(previous,extensions=hud_extensions(ram),**variant)]
             return [(p,lockoff_target.dependency_override(ram,p,b)) for p,b in data]
         current=installed()
-        # The previous release differs only in the native panel's HP section: upgrade that code in place and keep
-        # every option, meter record and counter (the new identity/pass records start empty, as fresh RAM).
-        prior=None if all(ram[p:p+len(d)]==d for p,d in current) else installed(native_hp=False)
-        if prior is None or all(ram[p:p+len(d)]==d for p,d in prior):
+        # The previous releases differ only in the native panel: its HP section (the new identity/pass records start
+        # empty, as fresh RAM) or, on BT4, BT3's status positions in BT4's frame. Upgrade that code in place and keep
+        # every option, meter record and counter.
+        prior=None;matched=all(ram[p:p+len(d)]==d for p,d in current)
+        if not matched:
+            for variant in PRIOR_PANELS():
+                candidate=installed(**variant)
+                if all(ram[p:p+len(d)]==d for p,d in candidate):
+                    prior,matched=(candidate,variant),True;break
+        if matched:
             if u(CONTROL+28)!=POST_MAGIC:raise ValueError('Viewport HUD final phase marker changed')
             if any(u(art.SETTINGS+4*i)not in(0,1)for i in range(4)) or u(art.SETTINGS+16)>90:
                 raise ValueError('Invalid native viewport HUD options')
@@ -584,10 +604,12 @@ def build_memory(ram,source='<prepared>',views=DEFAULT_VIEWS,settings=None):
             # style or disabled effect. Only explicit new settings change them.
             blocks=[]
             if prior is not None:
-                sizes={p:len(d) for p,d in prior}
+                former,variant=prior
+                sizes={p:len(d) for p,d in former}
                 for p,d in current:
                     if any(ram[p+sizes.get(p,0):p+len(d)]):raise ValueError('Viewport HUD extension occupied')
-                if any(ram[art.IDENTITY:art.PASSES+8]):raise ValueError('Viewport HUD health records occupied')
+                if not variant.get('native_hp',True) and any(ram[art.IDENTITY:art.PASSES+8]):
+                    raise ValueError('Viewport HUD health records occupied')
                 blocks=[dict(address=p,expected_hex=ram[p:p+len(d)].hex(),data_hex=d.hex()) for p,d in current
                         if ram[p:p+len(d)]!=d]
             if settings is not None:
@@ -605,8 +627,8 @@ def build_memory(ram,source='<prepared>',views=DEFAULT_VIEWS,settings=None):
                   dict(sizing=False),dict(layers=False),
                   # The previous release's HP section (HP-layer colours/pips, no identity or pass records).
                   dict(native_hp=False))
-        for former in (pieces(previous,shared_form=shared_form,isolated=isolated,pair_offset=pair_offset,form_fallback=fallback,**variant)
-                       for variant in variants for shared_form in (False,True)
+        for former in (pieces(previous,shared_form=shared_form,isolated=isolated,pair_offset=pair_offset,form_fallback=fallback,**panel,**variant)
+                       for panel in PANEL_LAYOUTS() for variant in variants for shared_form in (False,True)
                        for fallback in (False,True)
                        for isolated,pair_offset in ((True,8),(False,3))):
             if not all(ram[p:p+len(d)]==d for p,d in former):continue

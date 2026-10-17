@@ -194,10 +194,15 @@ def native_panel(art, settings, phase='Normal', portrait=0):
         if x1>x and y1>y:
             panel.alpha_composite(tile.resize((x1-x,y1-y),resample),(x,y))
     sprite(6,0,(0,0,256,64),(0,0,256,64))
+    # viewport_hud_art.LAYOUTS: portrait, stock digit, stock frame and fill origin per game (BT4: hexagon, housing).
+    (px,py),(dx,dy),(sx,sy),(fx,fy) = (((3,-2),(106,20),(132,25),(140,28)) if _is_bt4() else
+                                       ((16,3),(7,30),(27,46),(34,49)))
     if settings.get('show_hud_portraits',True) and art.portraits:
         p = art.portraits[portrait % len(art.portraits)]
         if p:
-            panel.alpha_composite(p.resize((104,104),resample),(32,6))
+            p = p.resize((104,104),resample); x, y = 32+2*(px-16), 6+2*(py-3)
+            if y < 0: p, y = p.crop((0,-y,104,104)), 0
+            panel.alpha_composite(p,(x,y))
     # Native nodes are health69,9; pips73,2; ki64,27 (not frame bounds).
     sprite(8,1,(0,0,160,16),(69,9,229,25))
     sprite(8,0,(0,0,160,16),(69,9,229,25))
@@ -210,9 +215,9 @@ def native_panel(art, settings, phase='Normal', portrait=0):
         sprite(8,1,(16,16,30,33),(64+8*band,27,78+8*band,44))
         if phase in ('Charging to Sparking','Sparking') and band < (3 if phase=='Charging to Sparking' else 5):
             sprite(8,5,(16,16,30,33),(64+8*band,27,78+8*band,44))
-    sprite(15,0,(0,0,48,12),(27,46,75,58))
-    sprite(8,1,(161,0,177,6),(34,49,50,55))
-    sprite(14,0,(32,0,64,32),(7,30,39,62))
+    sprite(15,0,(0,0,48,12),(sx,sy,sx+48,sy+12))
+    sprite(8,1,(161,0,177,6),(fx,fy,fx+16,fy+6))
+    sprite(14,0,(32,0,64,32),(dx,dy,dx+32,dy+32))
     if phase == 'Sparking' and settings.get('show_hud_sparking_effects',True):
         sprite(16,0,(0,0,64,64),(52,0,92,32))
         sprite(16,0,(64,0,128,64),(169,3,209,35))
@@ -222,21 +227,25 @@ def native_panel(art, settings, phase='Normal', portrait=0):
 TAG_METER_WIDTH, TAG_METER_HEIGHT = 64, 2
 
 
-def tag_meter_placement(view, settings, *, split=None, subject=0, coop=False, views=2):
-    """Reviewed tag_rush_hud placement, without loading native gameplay or an extracted executable."""
+def tag_meter(view, settings, *, split=None, subject=0, coop=False, views=2):
+    """Reviewed tag_rush_hud.meter, without loading native gameplay or an extracted executable:
+    dict(x, y, bar, width, units, label)."""
     from regional import screen_y
     left, right, top, _bottom = view
-    full_x, full_label, panel_label = (111, 66, 68) if _is_bt4() else (123, 38, 33)
+    full_x, full_label = (111, 66) if _is_bt4() else (123, 38)
+    # In a split view the meter sits inside its own native panel, under the main gauge (tag_rush_hud.SPLIT_*).
+    split_x, split_y, room = (140, 40, 100) if _is_bt4() else (122, 30, 122)
     if split is None:
         x = left+full_x if not subject & 1 else right-full_x-TAG_METER_WIDTH
         y = top+screen_y(full_label)
-        return x, y, y+9
+        return dict(x=x, y=y, bar=y+9, width=TAG_METER_WIDTH, units=6, label='TAG ATTACK')
     native = settings.get('split_hud_style', 'native') == 'native'
     if not native:
         y = top+screen_y(72)
-        return right-8-TAG_METER_WIDTH, y, y+9
+        return dict(x=right-8-TAG_METER_WIDTH, y=y, bar=y+9, width=TAG_METER_WIDTH, units=6, label='TAG ATTACK')
     width = right-left
     faces_right = bool(split & 1)
+    wide = aspect_wide(settings)
     if settings.get('split_hud_layout', 'top') == 'top_bottom':
         panel_width = min(width-2, 256)
         panel_x = right-1-panel_width if faces_right else left+1
@@ -247,14 +256,26 @@ def tag_meter_placement(view, settings, *, split=None, subject=0, coop=False, vi
         scale = settings.get('split_hud_scale_percent', 100)
         if not 80 <= scale <= 140:
             scale = 100
-        panel_width = min((width-14)//2, ((width-11)//2)*scale//100)
-        inset = 1 if views < 3 else 7
+        limit, inset = (width-14)//2, 1 if views < 3 else 7
+        if views >= 3 and wide:
+            limit, inset = 148, 4
+        panel_width = min(limit, ((width-11)//2)*scale//100)
         panel_x = right-inset-panel_width if faces_right else left+inset
         panel_y = top+2
-    offset = panel_width*118//256
-    y = panel_y+min(panel_width*panel_label//256, 50)+3
-    x = panel_x+panel_width-offset-TAG_METER_WIDTH if faces_right else panel_x+offset
-    return x, y, y+9
+    units_of = lambda v: (v*panel_width*3) >> 10 if wide else (v*panel_width) >> 8
+    meter_width = min(TAG_METER_WIDTH, units_of(room))
+    units = next((size for need, size in ((54, 6), (45, 5)) if meter_width >= need), 5)
+    offset = units_of(split_x)
+    x = panel_x+panel_width-offset-meter_width if faces_right else panel_x+offset
+    y = panel_y+(split_y*panel_width >> 8)
+    return dict(x=x, y=y, bar=y+(3*units >> 1), width=meter_width, units=units,
+                label='TAG ATTACK' if meter_width >= 45 else 'TAG')
+
+
+def tag_meter_placement(view, settings, **where):
+    """(x, label y, bar y) of tag_meter."""
+    m = tag_meter(view, settings, **where)
+    return m['x'], m['y'], m['bar']
 
 
 def render(settings, *, players=2, phase='Normal', group='HUD', art=None, coop=False, size=(960,540)):
@@ -322,12 +343,12 @@ def render(settings, *, players=2, phase='Normal', group='HUD', art=None, coop=F
                     marker=art.reticle.resize((96,96),Image.Resampling.LANCZOS)
                     image.alpha_composite(marker,(round(2*(right-60)),round(2*(ground-48))))
                 else:d.ellipse((2*(right-48),2*(ground-34),2*(right-24),2*(ground-12)),outline='#ebce5c',width=3)
-        if s.get('tag_team_rush_enabled',False):
-            tag_x,text_y,bar_y=tag_meter_placement((left,right,top,bottom),s,split=seat if players>1 else None,
-                                                subject=seat,coop=coop,views=players)
-            caption(tag_x,text_y,text('TAG ATTACK'),point=6)
-            box((tag_x-1,bar_y-1,tag_x+TAG_METER_WIDTH+1,bar_y+TAG_METER_HEIGHT+1),'#374338','#b9c6b5')
-            box((tag_x,bar_y,tag_x+(TAG_METER_WIDTH if s.get('tag_team_rush_training_full',False) and group=='Training' else round(TAG_METER_WIDTH*.7)),bar_y+TAG_METER_HEIGHT),'#d9de48')
+        if s.get('tag_team_rush_enabled',False) and s.get('tag_team_rush_show_meter',True):
+            m=tag_meter((left,right,top,bottom),s,split=seat if players>1 else None,subject=seat,coop=coop,views=players)
+            tag_x,text_y,bar_y,meter_width=m['x'],m['y'],m['bar'],m['width']
+            caption(tag_x,text_y,text(m['label']),point=m['units'])
+            box((tag_x-1,bar_y-1,tag_x+meter_width+1,bar_y+TAG_METER_HEIGHT+1),'#374338','#b9c6b5')
+            box((tag_x,bar_y,tag_x+(meter_width if s.get('tag_team_rush_training_full',False) and group=='Training' else round(meter_width*.7)),bar_y+TAG_METER_HEIGHT),'#d9de48')
         if s.get('show_kill_score',False):
             caption(left+8,top+(layout.SCORE_Y if players>=3 else 178),text('Kills 2'),point=7)
         if group=='Fusion' and s.get('fusion_enabled',True) and (players!=3 or seat<2):

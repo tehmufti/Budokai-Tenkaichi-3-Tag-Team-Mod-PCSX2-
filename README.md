@@ -11,7 +11,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 13.4 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.4).
+Download the **Version 13.5 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.5).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -23,6 +23,12 @@ The release includes English and Spanish mod interfaces.
 This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
+
+Version 13.5 adds new BT4 paired tag attacks, fixes large-fight fusion loading,
+improves the split-screen HUD and corrects water and lava on expanded maps.
+Run **Build expanded maps** after updating to get the corrected map surfaces.
+The tag meter now stays visible through transformations and has an On/Off
+setting under **Mod Settings → HUD**.
 
 Version 13.4 reimplements online play, which is now more stable.
 
@@ -99,7 +105,7 @@ python scripts/fetch_dependencies.py
 An existing Version 13.4 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.4.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.5.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are

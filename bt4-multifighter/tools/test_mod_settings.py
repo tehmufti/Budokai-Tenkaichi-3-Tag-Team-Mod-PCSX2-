@@ -25,6 +25,42 @@ class ModSettingsTests(unittest.TestCase):
         self.assertNotIn('buu_ultimate_all_enemies',self.path.read_text())
         self.assertNotIn('buu_ultimate_all_enemies',feature_preferences.OPTIONS)
 
+    def test_tag_team_rush_preferences_roundtrip_without_enabling_shared_camera(self):
+        result = settings.save_settings({'tag_team_rush_damage': 20000,
+                                        'tag_team_rush_charge_seconds': 40,
+                                        'tag_team_rush_training_full': True}, self.path)
+        self.assertTrue(result['tag_team_rush_enabled'])
+        self.assertFalse(result['tag_team_rush_shared_camera'])
+        self.assertFalse(result['tag_team_rush_keep_meter_on_miss'])
+        self.assertTrue(result['tag_team_rush_training_full'])
+        saved = self.path.read_bytes()
+        for key, values in (('tag_team_rush_damage', (-1, 100001, 15000.5, True)),
+                            ('tag_team_rush_charge_seconds', (0, 601, 25.5, True)),
+                            ('tag_team_rush_training_full', ('true', 1)),
+                            ('tag_team_rush_shared_camera', ('false', 0)),
+                            ('tag_team_rush_keep_meter_on_miss', ('false', 0, 1, None))):
+            for value in values:
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    settings.save_settings({key: value}, self.path)
+        self.assertEqual(self.path.read_bytes(), saved)
+        result = settings.save_settings({'tag_team_rush_enabled': False}, self.path)
+        self.assertEqual(result['tag_team_rush_damage'], 20000)
+        self.assertEqual(result['tag_team_rush_charge_seconds'], 40)
+        self.assertTrue(result['tag_team_rush_training_full'])
+        self.assertFalse(result['tag_team_rush_shared_camera'])
+
+    def test_tag_rush_miss_meter_defaults_and_saved_choice_survive_other_edits(self):
+        key='tag_team_rush_keep_meter_on_miss'
+        self.path.write_text(json.dumps({'tag_team_rush_damage':18000}),encoding='utf-8')
+        before=self.path.read_bytes()
+        self.assertIs(settings.load_settings(self.path)[key],False)
+        self.assertEqual(self.path.read_bytes(),before,'reading an older profile does not rewrite it')
+        for value in (True,False):
+            settings.SettingsController(self.path).save_all({key:value})
+            settings.save_settings({'language':'es'},self.path)
+            self.assertIs(settings.load_settings(self.path)[key],value)
+            self.assertEqual(settings.load_settings(self.path)['tag_team_rush_damage'],18000)
+
     def test_missing_file_defaults_all_without_creating_it(self):
         self.assertEqual(settings.load_settings(self.path), settings.DEFAULTS)
         self.assertFalse(self.path.exists())
@@ -258,7 +294,7 @@ class OrganisationTests(unittest.TestCase):
         self.assertEqual(pages['Revival'], settings.REVIVE_KEYS)
         self.assertEqual(len(settings.REVIVE_KEYS), 11)
         self.assertEqual(pages['HUD'], (*settings.DISPLAY_KEYS, 'lockoff_target_hud', 'lockon_target_marker', 'lockon_target_style',
-                                        'lockon_target_look', 'lockon_threat_marks'))
+                                        'lockon_target_look', 'lockon_threat_marks', 'tag_team_rush_show_meter'))
         self.assertEqual(pages['Fusion'][:4], ('fusion_enabled', settings.COOP_FUSION_KEY, 'show_fusion_control_owner',
                                                'show_fusion_control_countdown'))
         self.assertIn(settings.EXCEPTIONS_GROUP, pages)
@@ -279,17 +315,14 @@ class OrganisationTests(unittest.TestCase):
     def test_tag_rush_page_defaults_save_and_help_are_available_in_both_languages(self):
         expected = {'tag_team_rush_enabled': True, 'tag_team_rush_damage': 15000,
                     'tag_team_rush_charge_seconds': 25, 'tag_team_rush_keep_meter_on_miss': False,
-                    'tag_team_rush_shared_camera': False, 'tag_team_rush_sacrifice_enabled': True,
+                    'tag_team_rush_shared_camera': False,
+                    'tag_team_rush_sacrifice_enabled': True,
                     'tag_team_rush_sacrifice_multiplier': 2.0}
         self.assertEqual(dict(settings.GROUPS)['Tag-team rush'], tuple(expected))
         self.assertEqual({key: settings.DEFAULTS[key] for key in expected}, expected)
-        training_key = 'tag_team_rush_training_full'
-        self.assertEqual([group for group, keys in settings.GROUPS if training_key in keys], ['Training'])
-        self.assertFalse(settings.DEFAULTS[training_key])
         choices = dict(expected, tag_team_rush_damage=18000, tag_team_rush_charge_seconds=40,
                        tag_team_rush_training_full=True, tag_team_rush_shared_camera=True,
-                       tag_team_rush_keep_meter_on_miss=True, tag_team_rush_sacrifice_enabled=False,
-                       tag_team_rush_sacrifice_multiplier=3.0)
+                       tag_team_rush_keep_meter_on_miss=True)
         settings.save_settings(choices, self.path)
         self.assertEqual({key: settings.load_settings(self.path)[key] for key in choices}, choices)
         self.assertNotEqual(settings.tr('Tag-team rush', {'language': 'en'}),
@@ -298,6 +331,10 @@ class OrganisationTests(unittest.TestCase):
         spanish = settings.help_note('Tag-team rush', {'language': 'es'})
         self.assertTrue(english and spanish)
         self.assertNotEqual(english, spanish)
+        self.assertIn('only the fighter who started the rush loses meter',english)
+        self.assertIn('solo se gasta el medidor de quien inicia',spanish)
+        label=settings.ui_fields()['tag_team_rush_keep_meter_on_miss'][5]
+        self.assertNotEqual(settings.tr(label,{'language':'es'}),label)
 
     def test_battle_camera_zoom_is_the_last_cinematics_row(self):
         import feature_preferences as features

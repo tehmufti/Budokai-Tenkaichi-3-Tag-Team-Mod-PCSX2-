@@ -137,6 +137,12 @@ def plan_stage(data,factor=2):
             (48,52,32,(0,16)), (56,60,32,(0,16))):
         for row in region(mapd,u32(mapd,pointer_at),u32(mapd,count_at),stride):
             for off in position_offsets:plan.vector(start+row+off,3,'mapd_positions')
+    # Native242170 negates environment-row +8 on load;242668 returns it as
+    # the water plane when flag2 is set. Keep underwater tests/splashes at the
+    # same height as the enlarged visible surface, including nonzero levels.
+    for row in region(mapd,u32(mapd,20),u32(mapd,16),16):
+        if u32(mapd,row+4)&2:plan.vector(start+row+8,1,'water_level')
+    _surface_meshes(plan,entries)
     for start,end in entries[2:5]:
         if start==end:continue
         track=data[start:end]
@@ -165,6 +171,46 @@ def plan_stage(data,factor=2):
         plan.blockers.append('Animated stage model and keyframe transforms require decoding')
     plan.blockers.append('Stage-transition framing and native fixed-distance arena margins require gameplay validation')
     return plan
+
+
+def _surface_meshes(plan,entries):
+    """World-space animated surfaces (water, lava and scrolling materials).
+
+    Native138178 loads part12 independently of the static stage root. Its
+    64-byte lighting header precedes mdl3 version4;138540 relocates byte
+    pointers and138BE0 draws triangle lists with position/UV/color vertices.
+    Scaling only the root leaves these meshes at the old shoreline/size.
+    """
+    if len(entries)<=12:return
+    start,end=entries[12]
+    if start==end:return
+    require(end-start>=96,'Truncated animated stage surface archive')
+    base=start+64;model=plan.data[base:end]
+    require(model[:4]==b'mdl3' and u32(model,4)==4,
+            'Unknown animated stage surface layout')
+    def table(count_at,pointer_at,stride):
+        count,pointer=u32(model,count_at),u32(model,pointer_at)
+        require(count<=1000000 and pointer%4==0 and
+                32<=pointer<=len(model)-count*stride,
+                'Animated stage surface table outside archive')
+        return range(pointer,pointer+count*stride,stride)
+    materials=table(16,20,64);meshes=table(24,28,96)
+    protected_end=max(32,materials.stop,meshes.stop)
+    for mesh in meshes:
+        material=u32(model,mesh)
+        # The underwater Namek variant has no authored materials: flag0x800
+        # selects the generated water texture, with placeholder material0.
+        generated_water=not materials and material==0 and u32(model,mesh+32)&0x800
+        require(material<len(materials) or generated_water,
+                'Animated stage surface material outside table')
+        count,pointer=u32(model,mesh+4),u32(model,mesh+8)
+        require(count<=1000000 and pointer%4==0 and
+                protected_end<=pointer<=len(model)-count*144,
+                'Animated stage surface triangles outside archive')
+        # Min, max and center are separate float4s; retain homogeneous W.
+        for off in (48,64,80):plan.vector(base+mesh+off,3,'surface_mesh_bounds')
+        for vertex in range(pointer,pointer+count*144,48):
+            plan.vector(base+vertex,3,'surface_mesh_vertices')
 
 
 def audit_iso(path,output,factor=2):

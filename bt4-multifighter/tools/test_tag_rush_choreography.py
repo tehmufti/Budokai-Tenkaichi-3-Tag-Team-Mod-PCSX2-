@@ -74,6 +74,7 @@ class ChoreographyTests(unittest.TestCase):
         import tag_rush_scene as scene
         native_marks=[(0,0,0,0,choreography.ZERO,choreography.ZERO,choreography.ZERO)]*4
         for name in choreography.VARIANTS:
+            if name in ('blue_galick_kamehameha','super_galick_pair'):continue  # Independent full cinematic, covered by its bank tests.
             timeline=assets.timeline(name)
             if name!='early_goku_piccolo':
                 self.assertEqual([p.source_frames for p in timeline[:4]],[68,99,149,119])
@@ -96,6 +97,7 @@ class ChoreographyTests(unittest.TestCase):
         # live mixed capture showed hand45 extending away under the old yaw0.
         from extra_throws import NATIVE
         for variant_index,name in enumerate(choreography.VARIANTS):
+            if name in ('blue_galick_kamehameha','super_galick_pair'):continue
             for phase in range(4,len(choreography.records(name))):
                 c=machine(variant_index,phase);c.fw(STATE+132,.6981317)
                 c.write(A(0x1D7418),NATIVE(A(0x1D7418),0x158))

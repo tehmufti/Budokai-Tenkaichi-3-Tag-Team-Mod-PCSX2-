@@ -31,6 +31,9 @@ def pack_fixture():
                 cues=list(choreography.phase_contacts(name,index))
             events=tuple(dict(role=r,frame=f,sound_id=73,effect_kind=16)for r,f in cues)
             phases.append(dict(source_frames=p.source_frames,starts=p.starts,ends=p.ends,flags=p.flags))
+            import tag_rush_blue_native as blue
+            if name in blue.NAMES and index==blue.burst(name)[0]:
+                phases[-1]['burst_frame']=blue.burst(name)[1]
             sounds.append(events)
         mapping[name]=dict(phases=phases);audio[name]=tuple(sounds)
     return dict(variants=mapping,audio_cues=audio)
@@ -68,6 +71,16 @@ def at(c,phase,frame,hz=30):
 
 
 class DamageTests(unittest.TestCase):
+    def test_short_authored_finisher_keeps_its_explicit_hit_and_rejects_invalid_frames(self):
+        pack=pack_fixture();name='super_galick_pair'
+        import tag_rush_blue_native as blue
+        phase,frame=blue.burst(name);row=pack['variants'][name]['phases'][phase]
+        self.assertEqual((row['source_frames'],frame),(48,6))
+        self.assertEqual(damage.schedules(pack)[name][-1],(phase,frame,10000))
+        for bad in (-1,49,None,True):
+            row['burst_frame']=bad
+            with self.assertRaisesRegex(ValueError,'outside'):damage.schedules(pack)
+
     def test_each_actual_hit_reduces_hp_exact_budget_and_largest_beam_burst(self):
         for variant,name in enumerate(damage.VARIANTS[:4]):
             for hz in (25,30):
@@ -216,6 +229,13 @@ class DamageTests(unittest.TestCase):
         if not iso.is_file() or native_map.TRANSLATED:self.skipTest('Local identity-layout disc unavailable')
         pack=assets.build_assets(iso);rows=damage.schedules(pack)
         for name,events in rows.items():
+            if name in ('blue_galick_kamehameha','super_galick_pair'):
+                # The shared opening's contacts share 40%; the burst pays the rest.
+                import tag_rush_blue_native as blue
+                opening=[e for e in rows['two_ki'] if e[0]<4]
+                self.assertEqual([e[:2] for e in events[:-1]],[e[:2] for e in opening])
+                self.assertEqual(events[-1],(*blue.burst(name),10000))
+                self.assertEqual(events[-2][2],4000);continue
             if name=='early_goku_piccolo':
                 self.assertEqual(events,((4,choreography.BEAM_BURST,10000),))
                 continue

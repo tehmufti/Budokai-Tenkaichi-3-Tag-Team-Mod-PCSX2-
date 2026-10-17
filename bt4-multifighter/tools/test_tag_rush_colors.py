@@ -36,6 +36,19 @@ def configured():
 
 
 class ColorTests(unittest.TestCase):
+    def test_purple_charge_parameters_are_private_and_normal_pairs_restore_the_source(self):
+        import tag_team_rush as tag
+        c=configured();source=SOURCE+0x4000;destination=colors.PARAM_STORAGE;field=fx.DESC+448+8
+        raw=struct.pack('<4f',10.,20.,240.,80.)*20;c.write(source,raw);c.write(destination,b'P'*len(raw))
+        c.write(colors.PARAM_RECIPES,struct.pack('<4I',field,source,destination,0));c.w(fx.ROWS+field,source)
+        c.write(colors.APPLY,colors.apply_code(1,1))
+        for variant,wanted in((6,destination),(5,source),(6,destination),(0,source)):
+            c.w(tag.CONTROL+tag.C['variant'],variant);c.r[4]=fx.ROWS;run(c,colors.APPLY)
+            self.assertEqual(c.r[2],1);self.assertEqual(c.u(fx.ROWS+field),wanted)
+            self.assertEqual(c.read(source,len(raw)),raw)
+        c.w(fx.ROWS+field,123);c.r[4]=fx.ROWS;run(c,colors.APPLY)
+        self.assertEqual(c.r[2],0);self.assertEqual(c.u(fx.ROWS+field),123)
+
     def test_character_families_and_unknown_fallback(self):
         self.assertEqual(colors.character_color('Goku - End'),colors.BLUE)
         self.assertEqual(colors.character_color('Goku Black Rose'),colors.PURPLE)
@@ -104,6 +117,17 @@ class ColorTests(unittest.TestCase):
         c.w(fx.ROWS+fx.R['source_character'],20);c.r[4]=fx.ROWS;run(c,colors.APPLY)
         self.assertEqual(c.read(colors.STORAGE+colors.PALETTE,colors.PACKET_SIZE),first)
 
+    def test_blue_pair_keeps_vegeta_gold_and_trunks_pair_keeps_both_purple(self):
+        import tag_team_rush as tag
+        for variant,wanted in ((5,(colors.BLUE,colors.GOLD)),(6,(colors.PURPLE,colors.PURPLE))):
+            c=configured();c.w(tag.CONTROL+tag.C['variant'],variant)
+            for role,color in enumerate(wanted):
+                row=fx.ROWS+role*fx.STRIDE;c.r[4]=row;run(c,colors.APPLY)
+                self.assertEqual(c.r[2],1)
+                got=c.read(colors.STORAGE+role*colors.ROLE_STRIDE+colors.PALETTE+104,3)
+                expected=bytes(20+(200*channel+127)//255 for channel in color)
+                self.assertEqual(got,expected,(variant,role))
+
     def test_unknown_ids_use_gold_and_invalid_rows_cannot_write(self):
         c=configured();c.w(fx.ROWS+fx.R['source_character'],999);c.r[4]=fx.ROWS;run(c,colors.APPLY)
         self.assertEqual(c.read(colors.STORAGE+colors.PALETTE+104,3),bytes((220,161,45)))
@@ -128,6 +152,17 @@ class ColorTests(unittest.TestCase):
         if not path.is_file():self.skipTest('Local reviewed disc unavailable')
         resource=assets.read_native_beam_asset(path)['resource']
         plan=colors.recipe(resource,SOURCE,{0:'Goku',23:'Piccolo'})
+        self.assertEqual(len(plan['command_colors']),2)
+        index,source,blob=plan['command_colors'][0]
+        self.assertEqual(index,0)
+        original=resource[source-SOURCE:source-SOURCE+len(blob)]
+        changed={at for at,(a,b)in enumerate(zip(original,blob))if a!=b}
+        keys=tuple(base+delta for base in(12,372,492,852)for delta in(0,16,32))
+        self.assertEqual(changed,{at+c for at in keys for c in(0,1)})
+        for at in keys:self.assertEqual(blob[at:at+3],bytes(colors.PURPLE));self.assertEqual(blob[at+3],original[at+3])
+        _,source,blob=plan['command_colors'][1]
+        original=resource[source-SOURCE:source-SOURCE+len(blob)]
+        self.assertEqual({at for at,(a,b)in enumerate(zip(original,blob))if a!=b},{1328,1329})
         self.assertEqual(len(plan['textures']),18)
         locations=[]
         for group,index,texture,header,palette in plan['textures']:
@@ -138,7 +173,7 @@ class ColorTests(unittest.TestCase):
             self.assertEqual(h[3],colors.PACKET_SIZE)
             locations.append((group,index,texture))
         self.assertEqual(len(set(locations)),18)
-        self.assertLess(sum(len(data) for _,data in colors.pieces(plan)),55000)
+        self.assertLess(sum(len(data) for _,data in colors.pieces(plan)),61000)
 
     def test_native_cache_round_trip_keeps_audio_and_private_color_programs_identical(self):
         from pathlib import Path

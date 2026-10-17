@@ -80,6 +80,7 @@ DEPENDS = {
     'tag_team_rush_charge_seconds': ('tag_team_rush_enabled', True),
     'tag_team_rush_keep_meter_on_miss': ('tag_team_rush_enabled', True),
     'tag_team_rush_training_full': ('tag_team_rush_enabled', True),
+    'tag_team_rush_show_meter': ('tag_team_rush_enabled', True),
     'tag_team_rush_shared_camera': ('tag_team_rush_enabled', True),
     'tag_team_rush_sacrifice_enabled': ('tag_team_rush_enabled', True),
     'tag_team_rush_sacrifice_multiplier': ('tag_team_rush_sacrifice_enabled', True),

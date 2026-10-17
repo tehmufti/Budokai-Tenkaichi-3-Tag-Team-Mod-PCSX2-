@@ -12,6 +12,7 @@ import body_swap_resources as resources
 import native_preparation as native
 import battle_mode_policy as policy
 import lazy_ram
+from native_map import ticks
 
 EPOCH_WORDS=(timer.CONTROL+24,timer.JOB_CONTROL+4,timer.JOB_CONTROL+8)
 # Service-owner claim written to CONTROL+12: this process's ID with bit 31 set (never 0).
@@ -38,6 +39,31 @@ def prepare_memory(ram,settings=None,source='<captured-ready>'):
         return resources.parts_manifest(ram,[],source=str(source),status='TIMED FUSION DISABLED')
     return timer.build_memory(ram,options.get('fusion_duration_seconds',40),options.get('show_fusion_timer',True),source,lore=False,
                               animate=options.get('fusion_defusion_animation',True))
+
+
+# A defusion that cannot get the room its body reload needs is postponed by this many
+# fused updates instead of failing under the guest's expiry hold (TTM-MATCH-08, the
+# match held for recovery). The fighter stays fused; the guest asks again afterwards,
+# each later wait twice as long up to POSTPONE_LIMIT (one short hold per retry).
+POSTPONE_UPDATES,POSTPONE_LIMIT=ticks(150),ticks(1200)
+
+
+def defusion_shortage(ram,side):
+    """Why the body reload of a defusion could not complete now, or None (host view of what
+    body_swap_resources io/stage require for leaders and extras alike: a clean first free
+    resource record, the heap ceiling, a spare model slot and draw nodes, and a texture group
+    no live model uses)."""
+    import extra_reload_worker as reload
+    pool=timer.u32(ram,reload.preload.REGISTRY_GLOBAL)
+    if not 0x100000<=pool<=len(ram)-reload.preload.REGISTRY_OFFSET-reload.REGISTRY_BYTES:return 'the model pool is unreadable'
+    registry=pool+reload.preload.REGISTRY_OFFSET
+    if not reload.free_record(ram[registry:registry+reload.REGISTRY_BYTES]):return 'no free resource record'
+    models=[timer.u32(ram,timer.core.MODELS+4*i) for i in range(12)]
+    occupied=sum(1 for m in models if 0x100000<=m<=len(ram)-8 and timer.u32(ram,m+4))
+    if occupied>=12 or not timer.u32(ram,pool+69128) or not timer.u32(ram,pool+397320):return 'no spare model slot'
+    if reload.stage.texture_groups(ram)['group'] is None:return 'no spare texture group'
+    if reload.largest_free_block(ram)<reload.heap.NEED:return 'not enough free memory'
+    return None
 
 
 class Worker(shared.Worker):
@@ -91,6 +117,21 @@ class Worker(shared.Worker):
     def poll(self,p,reload_worker=None,body_worker=None):
         with policy.building_for(self.capacity),lazy_ram.patched():return self._poll_fusion(p,reload_worker,body_worker)
 
+    def _postpone(self,p,ram,side,reason):
+        """Under the guest's own expiry hold, before any IO: back to the fused countdown for
+        POSTPONE_UPDATES more updates, then release combat. Nothing was loaded or claimed."""
+        record=timer.RECORDS+side*timer.STRIDE
+        if timer.u32(ram,record)!=3:return False
+        generation=timer.u32(ram,record+72);previous=getattr(self,'postpones',{})
+        tries=previous.get(side,(None,0))[1]+1 if previous.get(side,(None,0))[0]==generation else 1
+        self.postpones={**previous,side:(generation,tries)}
+        wait=min(POSTPONE_UPDATES<<(tries-1),POSTPONE_LIMIT)
+        self.apply(p,dict(blocks=[shared.block(ram,record+4,struct.pack('<I',wait)),
+                                  shared.block(ram,record,struct.pack('<I',2))]))
+        note=f'Fusion of physical {side} continues for now: {reason}'
+        if note!=getattr(self,'postponed',None):self.progress(note)
+        self.postponed=note;self.busy=False;self.resume(p);return False
+
     def _poll_fusion(self,p,reload_worker=None,body_worker=None):
         if not self.active or self.failure:return False
         statuses=[p.read_u32(timer.RECORDS+i*timer.STRIDE) for i in range(p.read_u32(timer.CONTROL+8))]
@@ -107,7 +148,10 @@ class Worker(shared.Worker):
         if (p.read_u32(native.CONTROL+16),p.read_u32(native.CONTROL+20))!=(1,1):return False
         side=statuses.index(3)
         try:
-            ram=self._snapshot(p);snap=restore.snapshot(ram,side)
+            ram=self._snapshot(p)
+            shortage=defusion_shortage(ram,side)
+            if shortage:return self._postpone(p,ram,side,shortage)
+            snap=restore.snapshot(ram,side)
             ram=self.release_stage_getter(p,ram,reload_worker)
             self.progress('Restoring the original fusion partners')
             io=restore.invoke(resources.io_memory,ram,snap,side);self._run(p,'io',ram,io)
@@ -146,7 +190,15 @@ class Worker(shared.Worker):
                 old_resources={c['world']['physical']:c['world']['old_resource'] for c in manifest['configurations']},
                 new_resources={},descriptor_mapping=mapping,mapped_handles={v:restore.u(ram,v+52) for v in mapping.values()},
                 bodies=[dict(physical=i,health=row['health']) for i,row in zip((side,snap['partner']['physical']),manifest['rows'])])
-            if reload_worker is not None:self.coordinate_reload_worker(reload_worker)
+            if reload_worker is not None:
+                self.coordinate_reload_worker(reload_worker)
+                # The fused body's bundle is now in this service's retirement list
+                # (removed_receipts). The extra worker forgets its receipt for it, or the
+                # fighter's next form found it superseded by the restored body and held
+                # the match ('Owned resource identity changed before retirement').
+                for physical,resource in self.completed['old_resources'].items():
+                    held=getattr(reload_worker,'resources',{}).get(physical)
+                    if held is not None and held['resource']==resource:reload_worker.resources.pop(physical)
             for owned in list(self.retained):
                 try:recycle=retirement_memory(ram,owned,snap['record'],snap['generation'])
                 except ValueError as exc:self.retirement_notes.append(str(exc));continue

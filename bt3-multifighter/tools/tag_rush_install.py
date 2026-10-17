@@ -688,7 +688,9 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
     if reviewed:static.extend(beam_audio.pieces(iso,manager))
     # STATE is runtime data; neither a repeated install nor new HUD composition
     # should clear the finisher latch or scene ownership.
+    # captions.SHOW is a per-PC display word (online each copy writes its own 'Tag attack meter' value).
     mutable=[(tag.INPUT_BUFFERS,tag.INPUT_BUFFERS_END),(safety.STATE,safety.STATE+0x100),(bootstrap.STATE+12,bootstrap.STATE_END),
+             (captions.SHOW,captions.SHOW+4),
              *scene_plan.get('mutable_ranges',[]),*_beam_mutable(pack)]
     if reviewed:mutable.append((beam_audio.STATE+8,beam_audio.STATE+64))
     beam_mutable=_special_beam_mutable(pack)

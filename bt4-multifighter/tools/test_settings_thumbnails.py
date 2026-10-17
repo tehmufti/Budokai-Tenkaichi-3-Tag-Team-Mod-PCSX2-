@@ -55,6 +55,20 @@ class SettingsThumbnailTests(unittest.TestCase):
     def arts(self):
         return (self.art, None) if self.art is not None else (None,)
 
+    def test_tag_attack_meter_card_shows_the_meter_or_its_hidden_state(self):
+        s = everything_on()
+        for art in self.arts():
+            with self.subTest(art=art is not None):
+                shown = thumbs.render_card('tag_team_rush_show_meter', s, art)
+                self.assertIsNone(shown.info['hidden'])
+                off = thumbs.render_card('tag_team_rush_show_meter', dict(s, tag_team_rush_show_meter=False), art)
+                self.assertEqual(off.info['hidden'], 'Hidden')
+                rush = thumbs.render_card('tag_team_rush_show_meter', dict(s, tag_team_rush_enabled=False), art)
+                self.assertEqual(rush.info['hidden'], 'Tag-team rush is off')
+                self.assertNotEqual(shown.tobytes(), off.tobytes())
+        self.assertIn('tag_team_rush_show_meter', dict(mod_settings.GROUPS)['HUD'])
+        self.assertEqual(localization.tr('Tag attack meter', 'es'), 'Medidor de ataque tag')
+
     def test_every_visual_option_has_a_picture_of_the_card_size(self):
         fields = mod_settings.ui_fields()
         for page in PICTURED_PAGES:

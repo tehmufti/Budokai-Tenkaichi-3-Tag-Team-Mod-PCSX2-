@@ -41,6 +41,11 @@ class ChoreographyTests(unittest.TestCase):
         import tag_rush_choreography as choreography
         self.assertNotIn('beam',choreography.DERIVED)
         for name in choreography.VARIANTS:
+            if name in ('blue_galick_kamehameha','super_galick_pair'):
+                phases=assets.timeline(name)
+                self.assertEqual(phases[:4],assets.OPENING)
+                self.assertTrue(all(p.flags&0x200 and not p.flags&assets.OWN_CLASH_POSE for p in phases[4:]))
+                continue
             for phase in assets.timeline(name):
                 beams=phase.flags&(assets.BEAM_LEAD|assets.BEAM_PARTNER)
                 self.assertEqual(bool(phase.flags&assets.OWN_CLASH_POSE),bool(beams))
@@ -116,17 +121,20 @@ class ChoreographyTests(unittest.TestCase):
         special_pack=dict(blocks=[(special.BASE,bytes(16))],
             pointers={p.roles[r]:special.BASE for p in special.timeline() for r in (0,2)},
             clips=[],donor_model=special.BASE,bytes_used=16,reviewed=True)
-        with patch.object(assets, 'prepared_clips', return_value=clips), patch.object(assets, 'read_donor_bindings', return_value=bindings), patch.object(assets, 'read_native_staging', return_value=assets.NATIVE_STAGING), patch.object(assets, 'read_native_approach', return_value=dict(parameters=bytes(640),camera=bytes(384))), patch.object(special,'build',return_value=special_pack):
+        import tag_rush_blue_native as blue
+        blue_pack=dict(blocks=[(blue.DATA,bytes(16))],pointers={p.roles[r]:blue.DATA for name in blue.NAMES for p in blue.timeline(name) for r in range(3)},
+                       clips=[],bindings=(blue.DATA,blue.DATA+12),bytes_used=16,reviewed=True)
+        with patch.object(assets, 'prepared_clips', return_value=clips), patch.object(assets, 'read_donor_bindings', return_value=bindings), patch.object(assets, 'read_native_staging', return_value=assets.NATIVE_STAGING), patch.object(assets, 'read_native_approach', return_value=dict(parameters=bytes(640),camera=bytes(384))), patch.object(special,'build',return_value=special_pack),patch.object(blue,'build',return_value=blue_pack):
             result = assets.build_assets('unused.iso')
             data = result['blocks'][0][1]
-            self.assertEqual(len(data), (6+9+8+8+5) * 64)
+            self.assertEqual(len(data), (6+9+8+8+5+11+11) * 64)
             for v in result['variants'].values():
                 for p in v['phases']:
                     words = struct.unpack_from('<16I', data, p['address'] - assets.BASE)
                     self.assertEqual(words[0], p['source_frames'])
                     self.assertEqual(words[11:14], p['ends'])
                     self.assertEqual(words[14], 60)
-                    donors=(result['special_role_donors_address'] if words[7]&special.RESTRAIN
+                    donors=(blue_pack['bindings'][blue.NAMES.index(next(name for name,row in result['variants'].items() if row is v))] if words[7]&blue.FLAG else result['special_role_donors_address'] if words[7]&special.RESTRAIN
                             else result['custom_role_donors_address'] if words[7]&assets.CUSTOM_FINISHER
                             else result['role_donors_address'])
                     self.assertEqual(words[15],donors)
@@ -229,7 +237,10 @@ class DiscTests(unittest.TestCase):
         offset=result['staging_address']-block_base
         for name,variant in result['variants'].items():
             marks=tuple(struct.unpack_from('<4f',block,offset+i*16) for i in range(variant['count']))
-            if name=='early_goku_piccolo':self.assertEqual(marks,((0.,0.,0.,0.),)*5)
+            if name=='early_goku_piccolo':
+                self.assertEqual(marks,((0.,0.,0.,0.),)*variant['count'])
+            elif name in ('blue_galick_kamehameha','super_galick_pair'):
+                self.assertEqual(marks,assets.NATIVE_STAGING[:4]+((0.,0.,0.,0.),)*(variant['count']-4))
             else:self.assertEqual(marks[:4],assets.NATIVE_STAGING[:4])
             offset+=variant['count']*16
         beam=assets.read_native_beam_asset(iso)

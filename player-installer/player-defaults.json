@@ -135,5 +135,6 @@
   "fusion_non_potara_defense_multiplier": 1.0,
   "tag_team_rush_keep_meter_on_miss": false,
   "tag_team_rush_sacrifice_enabled": true,
-  "tag_team_rush_sacrifice_multiplier": 2.0
+  "tag_team_rush_sacrifice_multiplier": 2.0,
+  "tag_team_rush_show_meter": true
 }

@@ -11,7 +11,8 @@ import math
 import struct
 
 REVISION = 19
-VARIANTS = ('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo')
+VARIANTS = ('two_ki','two_melee','mixed_ki_lead','mixed_ki_partner','early_goku_piccolo',
+            'blue_galick_kamehameha','super_galick_pair')
 SOURCE_FRAMES = {0:59,43:39,55:11,57:12,58:16,61:12,63:10,
                  162:24,163:24,164:24,165:24,174:112,175:112,198:19,
                  355:119,360:119}
@@ -150,6 +151,8 @@ def beam_burst_frame(duration, *, custom=False):
 
 
 def records(variant):
+    import tag_rush_blue_native as blue
+    if variant in blue.NAMES:return blue.records(variant)
     if variant=='early_goku_piccolo':
         from tag_rush_special_pair import records as special_records
         return special_records()
@@ -181,7 +184,7 @@ def records(variant):
 
 def phase_contacts(variant,phase):
     """Explicit attacking role and exact contact frame for custom phases."""
-    if variant in ('two_ki','early_goku_piccolo') or phase<4:return ()
+    if variant in ('two_ki','early_goku_piccolo','blue_galick_kamehameha','super_galick_pair') or phase<4:return ()
     if variant=='two_melee':
         plans=((0,'body_combo'),(1,'relay_kick'),(0,'chase_strike'),(0,'slam_strike'))
     else:

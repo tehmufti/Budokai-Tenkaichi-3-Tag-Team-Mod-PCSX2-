@@ -175,8 +175,8 @@ class AudioTests(unittest.TestCase):
                     c.w(A(0x333700),1);tick(c,4,after);self.assertFalse(c.requests)
                     c.w(A(0x333700),0)
                     for frame in (after+2,after+2,after+5):tick(c,4,frame)
-                    self.assertEqual([r[2]for r in c.requests],[] if variant==1 else [audio.EXPLOSION_SOUND])
-                    if variant!=1:self.assertEqual(c.requests[0][5],(20.,-25.,200.,1.))
+                    self.assertEqual([r[2]for r in c.requests],[] if variant in(1,6) else [audio.EXPLOSION_SOUND])
+                    if variant not in(1,6):self.assertEqual(c.requests[0][5],(20.,-25.,200.,1.))
 
     def test_own_clash_charge_onset_is_once_per_beam_role_and_never_a_loop(self):
         data=pack()
@@ -298,7 +298,16 @@ class AudioTests(unittest.TestCase):
         iso=Path(__file__).resolve().parents[2]/'games'/name
         if not iso.is_file():self.skipTest('Local reviewed disc unavailable')
         result=assets.build_assets(iso);rows=audio.cue_rows(result)
-        self.assertEqual(len([r for r in rows if r[1]<4]),18);self.assertTrue(all(r[4]in(21,24,30,31,51,71,73)for r in rows))
+        self.assertEqual(len([r for r in rows if r[1]<4 and r[0]&31]),18)
+        # Both paired variants share the exact native opening cues of the
+        # other tag attacks; only variant5's flying pursuit adds the dash cue.
+        opening=[(r[1],r[2],r[3],r[4])for r in rows if r[1]<4 and r[0]&1]
+        self.assertEqual([(r[1],r[2],r[3],r[4])for r in rows if r[1]<4 and r[0]&96],opening)
+        self.assertTrue(all(r[0]&96==96 for r in rows if r[1]<4 and r[0]&1))
+        self.assertEqual([(r[1],r[2],r[3],r[4])for r in rows if r[0]&96 and r[4]==28],
+                         [(4,0,0,28),(5,1,0,28),(6,0,0,28),(7,1,0,28)])
+        self.assertFalse([r for r in rows if r[0]&64 and r[4]==28])
+        self.assertTrue(all(r[4]in(21,24,28,30,31,51,71,73)for r in rows))
         self.assertTrue(any(r[1]>=4 and r[2]==0 for r in rows));self.assertTrue(any(r[1]>=4 and r[2]==1 for r in rows))
         blocks=audio.pieces(result)
         import tag_rush_voices as voices

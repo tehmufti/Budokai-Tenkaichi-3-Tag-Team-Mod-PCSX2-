@@ -1,4 +1,4 @@
-"""Execute the per-view beam finish: one soft white fade, no explosion nodes."""
+"""Per-view white finish and the Father-Son Galick's native blast impact."""
 # Native execution tests use only the developer's own extracted executable.
 from pathlib import Path as _TestPath
 import unittest as _TestUnit
@@ -58,6 +58,57 @@ def draw(c,elapsed):
 
 
 class WhiteFinishTests(unittest.TestCase):
+    def galick_machine(self):
+        c=machine();c.w(tag.CONTROL+tag.C['variant'],6)
+        c.w(0x2450000+0x12C8,0x2462000);c.w(0x2450000+0x12D0,0x2463000)
+        from prototype import ROOT,elf_reader
+        from native_map import elf_path
+        native=elf_reader(elf_path(ROOT))[2]
+        c.write(fx.NATIVE_BURST,native(fx.NATIVE_BURST,0x70))
+        import tag_rush_beam_audio as sound
+        c.impact_sounds=[]
+        c.callbacks[sound.IMPACT]=lambda m:c.impact_sounds.append(1)
+        return c
+
+    def test_galick_blast_and_white_fade_start_once_without_extra_damage(self):
+        c=self.galick_machine();before=[c.read(a,0x1600)for a in c.actors]
+        self.assertEqual(start(c),1);self.assertEqual(start(c),1)
+        self.assertEqual(c.u(fx.CONTROL+fx.W['burst']),1)
+        self.assertEqual(c.impact_sounds,[1]);self.assertEqual(len(c.requests),1)
+        pool,callbacks,request=c.requests[0]
+        self.assertEqual((pool,callbacks),(0x2440000,A(0x2C3F20)))
+        self.assertEqual(struct.unpack_from('<Iff',request),(1,1.25,0.))
+        torso=c.u(c.models[1]+3436+17*4)
+        self.assertEqual(request[16:32],c.read(torso+64,16))
+        self.assertEqual(struct.unpack_from('<4I',request,48),(0,4,0,0))
+        self.assertEqual([c.read(a,0x1600)for a in c.actors],before)
+        view(c);draw(c,fx.galick_flash_delay()+fx.WHITE_RISE)
+        self.assertEqual(c.rects[-1][4],0x80FFFFFF)
+
+    def test_galick_has_one_opaque_ultimate_flash_as_beams_clear_then_fades_before_release(self):
+        c=self.galick_machine();start(c);view(c);alphas=[]
+        delay=fx.galick_flash_delay()
+        for ticks in range(delay+fx.WHITE_TICKS+4):
+            before=len(c.rects);draw(c,ticks)
+            alphas.append(c.rects[-1][4]>>24 if len(c.rects)>before else 0)
+        self.assertEqual(alphas,[0]*delay+[a*4 for a in fx.white_alphas()]+[0]*3)
+        self.assertEqual(max(alphas),fx.WHITE_ULTIMATE_PEAK)
+        opaque=[i for i,a in enumerate(alphas) if a==fx.WHITE_ULTIMATE_PEAK]
+        self.assertEqual(opaque,list(range(opaque[0],opaque[-1]+1)),
+                         'rounded peak must remain one continuous flash')
+        self.assertEqual(alphas[-1],0)
+        import tag_rush_galick_pair as galick
+        peak_source=galick.EDGES[5]+galick.BURST_FRAME+(delay+fx.WHITE_RISE)*60/fx.ACTOR_HZ
+        self.assertEqual(peak_source,galick.BEAM_END)
+        self.assertLessEqual(galick.EDGES[5]+galick.BURST_FRAME+(delay+fx.WHITE_TICKS)*60/fx.ACTOR_HZ,galick.EDGES[-1])
+
+    def test_missing_native_burst_resources_still_allow_white_and_audio(self):
+        for address in (0x2450000+0x12C8,0x2450000+0x12D0):
+            c=self.galick_machine();c.w(address,0)
+            self.assertEqual(start(c),1);self.assertFalse(c.requests)
+            self.assertEqual(c.u(fx.CONTROL+fx.W['burst']),0)
+            self.assertEqual(c.impact_sounds,[1])
+
     def test_every_beam_ending_starts_one_receipt_without_native_cloud_or_combat_writes(self):
         for flags in (assets.BEAM_LEAD,assets.BEAM_PARTNER,
                       assets.BEAM_LEAD|assets.BEAM_PARTNER,assets.BEAM_PARTNER|256):
