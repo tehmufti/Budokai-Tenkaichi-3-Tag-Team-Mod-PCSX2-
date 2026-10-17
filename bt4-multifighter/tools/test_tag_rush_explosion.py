@@ -5,7 +5,6 @@ import unittest as _TestUnit
 from native_map import elf_path as _test_elf_path
 if not _test_elf_path(_TestPath(__file__).resolve().parents[1]).is_file():
     raise _TestUnit.SkipTest('An extracted game executable is required for native tag tests')
-
 import struct
 import unittest
 import tag_rush_assets as assets
@@ -58,8 +57,8 @@ def draw(c,elapsed):
 
 
 class WhiteFinishTests(unittest.TestCase):
-    def galick_machine(self):
-        c=machine();c.w(tag.CONTROL+tag.C['variant'],6)
+    def galick_machine(self,variant=6):
+        c=machine();c.w(tag.CONTROL+tag.C['variant'],variant)
         c.w(0x2450000+0x12C8,0x2462000);c.w(0x2450000+0x12D0,0x2463000)
         from prototype import ROOT,elf_reader
         from native_map import elf_path
@@ -69,6 +68,42 @@ class WhiteFinishTests(unittest.TestCase):
         c.impact_sounds=[]
         c.callbacks[sound.IMPACT]=lambda m:c.impact_sounds.append(1)
         return c
+
+    def test_blue_pair_uses_the_same_one_shot_impact_without_changing_combat(self):
+        c=self.galick_machine(5);before=[c.read(a,0x1600)for a in c.actors]
+        self.assertEqual(start(c),1);self.assertEqual(start(c),1)
+        self.assertEqual(c.impact_sounds,[1]);self.assertEqual(len(c.requests),1)
+        self.assertEqual(c.u(fx.CONTROL+fx.W['burst']),1)
+        self.assertEqual(struct.unpack_from('<Iff',c.requests[0][2]),(1,1.25,0.))
+        self.assertEqual([c.read(a,0x1600)for a in c.actors],before)
+
+    def test_blue_pair_flash_peaks_as_its_beams_clear_and_finishes_before_release(self):
+        import tag_rush_blue_native as blue
+        c=self.galick_machine(5);start(c);view(c);alphas=[]
+        delay=fx.paired_flash_delay(5)
+        for ticks in range(delay+fx.WHITE_TICKS+4):
+            before=len(c.rects);draw(c,ticks)
+            alphas.append(c.rects[-1][4]>>24 if len(c.rects)>before else 0)
+        self.assertEqual(alphas,[0]*delay+[a*4 for a in fx.white_alphas()]+[0]*3)
+        self.assertEqual(max(alphas),fx.WHITE_ULTIMATE_PEAK)
+        burst=blue.EDGES[5]+blue.BURST_FRAME
+        # Half-rate actor updates round the odd source frame up by one.
+        peak=burst+(delay+fx.WHITE_RISE)*60/fx.ACTOR_HZ
+        self.assertTrue(blue.EDGES[6]<=peak<blue.EDGES[6]+2)
+        self.assertLess(burst+(delay+fx.WHITE_TICKS)*60/fx.ACTOR_HZ,blue.EDGES[-1])
+
+    def test_paired_flash_survives_only_its_recovery_cut_and_never_another_attack(self):
+        for variant in (5,6):
+            c=self.galick_machine(variant);start(c);view(c)
+            c.w(scene.STATE+scene.S['descriptor'],assets.BASE+64)
+            draw(c,fx.paired_flash_delay(variant)+fx.WHITE_RISE)
+            self.assertEqual(c.rects[-1][4],0x80ffffff)
+            for address,value in ((scene.STATE+scene.S['descriptor'],assets.BASE+128),
+                                  (tag.CONTROL+tag.C['start_requests'],8),
+                                  (scene.STATE+scene.S['cancelled'],1)):
+                d=self.galick_machine(variant);start(d);view(d)
+                d.w(scene.STATE+scene.S['descriptor'],assets.BASE+64);d.w(address,value)
+                draw(d,fx.paired_flash_delay(variant)+fx.WHITE_RISE);self.assertFalse(d.rects)
 
     def test_galick_blast_and_white_fade_start_once_without_extra_damage(self):
         c=self.galick_machine();before=[c.read(a,0x1600)for a in c.actors]

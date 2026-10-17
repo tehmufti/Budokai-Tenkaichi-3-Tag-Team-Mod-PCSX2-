@@ -29,6 +29,9 @@ improves the split-screen HUD and corrects water and lava on expanded maps.
 Run **Build expanded maps** after updating to get the corrected map surfaces.
 The tag meter now stays visible through transformations and has an On/Off
 setting under **Mod Settings → HUD**.
+Planet destruction now uses one shared split-screen camera in BT3 and BT4,
+and Goku Blue + Vegeta Blue has the growing beam impact, explosion sound
+and white finish.
 
 Version 13.4 reimplements online play, which is now more stable.
 

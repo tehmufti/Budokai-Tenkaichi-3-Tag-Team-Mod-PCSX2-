@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT/'player-installer'
-RELEASE_SHA = '6435d4306221d8cfc20519aaf512024c38e284c54f47f6e8276ecc43e82e907d'
+RELEASE_SHA = 'adba70fd8f803f685900974b173d23dedf7b36414d77c9ce8a89196817a2e71a'
 RELEASE_URL = ('https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-'
                '/releases/download/v0.1.0-beta.13.5/Tag.Team.Mod.0.1.0-beta.13.5.zip')
 

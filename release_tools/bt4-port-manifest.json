@@ -224,8 +224,8 @@
       "shared": true
     },
     "tools/camera_continuity.py": {
-      "bt3": "0152a9a417f88034b35d209ddf8253f29a6badfbff20b5e6e687a9528cbe7f69",
-      "bt4": "0152a9a417f88034b35d209ddf8253f29a6badfbff20b5e6e687a9528cbe7f69",
+      "bt3": "de6e208a5476f9c254e14d89ec0df73c5da599af2cda51a95b223dd4053659f8",
+      "bt4": "de6e208a5476f9c254e14d89ec0df73c5da599af2cda51a95b223dd4053659f8",
       "shared": true
     },
     "tools/camera_snapshot.py": {
@@ -264,8 +264,8 @@
       "shared": true
     },
     "tools/cinematic_policy.py": {
-      "bt3": "f65dc4b002a8563dc10b01abc33c7ee78ddb60896874022c0a20dd6fc2111339",
-      "bt4": "f65dc4b002a8563dc10b01abc33c7ee78ddb60896874022c0a20dd6fc2111339",
+      "bt3": "f2f36831874a4d76adf9d1652d8a8bba31684a312547737657b8fc409e7a1929",
+      "bt4": "f2f36831874a4d76adf9d1652d8a8bba31684a312547737657b8fc409e7a1929",
       "shared": true
     },
     "tools/cinematic_position.py": {
@@ -1114,8 +1114,8 @@
       "shared": true
     },
     "tools/quad_viewports.py": {
-      "bt3": "163ea50306ff2cd7f1c11d6afed35618eddb26538f6d25c1429548f47b7cfb5e",
-      "bt4": "163ea50306ff2cd7f1c11d6afed35618eddb26538f6d25c1429548f47b7cfb5e",
+      "bt3": "f9e411a305fa7baca804bcca98b0e3ecb5fb4dfc899e46663960bfa49adb9944",
+      "bt4": "f9e411a305fa7baca804bcca98b0e3ecb5fb4dfc899e46663960bfa49adb9944",
       "shared": true
     },
     "tools/regional.py": {
@@ -1365,7 +1365,7 @@
     },
     "tools/tag_rush_audio.py": {
       "bt3": "9e9845ba4277594066caf316e09403ad6c2790cc3e6bfc7828315e2107239973",
-      "bt4": "9e88427235bc61ab6ee8503667764b831b838840b741d38e752c0ba217b9288e",
+      "bt4": "98648f86c9b0ae3f604b1b6eeb2a175738d091537d2706fc73205aaaca209fac",
       "shared": false
     },
     "tools/tag_rush_audio_queue.py": {
@@ -1385,7 +1385,7 @@
     },
     "tools/tag_rush_beam_audio.py": {
       "bt3": "6066a8c3933d8de483a9c07b364d2e30e10e53e124b47c3e5e93fd67ff8b5cb7",
-      "bt4": "1f92189f249b97275fa1d39a51bb542fa3882f2edb9063b8c78e361b542a06a9",
+      "bt4": "f2169e13a60e0c28079ef8c39c6952499b7ead38551542e33d9c53db4613eb37",
       "shared": false
     },
     "tools/tag_rush_bootstrap.py": {
@@ -1420,7 +1420,7 @@
     },
     "tools/tag_rush_effects.py": {
       "bt3": "77a90c7699c13e4d925318f824193b12935d0b6a85a363dfde798cdfd4ac40b8",
-      "bt4": "ee4deeb89bd9670d089fb1247543936eb3f4fcedb2d20f49e6cd5107aebb94ae",
+      "bt4": "d945ae5882bb65564b9b133c49ead63da7a2e7ce7c1776ffcb857392a2ce7f8e",
       "shared": false
     },
     "tools/tag_rush_full_nelson_native.py": {

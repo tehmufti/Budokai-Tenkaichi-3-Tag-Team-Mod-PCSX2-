@@ -72,6 +72,10 @@ def draw(extensions=()):
     """extensions: viewport_hud.hud_extensions entries (guarded caption calls after each view's revival call).
     With none, the same bytes as before."""
     a=Assembler(DRAW);save(a);gate(a,'native')
+    # Global planet-destruction tracks use the one native full-screen pass,
+    # just as the two-player selector does; never copy them into each seat.
+    cinema.continuity.emit_stage_camera(a,'not_stage_camera');a.jump('native')
+    a.label('not_stage_camera')
     import story_cinematics as story
     story.emit_active(a,'native','not_story')
     import tag_rush_camera as tag

@@ -16,6 +16,28 @@ from test_tag_rush_camera import run
 
 
 class BluePairTests(unittest.TestCase):
+    def test_impact_ball_grows_before_the_blue_burst_without_touching_other_fields(self):
+        from test_tag_rush_effects import machine as effects_machine
+        import tag_rush_effects as effects
+        import tag_rush_galick_pair as galick
+        c=effects_machine();body=0x3700000;c.r[4]=body
+        c.w(tag.CONTROL+tag.C['variant'],5)
+        c.w(body+1416,0x12345678);c.w(body+1424,0x87654321)
+        phase=blue.INTRO+5;values=[]
+        for ticks in range(blue.own_timeline(blue.NAMES[0])[5].source_frames//2+1):
+            c.w(scene.STATE+scene.S['phase'],phase);c.w(scene.STATE+scene.S['ticks'],ticks)
+            run(c,effects.BALL_GROW);value=struct.unpack('<f',c.read(body+1420,4))[0]
+            t=max(0.,min(1.,(ticks*2-(blue.BURST_FRAME-galick.BEAM_GROW_FRAMES))/galick.BEAM_GROW_FRAMES))
+            expected=1.+(galick.BEAM_FINAL_SCALE-1.)*t*t*(3-2*t)
+            self.assertAlmostEqual(value,expected,places=5);values.append(value)
+        self.assertEqual(values,sorted(values))
+        self.assertAlmostEqual(values[0],1.);self.assertAlmostEqual(values[-1],galick.BEAM_FINAL_SCALE,places=5)
+        self.assertEqual(c.u(body+1416),0x12345678);self.assertEqual(c.u(body+1424),0x87654321)
+        # The generic beam variants retain their original radius even if this
+        # helper is called directly with an unrelated scene phase.
+        c.w(tag.CONTROL+tag.C['variant'],0);run(c,effects.BALL_GROW)
+        self.assertEqual(struct.unpack('<f',c.read(body+1420,4))[0],1.)
+
     def test_successful_galick_release_keeps_aim_but_cancel_and_other_pairs_keep_original(self):
         import tag_rush_safety as safety
         for variant,cancel in ((6,0),(6,1),(5,0)):

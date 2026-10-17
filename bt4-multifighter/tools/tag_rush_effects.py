@@ -60,11 +60,20 @@ WHITE_PEAK = 32  # PS2 alpha128 is opaque: a gentle25% white, once.
 WHITE_ULTIMATE_PEAK = 128
 
 
-def galick_flash_delay():
+def paired_flash_delay(variant):
     """Peak as the beams clear, then finish fading before control returns."""
-    import tag_rush_galick_pair as galick
-    beam_tail=galick.BEAM_END-(galick.EDGES[galick.BURST_PHASE]+galick.BURST_FRAME)
+    import tag_rush_blue_native as blue
+    if variant==5:
+        beam_tail=blue.EDGES[6]-(blue.EDGES[5]+blue.BURST_FRAME)
+    elif variant==6:
+        import tag_rush_galick_pair as galick
+        beam_tail=galick.BEAM_END-(galick.EDGES[galick.BURST_PHASE]+galick.BURST_FRAME)
+    else:raise ValueError('Not a paired beam ending')
     return max(0,(beam_tail*ACTOR_HZ+59)//60-WHITE_RISE)
+
+
+def galick_flash_delay():
+    return paired_flash_delay(6)
 
 
 def white_alphas():
@@ -86,7 +95,7 @@ def white_start_code():
 
     A native172480 ultimate flash forces owner=-1 and shares one global fade
     node. This receipt instead lets the normal per-view native GS submission
-    fade only cameras watching our scene. The Father-Son Galick ending also
+    fade only cameras watching our scene. Both BT4 paired beam endings also
     creates one ordinary native explosion, whose copied request and lifetime
     belong to the game's existing effect pool.
     """
@@ -116,7 +125,7 @@ def white_start_code():
     a.sw(19,16,W['descriptor']);white_clock(a,20,17);a.sw(20,16,W['start'])
     a.li(8,WHITE_MAGIC);a.sw(8,16,W['magic'])
     import tag_rush_beam_audio as beam_audio
-    a.lw(8,18,tag.C['variant']);a.li(9,6);a.branch(5,8,9,'yes')
+    a.lw(8,18,tag.C['variant']);a.addiu(8,8,-5);a.i(11,9,8,2);a.branch(4,9,0,'yes')
     a.call(beam_audio.IMPACT)
     a.li(4,2);a.li(5,17);a.call(FINISH_BURST);a.sw(2,16,W['burst'])
     a.label('yes');a.li(2,1);a.jump('done')
@@ -144,15 +153,23 @@ def white_draw_code():
     a.lw(8,17,scene.S['cancelled']);a.branch(5,8,0,'done')
     for off,key in ((W['manager'],'manager'),(W['count'],'count'),(W['request'],'start_requests')):
         a.lw(8,16,off);a.lw(9,18,tag.C[key]);a.branch(5,8,9,'done')
-    a.lw(8,16,W['descriptor']);a.lw(9,17,scene.S['descriptor']);a.branch(5,8,9,'done')
+    a.lw(8,16,W['descriptor']);a.lw(9,17,scene.S['descriptor']);a.branch(4,8,9,'white_phase')
+    # These beams clear on the cut into recovery. Keep this same request's
+    # bounded fade across that one cut; a different attack or phase cannot
+    # inherit it. Otherwise Blue's peak is rejected on the exact impact cut.
+    a.lw(10,18,tag.C['variant']);a.addiu(10,10,-5);a.i(11,10,10,2);a.branch(4,10,0,'done')
+    a.addiu(8,8,64);a.branch(5,8,9,'done')
+    a.label('white_phase')
     a.li(8,A(0x333700));a.lw(8,8);a.branch(5,8,0,'done')
     white_clock(a,20,17);a.lw(8,16,W['start']);a.r(0x23,20,20,8)
-    a.lw(22,18,tag.C['variant']);a.li(8,6);a.branch(5,22,8,'white_elapsed')
-    a.addiu(20,20,-galick_flash_delay())
+    a.lw(22,18,tag.C['variant']);a.li(8,5);a.branch(4,22,8,'blue_delay')
+    a.li(8,6);a.branch(5,22,8,'white_elapsed')
+    a.addiu(20,20,-paired_flash_delay(6));a.jump('white_elapsed')
+    a.label('blue_delay');a.addiu(20,20,-paired_flash_delay(5))
     a.label('white_elapsed')
     a.i(11,8,20,WHITE_TICKS);a.branch(4,8,0,'done')
     a.li(8,WHITE_ALPHA);a.r(0x21,8,8,20);a.i(36,20,8,0);a.branch(4,20,0,'done')
-    a.li(8,6);a.branch(5,22,8,'white_opacity');a.r(0,20,0,20,2)
+    a.addiu(8,22,-5);a.i(11,8,8,2);a.branch(4,8,0,'white_opacity');a.r(0,20,0,20,2)
     a.label('white_opacity')
     a.lw(17,28,-22176);full.pointer(a,17,832,'done')
     # The same rectangle-to-physical-subject binding used by tag HUD handles
@@ -329,8 +346,8 @@ def publish_firing_scale(a,row,body,label,force=False):
     """
     import tag_rush_galick_pair as galick
     import tag_rush_scene as scene
-    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.li(9,6)
-    a.branch(5,8,9,label+'_sbc')
+    a.li(8,tag.CONTROL);a.lw(8,8,tag.C['variant']);a.addiu(8,8,-5);a.i(11,9,8,2)
+    a.branch(4,9,0,label+'_sbc')
     if not force:
         a.lw(8,row,R['ignited']);a.branch(4,8,0,label+'_done')
     a.move(4,body);a.call(BALL_GROW);a.jump(label+'_done')
@@ -354,19 +371,25 @@ def publish_firing_scale(a,row,body,label,force=False):
 
 
 def ball_grow_code():
-    """a0 authenticated native beam body: late Galick impact-ball growth."""
+    """a0 authenticated native beam body: late paired-beam impact-ball growth."""
+    import tag_rush_blue_native as blue
     import tag_rush_galick_pair as galick
     import tag_rush_scene as scene
     a=Assembler(BALL_GROW)
     fp.fconst(a,0,1.)
-    a.li(8,scene.STATE);a.lw(9,8,scene.S['phase']);a.li(10,8)
+    a.li(8,tag.CONTROL);a.lw(9,8,tag.C['variant']);a.li(10,5)
+    a.branch(4,9,10,'blue');a.li(10,6);a.branch(5,9,10,'publish')
+    a.li(12,blue.INTRO+4);a.li(13,galick.FRAMES[4]-galick.BEAM_GROW_FRAMES);a.jump('phase')
+    a.label('blue');a.li(12,blue.INTRO+5);a.li(13,blue.BURST_FRAME-galick.BEAM_GROW_FRAMES)
+    a.label('phase')
+    a.li(8,scene.STATE);a.lw(9,8,scene.S['phase']);a.move(10,12)
     a.r(0x2B,11,9,10);a.branch(5,11,0,'publish')
     a.branch(4,9,10,'grow');fp.fconst(a,0,galick.BEAM_FINAL_SCALE)
     a.jump('publish')
     a.label('grow')
     a.lw(9,8,scene.S['ticks']);a.emit((17<<26)|(4<<21)|(9<<16));a.emit(0x46800020)
     fp.fconst(a,1,60./ACTOR_HZ);fp.fop(a,2,0,0,1)
-    fp.fconst(a,1,galick.FRAMES[4]-galick.BEAM_GROW_FRAMES);fp.fop(a,1,0,0,1)
+    a.emit((17<<26)|(4<<21)|(13<<16)|(1<<11));a.emit(0x46800860);fp.fop(a,1,0,0,1)
     fp.fconst(a,1,1./galick.BEAM_GROW_FRAMES);fp.fop(a,2,0,0,1)
     fp.fconst(a,1,0.);fp.fop(a,0x34,0,0,1);a.branch(17,8,0,'zero');fp.fop(a,6,0,1)
     a.label('zero');fp.fconst(a,1,1.);fp.fop(a,0x34,0,1,0)
@@ -778,7 +801,7 @@ def impact_code(explosion=False,*,finishing=False):
     entry=FINISH_BURST if finishing else IMPACT
     a=Assembler(entry);tag.save(a);a.move(16,4);a.move(17,5)
     if finishing:
-        a.li(8,tag.CONTROL);a.lw(9,8,tag.C['variant']);a.li(8,6);a.branch(5,9,8,'no')
+        a.li(8,tag.CONTROL);a.lw(9,8,tag.C['variant']);a.addiu(9,9,-5);a.i(11,8,9,2);a.branch(4,8,0,'no')
         a.li(8,2);a.branch(5,16,8,'no');a.li(8,17);a.branch(5,17,8,'no')
     a.li(8,A(0x333700));a.lw(8,8);a.branch(5,8,0,'no')
     camera.emit_active(a,'no');a.i(11,9,16,3);a.branch(4,9,0,'no')

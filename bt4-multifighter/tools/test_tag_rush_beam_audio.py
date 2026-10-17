@@ -5,7 +5,6 @@ import unittest as _TestUnit
 from native_map import elf_path as _test_elf_path
 if not _test_elf_path(_TestPath(__file__).resolve().parents[1]).is_file():
     raise _TestUnit.SkipTest('An extracted game executable is required for native tag tests')
-
 import struct
 import unittest
 from unittest.mock import patch
@@ -61,6 +60,14 @@ def initialize(c):
 
 
 class BeamAudioTests(unittest.TestCase):
+    def test_blue_pair_uses_the_same_ultimate_impact_and_other_variants_do_not(self):
+        c=machine();initialize(c)
+        for variant in range(7):
+            c.w(tag.CONTROL+tag.C['variant'],variant);before=len(c.played)
+            run(c,beam.IMPACT)
+            self.assertEqual(len(c.played)-before,int(variant in (5,6)))
+            if variant in (5,6):self.assertEqual(c.played[-1][1],55)
+
     def test_galick_ultimate_sounds_follow_the_emitters_across_camera_cuts_once(self):
         import tag_rush_blue_native as blue
         c=machine();initialize(c);meta=assets.BASE+0x1000;c.w(meta+8,0)

@@ -33,36 +33,45 @@ def pointer(a, reg, size, fail):
     a.i(12, 9, reg, 3); a.branch(5, 9, 0, fail)
 
 
+def emit_stage_camera(a, fail):
+    """Continue only for the captured, unbound native planet-destruction track.
+
+    Leaves the native camera in t5, stage in t6 and animation in t7. No actor,
+    camera, timer or presentation preference is changed by this predicate.
+    """
+    core.gate(a, fail)
+    a.li(8, CONTROL); a.lw(9, 8); a.branch(4, 9, 0, fail)
+    a.lw(9, 8, 4); a.lw(11, 28, -22364); a.branch(5, 9, 11, fail)
+    a.lw(9, 8, 8); a.branch(5, 9, 10, fail)
+    a.li(8, camera.CONTROL); a.lw(9, 8); a.branch(4, 9, 0, fail)
+    a.lw(9, 8, 4); a.branch(5, 9, 11, fail)
+    # 127430 holds the battle scene while the arena is replaced.
+    a.li(8, SCENE_FLAGS); a.lw(9, 8); a.i(12, 9, 9, 0x2000); a.branch(4, 9, 0, fail)
+    a.li(8, STAGE_ENDED); a.lw(9, 8); a.branch(5, 9, 0, fail)
+    a.li(8, STAGE); a.lw(14, 8); pointer(a, 14, 0x9B70, fail)
+    a.li(8, DIRECTOR); a.lw(12, 8); pointer(a, 12, 28, fail)
+    a.lw(13, 28, -22180); pointer(a, 13, 832, fail)
+    # Require the native animated mode; a menu/viewer direct override is not it.
+    a.lw(9, 13, 812); a.branch(5, 9, 0, fail)
+    a.lw(9, 13, 776); a.i(12, 9, 9, 3); a.addiu(8, 0, 1); a.branch(5, 9, 8, fail)
+    for off in (768, 772):
+        a.lw(9, 13, off); a.branch(5, 9, 0, fail)
+    for off in (12, 20):
+        a.lw(9, 12, off); a.addiu(8, 0, 1); a.branch(5, 9, 8, fail)
+    # 13EA88 supplies {-1,-1}; the director also copies modelId to +24.
+    for reg, off in ((14, 28), (14, 32), (12, 4), (12, 8), (12, 24)):
+        a.lw(9, reg, off); a.addiu(8, 0, -1); a.branch(5, 9, 8, fail)
+    a.lw(15, 13, 704); pointer(a, 15, 24, fail)
+    for reg, off in ((14, 24), (12, 0)):
+        a.lw(9, reg, off); a.branch(5, 9, 15, fail)
+    a.li(8, STAGE_ANIMATION); a.lw(9, 8); a.branch(5, 9, 15, fail)
+
+
 def participant_code():
     a = Assembler(CODE); a.addiu(29, 29, -0x90)
     for i, reg in enumerate(SAVED): a.i(63, reg, 29, i*8)
-    core.gate(a, 'old')
-    a.li(8, CONTROL); a.lw(9, 8); a.branch(4, 9, 0, 'old')
-    a.lw(9, 8, 4); a.lw(11, 28, -22364); a.branch(5, 9, 11, 'old')
-    a.lw(9, 8, 8); a.branch(5, 9, 10, 'old')
     a.i(11, 9, 4, 2); a.branch(4, 9, 0, 'old')
-    a.li(8, camera.CONTROL); a.lw(9, 8); a.branch(4, 9, 0, 'old')
-    a.lw(9, 8, 4); a.branch(5, 9, 11, 'old')
-    # 127430 holds the battle scene while the arena is replaced.
-    a.li(8, SCENE_FLAGS); a.lw(9, 8); a.i(12, 9, 9, 0x2000); a.branch(4, 9, 0, 'old')
-    a.li(8, STAGE_ENDED); a.lw(9, 8); a.branch(5, 9, 0, 'old')
-    a.li(8, STAGE); a.lw(14, 8); pointer(a, 14, 0x9B70, 'old')
-    a.li(8, DIRECTOR); a.lw(12, 8); pointer(a, 12, 28, 'old')
-    a.lw(13, 28, -22180); pointer(a, 13, 832, 'old')
-    # Require the native animated mode; a menu/viewer direct override is not it.
-    a.lw(9, 13, 812); a.branch(5, 9, 0, 'old')
-    a.lw(9, 13, 776); a.i(12, 9, 9, 3); a.addiu(8, 0, 1); a.branch(5, 9, 8, 'old')
-    for off in (768, 772):
-        a.lw(9, 13, off); a.branch(5, 9, 0, 'old')
-    for off in (12, 20):
-        a.lw(9, 12, off); a.addiu(8, 0, 1); a.branch(5, 9, 8, 'old')
-    # 13EA88 supplies {-1,-1}; the director also copies modelId to +24.
-    for reg, off in ((14, 28), (14, 32), (12, 4), (12, 8), (12, 24)):
-        a.lw(9, reg, off); a.addiu(8, 0, -1); a.branch(5, 9, 8, 'old')
-    a.lw(15, 13, 704); pointer(a, 15, 24, 'old')
-    for reg, off in ((14, 24), (12, 0)):
-        a.lw(9, reg, off); a.branch(5, 9, 15, 'old')
-    a.li(8, STAGE_ANIMATION); a.lw(9, 8); a.branch(5, 9, 15, 'old')
+    emit_stage_camera(a, 'old')
     a.li(8, CONTROL); a.lw(9, 8, 16); a.addiu(9, 9, 1); a.sw(9, 8, 16)
     for reg, off in ((13, 20), (15, 24), (14, 28), (4, 32)): a.sw(reg, 8, off)
     for i, reg in enumerate(SAVED): a.i(55, reg, 29, i*8)

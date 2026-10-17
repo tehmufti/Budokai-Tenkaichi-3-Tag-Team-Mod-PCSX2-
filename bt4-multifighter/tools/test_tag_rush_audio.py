@@ -5,7 +5,6 @@ import unittest as _TestUnit
 from native_map import elf_path as _test_elf_path
 if not _test_elf_path(_TestPath(__file__).resolve().parents[1]).is_file():
     raise _TestUnit.SkipTest('An extracted game executable is required for native tag tests')
-
 import struct
 import unittest
 from copy import deepcopy
@@ -175,8 +174,8 @@ class AudioTests(unittest.TestCase):
                     c.w(A(0x333700),1);tick(c,4,after);self.assertFalse(c.requests)
                     c.w(A(0x333700),0)
                     for frame in (after+2,after+2,after+5):tick(c,4,frame)
-                    self.assertEqual([r[2]for r in c.requests],[] if variant in(1,6) else [audio.EXPLOSION_SOUND])
-                    if variant not in(1,6):self.assertEqual(c.requests[0][5],(20.,-25.,200.,1.))
+                    self.assertEqual([r[2]for r in c.requests],[] if variant in(1,5,6) else [audio.EXPLOSION_SOUND])
+                    if variant not in(1,5,6):self.assertEqual(c.requests[0][5],(20.,-25.,200.,1.))
 
     def test_own_clash_charge_onset_is_once_per_beam_role_and_never_a_loop(self):
         data=pack()

@@ -60,7 +60,7 @@ def cue_rows(pack=None):
                     # Match FX_BODY's final burst, once at the victim even
                     # when both attackers fire. The normal cursor handles
                     # pauses and skipped frames without replaying the sound.
-                    if name!='super_galick_pair':
+                    if name not in ('blue_galick_kamehameha','super_galick_pair'):
                         cues=tuple(cues)+(dict(role=2,frame=burst,bank=0,
                             sound_id=EXPLOSION_SOUND,bone=3,near=200.,far=1500.),)
             import tag_rush_blue_native as blue

@@ -499,6 +499,15 @@ def view(enhanced=True):
 def selector(complete_ultimates=True,activation_cameras=True,shared_stop=True,quad_support=False,rush_support=True,*,shared_participant=True):
     unowned='stopped_views' if shared_stop else 'ordinary_selector'
     a=Assembler(CODE);save(a);a.call(camera.CODE);a.i(63,2,29,0xE0);a.i(63,3,29,0xE8)
+    # A planet's native track is global and has no fighter owner. Render it
+    # once even when the player's ultimate-camera preference is unchecked.
+    continuity.emit_stage_camera(a,'not_stage_camera')
+    a.addiu(8,0,1);a.i(63,8,29,0xE0)
+    a.move(4,0);a.call(A(0x23EF98));a.addiu(4,0,1);a.call(A(0x23EFD0))
+    a.move(4,0);a.addiu(5,0,1);a.call(A(0x23EE78))
+    a.lw(4,28,-22180);a.lw(8,28,-22172);a.sw(4,8,0xC40)
+    a.addiu(5,0,1);a.call(A(0x23E6A0));a.jump('return')
+    a.label('not_stage_camera')
     gate(a,'return')
     import tag_rush_camera as tag
     tag.emit_presentation(a,'not_tag_rush');a.call(tag.SELECT);a.li(8,0xFFFFFFFF)

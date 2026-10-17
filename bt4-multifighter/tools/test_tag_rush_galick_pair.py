@@ -116,6 +116,7 @@ class NativeSourceTests(unittest.TestCase):
         from test_tag_rush_camera import run
         import tag_rush_effects as effects
         c=machine();body=0x3700000;c.r[4]=body
+        c.w(tag.CONTROL+tag.C['variant'],6)
         c.w(body+1416,0x12345678);c.w(body+1424,0x87654321)
         values=[]
         for phase in (3,4,5,6):

@@ -258,7 +258,7 @@ def impact_code():
     import tag_rush_scene as scene
     a=Assembler(IMPACT);tag.save(a);_owner(a,'done')
     a.lw(8,16,S['status']);a.li(9,READY);a.branch(5,8,9,'done')
-    camera.emit_active(a,'done');a.lw(8,8,tag.C['variant']);a.li(9,6);a.branch(5,8,9,'done')
+    camera.emit_active(a,'done');a.lw(8,8,tag.C['variant']);a.addiu(8,8,-5);a.i(11,9,8,2);a.branch(4,9,0,'done')
     a.li(20,scene.ROWS+2*scene.STRIDE);scene.identity(a,20,'done','ultimate_impact')
     a.lw(4,20,scene.R['model_id']);a.li(5,3);a.addiu(6,29,0x320);a.call(A(0x2058E0))
     a.addiu(4,29,0x320);a.addiu(5,29,0x310);a.addiu(6,29,0x314)

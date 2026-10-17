@@ -6,6 +6,8 @@
 - The Tag Attack meter stays visible after transformations and sits in your own status panel in split-screen. You can turn it off under Mod Settings → HUD.
 - Fixed BT4 split-screen portraits and blast-stock displays, and an effect-texture issue between split-screen views.
 - Fixed an online rejoin error that could happen during the first session after installing.
+- Goku Blue + Vegeta Blue now ends with a growing beam impact, explosion sound and white flash.
+- Planet destruction uses one shared camera in split-screen, then returns to each player's view (BT3 and BT4).
 
 If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.5.
 
