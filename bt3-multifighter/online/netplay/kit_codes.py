@@ -36,10 +36,10 @@ CODES = {
                    '2.8.2 x64 AppImage on Linux. Extract the same ZIP again if a file in the pcsx2 folder was '
                    'replaced or updated.'),
     'TTM-NET-04': ('THE GAME PATCHES ARE DIFFERENT',
-                   'The Tag Team Mod patch file (pnach) differs between the two kits (this PC {mine}, the other PC '
+                   'The active Tag Team Mod patch file (pnach) differs between the two installations (this PC {mine}, the other PC '
                    '{theirs}).',
-                   'Use the files that come with the kit. Extract the same ZIP again into a new folder on the PC '
-                   'that changed them.'),
+                   'Update both installations using the same installer or updater download, then close and reopen '
+                   'Play online on both PCs. If this continues, keep the latest online/runs logs from both PCs.'),
     'TTM-NET-05': ('THE EMULATION SETTINGS ARE DIFFERENT',
                    'Settings that change how the game runs differ between the two PCs: {keys}.',
                    'The kit writes the same emulation settings on both PCs on every start, from its own files. '
@@ -178,10 +178,10 @@ CODES_ES = {
                    'PCSX2 2.8.2 x64 en Linux. Extrae otra vez el mismo ZIP si se cambió algún archivo de la carpeta '
                    'pcsx2.'),
     'TTM-NET-04': ('LOS PARCHES DEL JUEGO SON DISTINTOS',
-                   'El archivo de parches de Tag Team Mod (pnach) es distinto en los dos kits (este PC {mine}, el '
+                   'El archivo de parches activo de Tag Team Mod (pnach) es distinto en las dos instalaciones (este PC {mine}, el '
                    'otro PC {theirs}).',
-                   'Usa los archivos que vienen con el kit. Extrae otra vez el mismo ZIP en una carpeta nueva en el '
-                   'PC que los cambió.'),
+                   'Actualiza ambas instalaciones con la misma descarga del instalador o actualizador y vuelve a '
+                   'abrir Play online en los dos PC. Si continúa, guarda los últimos registros de online/runs de ambos PC.'),
     'TTM-NET-05': ('LOS AJUSTES DE EMULACIÓN SON DISTINTOS',
                    'Hay ajustes que cambian cómo funciona el juego y son distintos en los dos PC: {keys}.',
                    'El kit escribe los mismos ajustes de emulación en los dos PC cada vez que empieza, desde sus '

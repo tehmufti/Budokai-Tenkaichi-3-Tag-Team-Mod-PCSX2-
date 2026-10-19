@@ -309,8 +309,8 @@
       "shared": true
     },
     "tools/coop_character_select.py": {
-      "bt3": "1d946cc225ef31a54d077e10901583cb5971b31d24f3be3133218dc3d67e2313",
-      "bt4": "1d946cc225ef31a54d077e10901583cb5971b31d24f3be3133218dc3d67e2313",
+      "bt3": "f6c0ecd60ddfb087bad3e5369da6ef9d565a9914fb1da06e1c943ead856661b2",
+      "bt4": "f6c0ecd60ddfb087bad3e5369da6ef9d565a9914fb1da06e1c943ead856661b2",
       "shared": true
     },
     "tools/coop_controller.py": {
@@ -969,8 +969,8 @@
       "shared": true
     },
     "tools/native_menu_loading.py": {
-      "bt3": "3dc9d7eac00daf0804cb2110d778b9c07537fc3b88527cf4ea1212c7228cdc92",
-      "bt4": "3dc9d7eac00daf0804cb2110d778b9c07537fc3b88527cf4ea1212c7228cdc92",
+      "bt3": "ad5973d49683ed7acd7a5b6bcd561ba2883aa1e714282341cd1066d35bd5372f",
+      "bt4": "ad5973d49683ed7acd7a5b6bcd561ba2883aa1e714282341cd1066d35bd5372f",
       "shared": true
     },
     "tools/native_menu_services.py": {
@@ -1054,8 +1054,8 @@
       "shared": true
     },
     "tools/player_slot_labels.py": {
-      "bt3": "84b99cf0b06823cfb9509afcec13b344fe39d69813a77c29bf5ce234385329aa",
-      "bt4": "84b99cf0b06823cfb9509afcec13b344fe39d69813a77c29bf5ce234385329aa",
+      "bt3": "dbc4fc91015730b94ba1ad2dea5ca9658e7ac89e99f579664f6ec5921117c75d",
+      "bt4": "dbc4fc91015730b94ba1ad2dea5ca9658e7ac89e99f579664f6ec5921117c75d",
       "shared": true
     },
     "tools/player_storage.py": {
@@ -1187,6 +1187,11 @@
       "bt3": "f9155281db3f0ced4cbe2ae07b9a323f1ed58efc65825ff486ecfd8d66aa8571",
       "bt4": "39630be1918ba81454b862eca1862ce23e27a9f0f593f10fdccfc7283a4c4750",
       "shared": false
+    },
+    "tools/selection_badge_art.py": {
+      "bt3": "836da69f39af1bc700fea333b935f7192a6d9ec252dbcb66a4e231701566e70a",
+      "bt4": "836da69f39af1bc700fea333b935f7192a6d9ec252dbcb66a4e231701566e70a",
+      "shared": true
     },
     "tools/selector_complete.py": {
       "bt3": "8e3c4a8294a65aed2ff56c779f24e4e45ce994c6acaa45c05f646ad03b6e7048",

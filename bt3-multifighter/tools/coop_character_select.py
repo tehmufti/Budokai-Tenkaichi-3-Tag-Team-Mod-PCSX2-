@@ -151,6 +151,14 @@ def payload():
 
 @lru_cache(maxsize=1)
 def packets():
+    # These bytes enter the PNACH handshake. Do not draw them with this PC's
+    # system font or Pillow layout engine; neither changes game compatibility.
+    import selection_badge_art
+    return selection_badge_art.packets('turn')
+
+
+@lru_cache(maxsize=1)
+def _render_packets():
     """Small native-frame prompt using the existing sprite packet format."""
     from PIL import Image,ImageDraw
     import guest_loading_screen as gs

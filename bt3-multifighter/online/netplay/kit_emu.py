@@ -240,12 +240,20 @@ class Emulator:
         if source is None:
             raise KitError('TTM-NET-24', what=f'This kit has no runtime patch {str(sha)[:16]} for the host\'s Tag Team '
                                               'Mod version.')
+        # A cache entry may have changed since the lobby handshake. Check the
+        # exact selected patch again before PCSX2 is allowed to execute it.
+        import hashlib
+        from atomic_files import write_bytes
+        data = source.read_bytes()
+        if hashlib.sha256(data).hexdigest() != sha:
+            raise KitError('TTM-NET-25', what='The selected runtime patch cache is damaged. '
+                           'Close Play online and start it again to rebuild the installed patch.')
         target = self.root / 'cheats' / PNACH
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.is_file() and target.read_bytes() == source.read_bytes():
+        if target.is_file() and target.read_bytes() == data:
             changed = False
         else:
-            shutil.copyfile(source, target)
+            write_bytes(target, data)
             changed = True
         changed = changed or (self.pnach is not None and self.pnach != sha)
         self.pnach = sha

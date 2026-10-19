@@ -300,17 +300,22 @@ def installation_pnach():
     (game/runtime28/.../cheats/SLUS-21678_428113C2_BT3Loading.pnach, written by its installer), copied into the kit's
     runtime pnach folder (match/runtime/pnach/<sha256>.pnach) when it is not there yet; None outside an installation."""
     import hashlib
-    import shutil
     if not kit_paths.INTEGRATED:
         return None
+    from atomic_files import write_bytes
+    from game_profile import cheat_name
+    from native_map import SERIAL
+    from runtime_profile import data_directory
     runtime = kit_paths.INSTALL_ROOT / 'game' / 'runtime28'
-    for path in sorted(runtime.rglob(__import__('kit_adapter').state_name(0).split(' (')[0] + '_' + __import__('native_map').CRC + '_BT3Loading.pnach')):
-        if path.parent.name.lower() != 'cheats':
-            continue
-        sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    # Only the active profile's actual cheat directory: a backup or another
+    # platform's nested runtime must not win an arbitrary recursive search.
+    path = data_directory(runtime) / 'cheats' / cheat_name(SERIAL)
+    if path.is_file():
+        data = path.read_bytes()
+        sha = hashlib.sha256(data).hexdigest()
         target = kit_paths.RUNTIME / 'pnach' / f'{sha}.pnach'
-        if not target.is_file():
+        if not target.is_file() or target.read_bytes() != data:
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, target)
+            write_bytes(target, data)
         return sha
     return None

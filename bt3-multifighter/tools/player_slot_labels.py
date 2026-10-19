@@ -15,6 +15,12 @@ VISIBLE=0xDC
 
 @lru_cache(maxsize=1)
 def packets():
+    import selection_badge_art
+    return selection_badge_art.packets('slots')
+
+
+@lru_cache(maxsize=1)
+def _render_packets():
     from PIL import Image,ImageDraw
     import guest_loading_screen as gs
     result=[];font=fonts.truetype('sans-bold',11)

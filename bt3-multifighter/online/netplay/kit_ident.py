@@ -201,11 +201,19 @@ def pnach_files(runtime=None):
     return {p.stem: p for p in sorted(folder.glob('*.pnach'))} if folder.is_dir() else {}
 
 
-def patches_identity(runtime=None):
-    """The pnach set both PCs must have (refused when different) and the starting memory cards (logged only: the
-    cross-machine tests found the user's own memory cards and NVM identical)."""
+def patches_identity(runtime=None, *, active=None):
+    """Compare the active installation patch, not the history of this PC's cache.
+
+    Standalone legacy kits still describe their complete supported patch set.
+    Every described file is hash-checked; memory cards remain informational.
+    """
     runtime = Path(runtime or kit_paths.RUNTIME)
     pnach = pnach_files(runtime)
+    if active is not None:
+        if not re.fullmatch('[0-9a-f]{64}', str(active)) or active not in pnach:
+            raise KitError('TTM-NET-25', what='The active installation runtime patch is missing. '
+                           'Close Play online, update this installation and start it again.')
+        pnach = {active: pnach[active]}
     cards = [runtime / 'memcards' / m for m in MEMCARDS]
     missing = [str(p) for p in cards if not p.is_file()] + ([] if pnach else [str(runtime / 'pnach')])
     if missing:
@@ -555,12 +563,16 @@ def local_identity(*, disc, bios, ini_text, pcsx2=None, bios_policy='note', disc
     """What this PC sends to the other one. File names and paths stay on this PC (only contents are described)."""
     # Preboot also needs this patch. Publish it before taking the handshake
     # snapshot, so the first connection and a later rejoin describe the same set.
+    active = None
     if kit_paths.INTEGRATED:
         import kit_install
-        kit_install.installation_pnach()
+        active = kit_install.installation_pnach()
+        if active is None:
+            raise KitError('TTM-NET-25', what='The selected game has no installed runtime patch. '
+                           'Close Play online, update this installation and start it again.')
     private = ('name', 'path')
     return dict(protocol=PROTOCOL, kit_version=KIT_VERSION, code=code_identity(), pcsx2=pcsx2 or pcsx2_identity(),
-                patches=patches_identity(), settings=settings_identity(ini_text),
+                patches=patches_identity(active=active) if active else patches_identity(), settings=settings_identity(ini_text),
                 disc={k: v for k, v in disc.items() if k not in private},
                 bios={k: v for k, v in bios.items() if k not in private},
                 bios_policy=bios_policy, disc_policy=disc_policy, name=name[:32])

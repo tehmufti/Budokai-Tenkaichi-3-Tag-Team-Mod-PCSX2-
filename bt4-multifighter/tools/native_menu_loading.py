@@ -16,6 +16,15 @@ DECODE=0x07691000
 
 @lru_cache(maxsize=2)
 def packets(language='en'):
+    # Loading lettering is part of the boot patch too. Keep its rasterization
+    # independent of this PC's font files and Pillow RAQM/BASIC support.
+    import selection_badge_art
+    base,*dots=selection_badge_art.packets('loading-es' if language=='es' else 'loading-en')
+    return base,tuple(dots)
+
+
+@lru_cache(maxsize=2)
+def _render_packets(language='en'):
     from PIL import Image,ImageDraw
     import guest_loading_screen as gs
     # Palette quantization rounds near-black keys to black. Use actual black

@@ -10,6 +10,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'bt3-multifighter/onli
 import kit_ident as ident
 import kit_install
 import kit_paths
+import runtime_profile
 
 
 class FirstSessionIdentityTests(unittest.TestCase):
@@ -20,7 +21,8 @@ class FirstSessionIdentityTests(unittest.TestCase):
                 p=runtime/'memcards'/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'blank test card')
             old=b'old supported runtime patch';own=b'this installed release patch'
             p=runtime/'pnach'/(hashlib.sha256(old).hexdigest()+'.pnach');p.parent.mkdir();p.write_bytes(old)
-            p=root/'game/runtime28/cheats'/ident.PNACH;p.parent.mkdir(parents=True);p.write_bytes(own)
+            p=runtime_profile.data_directory(root/'game/runtime28')/'cheats'/ident.PNACH
+            p.parent.mkdir(parents=True);p.write_bytes(own)
             with patch.multiple(kit_paths,INTEGRATED=True,INSTALL_ROOT=root,RUNTIME=runtime), \
                     patch.object(ident,'code_identity',return_value={'digest':'same-code'}):
                 before=ident.patches_identity()
@@ -29,7 +31,7 @@ class FirstSessionIdentityTests(unittest.TestCase):
                 kit_install.installation_pnach()
                 rejoin=ident.local_identity(disc={},bios={},ini_text='',pcsx2={'tested':True})
             self.assertEqual(len(before['pnach_sha256']),1)
-            self.assertEqual(len(first['patches']['pnach_sha256']),2)
+            self.assertEqual(first['patches']['pnach_sha256'],[hashlib.sha256(own).hexdigest()])
             self.assertEqual(first['patches'],rejoin['patches'])
             self.assertFalse(any(row[0]=='TTM-NET-04'for row in ident.compare(first,rejoin)))
 
