@@ -1,3 +1,10 @@
+## Version 13.7
+
+- Fixed “The game patches are different” blocking online rooms even when both players have the same game and mod version.
+- Old cached patches no longer cause mismatches after updating or rejoining a room.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 13.7.
+
 ## Version 13.6
 
 - Fixed a freeze (TTM-MATCH-08) when a CPU teammate fuses with the team leader, for example Vegeta + Goku into Vegito. Team Battles and other matches with fusions now carry on with the fused fighter (BT3 and BT4).

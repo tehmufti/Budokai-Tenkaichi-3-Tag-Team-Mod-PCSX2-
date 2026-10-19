@@ -11,7 +11,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 13.6 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.6).
+Download the **Version 13.7 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.13.7).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -23,6 +23,10 @@ The release includes English and Spanish mod interfaces.
 This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
+
+Version 13.7 fixes false online patch mismatches that could block a room even
+when both players have the same game and mod version. Old cached patches no
+longer cause mismatches after updating or rejoining.
 
 Version 13.6 fixes a freeze (TTM-MATCH-08) when a CPU teammate fuses with
 the team leader, for example Vegeta + Goku into Vegito.
@@ -108,10 +112,10 @@ To fetch the pinned build dependencies and blank online-card templates:
 python scripts/fetch_dependencies.py
 ```
 
-An existing Version 13.6 Windows ZIP can be used instead of downloading it:
+An existing Version 13.7 Windows ZIP can be used instead of downloading it:
 
 ```sh
-python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.6.zip"
+python scripts/fetch_dependencies.py --release-zip "/path/to/Tag Team Mod 0.1.0-beta.13.7.zip"
 ```
 
 Downloaded wheels, DLLs, cards, private preferences and generated output are
@@ -124,7 +128,7 @@ python bt3-multifighter/tools/modder_gui.py
 
 ## Development source and downloads
 
-Version 13.6 is available in Releases. Main may receive further development changes;
+Version 13.7 is available in Releases. Main may receive further development changes;
 use the release tag for the source behind the installers and updaters.
 Choose a new version before distributing a modified build.
 
