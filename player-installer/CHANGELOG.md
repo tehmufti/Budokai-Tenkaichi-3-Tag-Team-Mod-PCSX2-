@@ -1,3 +1,23 @@
+## Version 14
+
+**New modes** (Main menu > Select > Modded Modes)
+- **Fighter Gauntlet**: beat wave after wave of opponents in one continuous match. Pick a gauntlet from sagas, eras, movies, races, teams and more, then play alone, with CPU teammates or with up to 4 players. Each wave gets its own intro, the CPU gets tougher as you go, and you can move freely during the short break between waves. You choose how much health comes back after each wave. Fight Again in the pause menu restarts the run.
+- **Tag Team Tournament**: the World Tournament with teams of 1 to 5 fighters per entrant, CPU only or with 1 to 4 players. Each team picks its whole roster once, including forms, costumes and Custom/Potara items. Every player uses their own controller, and you can watch or skip the CPU-only matches.
+
+**Improvements and fixes**
+- Tag team attacks now work on the European and Japanese BT3 discs.
+- Faster loading: the modded loading screen now takes about 5 to 10 seconds, down from 17 to 27.
+- Tag team attacks that sometimes stopped before contact or ended halfway now play through.
+- Extra fighters who lose a beam clash now get the white flash, the sound and the damage, like the team leaders.
+- A firm push on the stick for an ultimate no longer switches your lock-on target by accident.
+- Two grabs at the same time no longer make a grabbed fighter slide or teleport.
+- Split screen no longer flashes back to two views for a moment during shared cinematics such as the Spirit Bomb.
+- Japanese disc: Circle confirms and Cross goes back in the team setup and scenario menus.
+- In Spanish, the gauntlet descriptions and wave names are translated too.
+- Online play now works on the European and Japanese discs.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 14.
+
 ## Version 13.7
 
 - Fixed “The game patches are different” blocking online rooms even when both players have the same game and mod version.
