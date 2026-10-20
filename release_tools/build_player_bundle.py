@@ -122,6 +122,8 @@ def payload_files(root=ROOT):
         # Public sample library: exactly the three curated story adaptations.
         # Mission 100 and user-authored documents stay in the development tree.
         for name in scenarios:add(project/'missions'/name,prefix+'missions/'+name)
+        # Fighter Gauntlet data (gauntlet_data.PATH); the armed run file next to it is written at play time.
+        add(project/'gauntlets/gauntlets.json',prefix+'gauntlets/gauntlets.json')
         # Only exact historical patch receipts used by guarded upgrades. Never
         # include RAM, logs, saves, generated previews or a native game ELF.
         receipts={'research_opponent_patches.json'}

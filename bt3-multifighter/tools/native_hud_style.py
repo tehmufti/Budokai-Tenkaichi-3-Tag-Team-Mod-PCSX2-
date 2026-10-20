@@ -19,6 +19,7 @@ The kit:
 The game's art is read from the player's own disc image in RAM; nothing of it is shipped.
 Draw only: no fighter, camera, input or timer state is read for writing; online peers stay identical.
 """
+import hashlib
 import struct
 
 from native_map import A
@@ -176,6 +177,11 @@ OUTLINE = ((-1, 0, 3), (1, 0, 3), (0, -1, 3), (0, 1, 3), (-1, -1, 2), (1, -1, 2)
            (-2, 0, 1), (2, 0, 1), (0, -2, 1), (0, 2, 1), (1, 2, 2), (2, 1, 1), (2, 2, 1))
 
 
+# Baked atlases by the exact font pixels and glyph table they came from: every match bakes the same resident font
+# (about 0.3 s of host time each), so a watcher bakes it once. The key is the complete input of _bake.
+_BAKED = {}
+
+
 def build_atlas(ram):
     """Private outline-baked atlas from the resident font: (upload bytes, clut bytes, metrics bytes, info)."""
     font = find_font(ram)
@@ -183,6 +189,17 @@ def build_atlas(ram):
         raise ValueError('Resident game font not found')
     width, height, idx = font_planes(ram, font)
     glyphs = font['glyphs']
+    key = hashlib.sha256(repr((width, height, sorted(glyphs.items()))).encode() + bytes(idx)).digest()
+    baked = _BAKED.get(key)
+    if baked is None:
+        if len(_BAKED) >= 4:
+            _BAKED.clear()
+        baked = _BAKED[key] = _bake(width, height, idx, glyphs)
+    upload, rw, rh, clut, metrics, placed, rows = baked
+    return upload, rw, rh, clut, metrics, dict(font=hex(font['header']), glyphs=placed, atlas_rows=rows)
+
+
+def _bake(width, height, idx, glyphs):
     fill = bytearray(ATLAS_W*ATLAS_H)
     metrics = bytearray(128*16)
     placed = {}
@@ -223,8 +240,7 @@ def build_atlas(ram):
         x0, y0, sw, w = placed.get(code, fallback)
         struct.pack_into('<4H3bB', metrics, code*16, x0*16, y0*16, (x0+sw)*16, (y0+SLOT_H)*16,
                          sw, w, -MARGIN, int(code in placed))
-    return upload, rw, rh, clut_bytes(), bytes(metrics), dict(font=hex(font['header']), glyphs=len(placed),
-                                                              atlas_rows=y//SLOT_H + 1)
+    return upload, rw, rh, clut_bytes(), bytes(metrics), len(placed), y//SLOT_H + 1
 
 
 def clut_entry(i):

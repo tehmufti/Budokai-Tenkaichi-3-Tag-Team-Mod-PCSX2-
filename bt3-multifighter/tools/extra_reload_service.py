@@ -97,9 +97,16 @@ def entry_code():
 
 def build_memory(ram, physical, character, costume=0, damaged=False,
                  source='<offline-memory>', timeout=POLL_UPDATES, quiet=False,allow_forms=False,mesh_only=False,
-                 background=False,row=None,generation=None):
+                 background=False,row=None,generation=None,owner_checks=None):
     world = prior.capture(ram, physical)
-    if quiet:
+    if owner_checks is not None:
+        # Fighter Gauntlet: the caller names the owner words that replace the hold ACK (a hidden, retired
+        # extra loads while the match runs). Background semantics only: owner checks in the START phase.
+        import extra_reload_quiet
+        owner_checks = extra_reload_quiet.owner_pairs(ram, owner_checks)
+        if not (quiet and background and allow_forms) or row is not None or generation is not None:
+            raise ValueError('Owner-checked reload IO is a background body without a request row')
+    elif quiet:
         import extra_reload_quiet
         extra_reload_quiet.validate(ram,world,allow_forms)
     if type(background) is not bool:raise ValueError('Background mode must be Boolean')
@@ -109,6 +116,9 @@ def build_memory(ram, physical, character, costume=0, damaged=False,
         # its later calls are unheld, so the ordinary validate() above applies.
         if not quiet or not allow_forms:
             raise ValueError('Background reload IO serves acknowledged ordinary forms only')
+    if background and owner_checks is not None:
+        guard = extra_reload_quiet.owner_guard(owner_checks)
+    elif background:
         import extra_reload_requests as requests
         import extra_reload_quiet
         if row!=requests.RECORDS+(physical-2)*requests.STRIDE:

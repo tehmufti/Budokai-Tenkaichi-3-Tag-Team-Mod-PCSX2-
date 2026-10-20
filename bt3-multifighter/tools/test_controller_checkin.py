@@ -319,4 +319,41 @@ class OutputTests(unittest.TestCase):
                          '(pass-through); P3 Pad 1 (mod); P4 empty.')
 
 
+class TournamentOrderTests(unittest.TestCase):
+    """Tag Team Tournament: match slot j is driven by tournament player order[j-1]'s own controller."""
+    def roster(self, sources):
+        roster = c.Roster(len(sources), 'three_or_more')
+        for seat, source in zip(roster.seats, sources):
+            seat.source = source
+            seat.key = f'k{seat.number}' if source in ('hub', 'native') else c.PSEUDO.get(seat.number) if source == 'pseudo' else None
+            if source == 'native':seat.native_port = seat.number
+        return roster
+
+    def test_a_lone_player_moves_to_match_slot_one(self):
+        roster = self.roster(('hub', 'hub', 'hub', 'hub'))
+        self.assertEqual(c.p12(roster, True, (3,)), (True, 2, ('k3', None)))
+        self.assertEqual(c.private(roster, table(), (3,)), (None, None))
+
+    def test_pcsx2_ports_pass_in_place_and_are_copied_when_they_move(self):
+        roster = self.roster(('default', 'default', 'hub', 'hub'))
+        self.assertEqual(c.p12(roster, True, (1, 2)), (False, 3, (None, None)))
+        self.assertEqual(c.p12(roster, True, (2,)), (True, 2, ('pcsx2:2', None)))
+        self.assertEqual(c.p12(roster, True, (3, 4, 1, 2)), (True, 0, ('k3', 'k4')))
+        self.assertEqual(c.private(roster, table(), (3, 4, 1, 2)), ('pcsx2:1', 'pcsx2:2'))
+        native = self.roster(('native', 'native'))
+        self.assertEqual(c.p12(native, True, (2, 1)), (True, 0, ('k2', 'k1')))
+        self.assertEqual(c.p12(native, True, (1, 2)), (False, 3, (None, None)))
+
+    def test_without_a_roster_the_default_order_drives(self):
+        devices = table(4)
+        self.assertEqual(c.p12(None, True, (2,)), (True, 2, ('pcsx2:2', None)))
+        self.assertEqual(c.p12(None, True, (1, 2)), (False, 3, (None, None)))
+        self.assertEqual(c.private(None, devices, (1, 2, 3, 4)), tuple(c.classic_keys(devices, None)[:2]))
+
+    def test_no_order_keeps_the_roster_rules(self):
+        roster = self.roster(('hub', 'default'))
+        self.assertEqual(c.p12(roster, True, None), c.p12(roster, True))
+        self.assertEqual(c.p12(roster, True, ()), c.p12(roster, True))
+
+
 if __name__ == '__main__':unittest.main()

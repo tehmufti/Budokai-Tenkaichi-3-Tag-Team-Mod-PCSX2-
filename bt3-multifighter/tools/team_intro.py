@@ -14,6 +14,9 @@ from battle_mode_policy import ACTOR_COUNTS
 
 CODE, TRAMPOLINE, CONTROL = 0x07430000, 0x07431C00, 0x07431D00
 HOOK, REQUEST = start.HOOK, CONTROL+4
+# Tag Team Tournament: nonzero = the stage's crowd / arena / gate shots (battle phase 0) play first, then the native
+# phase 0 enters phase 1 (the leaders' lines) by itself. Written by crowd_first() before the start request.
+CROWD = CONTROL+28
 BATTLE = A(0x2FEB38)
 SAVED = ((16, 0), (17, 8), (18, 16), (31, 24))
 
@@ -36,6 +39,13 @@ def payload(previous):
     a.branch(4, 9, 0, 'tail')
     a.addiu(8, 0, 1); a.sw(8, 16, 20); a.sw(8, 17)
     a.li(8, bars.CONTROL); a.lw(9, 8); a.sw(9, 16, 24); a.sw(0, 8)
+    a.lw(8, 16, CROWD-CONTROL); a.branch(4, 8, 0, 'leaders')
+    a.sw(0, 17); a.li(4, A(0x217C40)); a.move(5, 0); a.call(A(0x216AF8))
+    # and its shot starter at once (substate 0 -> the first shot, the crowd): the phase update runs before it in a
+    # frame and would step past substate 0 with no shot playing yet
+    a.li(4, A(0x217C78)); a.move(5, 0); a.call(A(0x216AF8))
+    a.jump('tail')
+    a.label('leaders')
     # Native transition dispatcher initializes obj+4's callback and calls the
     # ordinary phase1 entry. No full battle/actor reset occurs here.
     a.li(4, A(0x217398)); a.addiu(5, 0, 1); a.call(A(0x216AF8))
@@ -78,3 +88,14 @@ def build_memory(ram, source='<offline>', *, preset=False):
     return dict(serial=SERIAL,crc=CRC,source=str(source),
         blocks=[dict(address=p,expected_hex=ram[p:p+len(d)].hex(),data_hex=d.hex()) for p,d in pieces],
         control=CONTROL,request=REQUEST,previous=previous)
+
+
+def crowd_first(p):
+    """A Tag Team Tournament match: its intro starts with the stage's crowd shots (battle phase 0) when the battle
+    still runs the native phase table whose phase 0 enters at 217C40. Returns whether it was asked."""
+    phase = p.read_u32(BATTLE)
+    if (0x100000 <= phase < 0x8000000 and p.read_u32(phase+260) == A(0x2C6070) and
+            p.read_u32(A(0x2C6070)) == A(0x217C40)):
+        p.write_u32(CROWD, 1)
+        return True
+    return False

@@ -147,8 +147,9 @@ class ApproachTests(unittest.TestCase):
                         hit(c);c.callbacks[tag.START]=lambda m:m.r.__setitem__(2,0)
                     run(c,rush.TICK)
                     self.assertFalse(c.connections);self.assertFalse(c.damage)
+                    # A connected dash whose cinematic could not start costs nobody anything.
                     self.assertEqual([c.u(tag.METERS+i*tag.METER_STRIDE)for i in range(4)],
-                                     [750 if keep else 0,750,750,750])
+                                     [750 if keep or reason=='preflight' else 0,750,750,750])
                     self.assertEqual(c.u(tag.CONTROL+tag.C['approaching']),0)
 
     def test_cancel_never_refunds_to_dead_consumed_or_replaced_actor_slots(self):
@@ -302,13 +303,33 @@ class ApproachTests(unittest.TestCase):
         self.assertEqual([c.read(m,0x1700)for m in c.models],models)
         self.assertEqual(c.u(tag.CONTROL+tag.C['approaching']),0)
 
-    def test_approach_does_not_install_synthetic_actor_hold(self):
+    def test_dash_guard_lets_only_the_dash_touch_the_participants(self):
+        # From the first dash frame nobody else can hit (or be hit by) the three.
+        c=machine();c.write(safety.DASH_GUARD,safety.dash_guard_code())
+        def guard(source,target):
+            c.r[4],c.r[5]=c.actors[source],c.actors[target];run(c,safety.DASH_GUARD);return c.r[2]
+        self.assertEqual(guard(3,1),0,'no dash yet: native contacts')
+        begin(c)
+        self.assertEqual(guard(0,1),0,'the dash itself lands')
+        for source,target in ((1,0),(3,0),(3,1),(3,2),(2,3),(0,3)):
+            self.assertEqual(guard(source,target),1,(source,target))
+        c.w(rush.STATE+rush.S['active'],0)
+        self.assertEqual(guard(3,1),0,'released with the dash')
+
+    def test_approach_holds_the_helper_and_victim_until_contact(self):
+        # The initiator's rush stays native; helper and victim wait for contact.
         from prototype import Assembler
         a=Assembler(0x6D85000);rush.emit_hold(a,4,'yes','no')
         a.label('yes');a.li(2,1);a.jr();a.label('no');a.move(2,0);a.jr()
-        c=machine();begin(c);c.write(a.base if hasattr(a,'base') else 0x6D85000,a.finish())
+        c=machine();c.write(0x6D85000,a.finish())
         for actor in c.actors:
-            c.r[4]=actor;run(c,0x6D85000);self.assertEqual(c.r[2],0)
+            c.r[4]=actor;run(c,0x6D85000);self.assertEqual(c.r[2],0,'no hold before the dash')
+        begin(c)
+        for index,actor in enumerate(c.actors):
+            c.r[4]=actor;run(c,0x6D85000);self.assertEqual(c.r[2],int(index in (1,2)),index)
+        c.w(rush.STATE+rush.S['active'],0)
+        for actor in c.actors:
+            c.r[4]=actor;run(c,0x6D85000);self.assertEqual(c.r[2],0,'released with the dash')
 
 
 if __name__=='__main__':unittest.main()

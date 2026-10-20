@@ -215,11 +215,13 @@ def clone(ram,source,destination,indices):
     return bytes(descriptor)+bytes(pix)+pal
 
 
+GAUNTLET_DESCRIPTION = 'Beat wave after wave in one match.\nChoose a gauntlet, then your team,\nthe HP back per wave and the arena.'
 DESCRIPTIONS = (
     ('Fight with every selected teammate\non the battlefield at the same time.',
      'Every fighter is an opponent.\nChoose one to four players, or CPUs.',
      'Play saved story battles.\nFighters are selected automatically.',
-     'Practice with selected team rosters.\nSet CPU behavior and refill in Mod settings.\nOriginal Training stays in the original menu.', '', '', 'Adjust the mod with your controller.\nSave changes for your next match.', ''),
+     'Practice with selected team rosters.\nSet CPU behavior and refill in Mod settings.\nOriginal Training stays in the original menu.',
+     'World Tournament with teams of one to five.\nChoose players, team size and tournament,\nthen pick every team once.', GAUNTLET_DESCRIPTION, 'Adjust the mod with your controller.\nSave changes for your next match.', ''),
     ('', '', '', '',
      'Control Team 1 against CPU opponents.\nChoose the fighters for each team.',
      'Player 1 faces Player 2.\nAdd CPU teammates on either side.',

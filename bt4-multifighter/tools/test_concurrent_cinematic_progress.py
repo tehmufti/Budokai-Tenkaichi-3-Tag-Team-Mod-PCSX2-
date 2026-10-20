@@ -131,9 +131,11 @@ class ConcurrentCinematicProgressTests(unittest.TestCase):
                 p.build_memory(ram)
             ram[p.PROTECT_ACTIVE+20]=0
             result=p.build_memory(ram)
-            # The same upgrade also installs the admitted-form gate (FORM_GATE/FORM_TRACK and its three call sites).
+            # The same upgrade also installs the admitted-form gate (FORM_GATE/FORM_TRACK and its three call sites)
+            # and the view grace (GRACE and its call sites in ULTIMATE_OWNER, SHARED_FORM, ULTIMATE_STOP, PREPARE).
             self.assertEqual({b['address']for b in result['blocks']},{p.PROTECT,p.PROTECT_ACTIVE,p.PREPARE,p.STORE,p.SHARED_FORM,
-                                                                  p.ULTIMATE_FRAME,p.FORM_GATE,p.FORM_TRACK})
+                                                                  p.ULTIMATE_FRAME,p.FORM_GATE,p.FORM_TRACK,
+                                                                  p.GRACE,p.ULTIMATE_OWNER,p.ULTIMATE_STOP})
             for block in result['blocks']:
                 at=block['address'];data=bytes.fromhex(block['data_hex']);ram[at:at+len(data)]=data
             self.assertEqual(p.build_memory(ram)['blocks'],[])

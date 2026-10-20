@@ -108,7 +108,9 @@ def owned_main(source, obj):
     else:
         page=_u(source,c+8)
         if page>=len(menu.PAGES):return False
-        expected=(menu.OFF,menu.ON) if page==0 else (menu.ALT_OFF,menu.ALT_ON)
+        import gauntlet_mode
+        expected=((menu.OFF,menu.ON) if page==0 else (gauntlet_mode.G_OFF,gauntlet_mode.G_ON)
+                  if page==gauntlet_mode.PAGE else (menu.ALT_OFF,menu.ALT_ON))
     return (_u(source,obj+0x60),_u(source,obj+0x70))==expected
 
 

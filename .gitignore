@@ -39,6 +39,7 @@ __pycache__/
 **/assets/characters.json
 **/missions/next-battle.json
 **/missions/quick-launch.json
+**/gauntlets/next-run.json
 **/online/data/
 **/online/states/
 **/online/matches/

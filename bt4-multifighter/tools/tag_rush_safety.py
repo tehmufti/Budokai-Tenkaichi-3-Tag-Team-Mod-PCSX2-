@@ -12,6 +12,7 @@ import tag_rush_camera as camera
 CONTACT, TRAMPOLINE = 0x06D06000, 0x06D06400
 DAMAGE, DAMAGE_CALL, PREFLIGHT = 0x06D06800, 0x06D06B00, 0x06D07000
 VICTIM_PREFLIGHT = 0x06D07600
+DASH_GUARD = 0x06D07D00  # after VICTIM_PREFLIGHT, below the shared CONTROL page
 # Native 1E9590 knockback flight, not the adjacent paired throw/vanish actions.
 LAUNCHED_ACTIONS = (213, 214, 223)
 DAMAGE_RETURN = DAMAGE_CALL+8
@@ -70,16 +71,41 @@ def emit_damage_attacker(a,out,victim,return_reg,fail,tag):
 
 
 def contact_code():
-    a=Assembler(CONTACT);camera.save(a);camera.emit_active(a,'native')
+    a=Assembler(CONTACT);camera.save(a);camera.emit_active(a,'approach')
     for actor,tag in ((4,'source'),(5,'target')):
         emit_registered(a,actor,14,'native' if actor==5 else 'check_target',tag)
         a.li(8,CONTROL);a.lw(9,8,camera.SHARED);a.branch(5,9,0,'blocked')
         a.lw(9,8,camera.MEMBERS);a.r(6,9,14,9);a.i(12,9,9,1)
         a.branch(5,9,0,'blocked')
         if actor==4:a.label('check_target')
+    # During the dash nobody else touches the three participants (DASH_GUARD).
+    a.label('approach');a.call(DASH_GUARD);a.branch(5,2,0,'blocked')
     a.label('native');camera.restore(a);a.jump(TRAMPOLINE)
     a.label('blocked');a.li(2,1);camera.restore(a,skip=(2,));a.jr()
     data=a.finish();assert len(data)<=TRAMPOLINE-CONTACT;return data
+
+
+def dash_guard_code():
+    """a0 source,a1 target actors -> v0 1 when a native contact must not run during the dash.
+
+    From the first dash frame nobody else touches the three participants, and
+    the dash cannot land on anyone else: only the initiator's contacts on the victim run.
+    CONTACT saved every register before this call; t0..t3, t6, t7, s4..s6 scratch.
+    """
+    import tag_rush_approach as rush
+    a=Assembler(DASH_GUARD);a.move(2,0)
+    a.li(8,rush.STATE);a.lw(9,8);a.li(11,rush.MAGIC);a.branch(5,9,11,'native')
+    a.lw(9,8,rush.S['active']);a.li(11,1);a.branch(5,9,11,'native')
+    a.lw(9,8,rush.S['manager']);a.lw(11,28,-22364);a.branch(5,9,11,'native')
+    a.li(8,CONTROL);a.lw(9,8);a.li(11,camera.MAGIC);a.branch(5,9,11,'native')
+    emit_registered(a,4,14,'native','dash_source');emit_registered(a,5,15,'native','dash_target')
+    for role,reg in ((0,20),(1,21),(2,22)):a.li(8,rush.ROWS+role*rush.STRIDE);a.lw(reg,8,rush.R['index'])
+    a.branch(5,14,20,'dash_others');a.branch(4,15,22,'native')
+    a.label('dash_others')
+    for reg in (20,21,22):a.branch(4,14,reg,'blocked');a.branch(4,15,reg,'blocked')
+    a.jump('native');a.label('blocked');a.li(2,1)
+    a.label('native');a.jr()
+    data=a.finish();assert DASH_GUARD+len(data)<=CONTROL,len(data);return data
 
 
 def damage_code():
@@ -119,16 +145,16 @@ def preflight_code(base=PREFLIGHT, *, victim=False):
     import beam_struggle as beam
     import extra_throws as throws
     import extra_reload_requests as reloads
-    a=Assembler(base);camera.save(a);a.move(16,4);core.gate(a,'no')
-    a.li(8,CONTROL);a.lw(9,8);a.li(11,camera.MAGIC);a.branch(5,9,11,'no')
-    a.lw(9,8,4);a.lw(11,28,-22364);a.branch(5,9,11,'no');a.lw(9,8,12);a.branch(4,9,0,'no')
-    a.lw(9,8,8);a.li(11,core.MODE+4);a.lw(11,11);a.branch(5,9,11,'no')
-    emit_registered(a,16,17,'no','actor');beam.participating(a,17,'no')
-    throws.hp(a,16,'no');throws.model(a,16,18,'no')
-    emit_non_giant_model(a,18,'no')
+    a=Assembler(base);camera.save(a);a.move(16,4);core.gate(a,'no1')
+    a.li(8,CONTROL);a.lw(9,8);a.li(11,camera.MAGIC);a.branch(5,9,11,'no2')
+    a.lw(9,8,4);a.lw(11,28,-22364);a.branch(5,9,11,'no3');a.lw(9,8,12);a.branch(4,9,0,'no3')
+    a.lw(9,8,8);a.li(11,core.MODE+4);a.lw(11,11);a.branch(5,9,11,'no4')
+    emit_registered(a,16,17,'no5','actor');beam.participating(a,17,'no5')
+    throws.hp(a,16,'no6');throws.model(a,16,18,'no6')
+    emit_non_giant_model(a,18,'no7')
     # Native1DC2C0/205E00 report this positive counter as an actor pause.
     # Starting during individual hit-stop would immediately split FX clocks.
-    a.lw(8,16,4896);a.r(0x2A,9,0,8);a.branch(5,9,0,'no')
+    a.lw(8,16,4896);a.r(0x2A,9,0,8);a.branch(5,9,0,'no8')
     # Director START requests11 via1E0290 then runs1E23D0. The dispatcher
     # invokes the outgoing handler's phase3 cleanup before switching to idle,
     # so ordinary charging/punching can accept without a leftover native loop.
@@ -136,7 +162,7 @@ def preflight_code(base=PREFLIGHT, *, victim=False):
     a.lw(8,16,2376)
     if victim:
         for action in (*LAUNCHED_ACTIONS,217):a.li(9,action);a.branch(4,8,9,'ordinary_or_launched')
-    a.addiu(9,8,-11);a.i(11,9,9,169);a.branch(4,9,0,'no')
+    a.addiu(9,8,-11);a.i(11,9,9,169);a.branch(4,9,0,'no9')
     a.label('ordinary_or_launched')
     if victim:
         # 1E9590's ordinary knockback handler requests falling217 at1E97A0.
@@ -145,21 +171,26 @@ def preflight_code(base=PREFLIGHT, *, victim=False):
         # START's normal outgoing-handler cleanup may replace it with idle.
         # All four follow-up queues and every hit/reload guard still apply.
         a.lw(8,16,2380);a.li(9,-1);a.branch(4,8,9,'pending_safe')
-        a.li(9,217);a.branch(5,8,9,'no');a.lw(8,16,2376)
+        a.li(9,217);a.branch(5,8,9,'no10');a.lw(8,16,2376)
         for action in LAUNCHED_ACTIONS:a.li(9,action);a.branch(4,8,9,'pending_safe')
-        a.jump('no');a.label('pending_safe')
+        a.jump('no11');a.label('pending_safe')
     for off in ((2388,2392,2396,2400) if victim else (2380,2388,2392,2396,2400)):
-        a.lw(8,16,off);a.li(9,0xFFFFFFFF);a.branch(5,8,9,'no')
-    for off in (3480,3500,3512,0xFE0):a.lw(8,16,off);a.branch(5,8,0,'no')
+        a.lw(8,16,off);a.li(9,0xFFFFFFFF);a.branch(5,8,9,'no12')
+    for off in (3480,3500,3512,0xFE0):a.lw(8,16,off);a.branch(5,8,0,'no13')
     for flag in map(FLAG,(0xB,0xBE,0x94,0x125,0x126,0x135)):
         for bank in (0x1085,0x10AD):
-            a.i(36,8,16,bank+(flag>>3));a.i(12,8,8,1<<(flag&7));a.branch(5,8,0,'no')
+            a.i(36,8,16,bank+(flag>>3));a.i(12,8,8,1<<(flag&7));a.branch(5,8,0,'no14')
     a.i(11,8,17,2);a.branch(5,8,0,'ready')
     a.addiu(8,17,-2);a.r(0,8,0,8,6);a.li(9,reloads.RECORDS);a.r(0x21,8,8,9)
-    a.lw(8,8,4);a.addiu(8,8,-1);a.i(11,8,8,2);a.branch(5,8,0,'no')
+    a.lw(8,8,4);a.addiu(8,8,-1);a.i(11,8,8,2);a.branch(5,8,0,'no15')
+    a.jump('ready')
+    # Diagnostics only: which check refused (code<<16 | current action) and the actor.
+    for code in range(1,16):a.label(f'no{code}');a.li(9,code);a.jump('refused')
+    a.label('refused');a.lw(8,16,2376);a.i(12,8,8,0xFFFF);a.r(0,9,0,9,16);a.r(0x25,9,9,8)
+    a.li(8,STATE+(0xF8 if victim else 0xF0));a.sw(9,8);a.sw(16,8,4);a.jump('no')
     a.label('ready');a.li(2,1);a.jump('done');a.label('no');a.move(2,0)
     a.label('done');camera.restore(a,skip=(2,));a.jr()
-    data=a.finish();assert base+len(data)<=(CONTROL if victim else VICTIM_PREFLIGHT);return data
+    data=a.finish();assert base+len(data)<=(DASH_GUARD if victim else VICTIM_PREFLIGHT);return data
 
 
 def victim_preflight_code():
@@ -231,7 +262,8 @@ def pieces(original):
     import beam_struggle as beam
     import spawn_placement as terrain
     out=[(CONTACT,contact_code()),(TRAMPOLINE,trampoline_code(original)),(DAMAGE,damage_code()),
-         (PREFLIGHT,preflight_code()),(VICTIM_PREFLIGHT,preflight_code(VICTIM_PREFLIGHT,victim=True)),(PLACE,place_code()),
+         (PREFLIGHT,preflight_code()),(VICTIM_PREFLIGHT,preflight_code(VICTIM_PREFLIGHT,victim=True)),
+         (DASH_GUARD,dash_guard_code()),(PLACE,place_code()),
          (FLOOR,core.rebound(beam.floor_code,FLOOR=FLOOR,QUERY=QUERY)()),
          (QUERY,core.rebound(terrain.query_code,QUERY=QUERY,CONTROL=QUERY_STATS-16)()),
          (STATE,bytes(0x100))]

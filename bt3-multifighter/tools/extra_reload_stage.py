@@ -205,7 +205,7 @@ def payload(world,row,occupied,quiet=False,allow_forms=False,quiet_guard=None):
     code=a.finish();assert ENTRY+len(code)<EXTENSION;return code
 
 
-def build_memory(ram,source='<offline-memory>',quiet=False,allow_forms=False):
+def build_memory(ram,source='<offline-memory>',quiet=False,allow_forms=False,owner_checks=None):
     require(len(ram)==0x8000000,'Requires128MiB EE RAM')
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     require(u(io.CONTROL+4)==5 and u(io.CONTROL+40)==1,'Independent reload IO must be complete')
@@ -222,7 +222,13 @@ def build_memory(ram,source='<offline-memory>',quiet=False,allow_forms=False):
     row=resource_info(ram,resource,handle,character,costume,damaged)
     row.update(character=character,costume=costume,damaged=damaged,pool=u(prior.REGISTRY_GLOBAL))
     require(resource!=world['old_resource'],'Replacement must not overwrite the current resource')
-    if quiet:
+    quiet_guard=None
+    if owner_checks is not None:
+        # Fighter Gauntlet: caller-named owner words (a hidden, retired extra) replace the hold ACK.
+        import extra_reload_quiet
+        require(quiet,'Owner-checked staging is a quiet job body')
+        quiet_guard=extra_reload_quiet.owner_guard(extra_reload_quiet.owner_pairs(ram,owner_checks))
+    elif quiet:
         import extra_reload_quiet
         extra_reload_quiet.validate(ram,world,allow_forms)
     else:
@@ -256,7 +262,7 @@ def build_memory(ram,source='<offline-memory>',quiet=False,allow_forms=False):
     for field,value in ((8,world['manager']),(12,world['actor']),(16,world['model']),
                         (20,world['model_id']),(24,world['old_resource']),(28,resource),(32,handle),(40,0xFFFFFFFF)):
         struct.pack_into('<I',control,field,value)
-    pieces=[(ENTRY,payload(world,row,occupied,quiet,allow_forms)),(EXTENSION,extension_code(world,occupied)),
+    pieces=[(ENTRY,payload(world,row,occupied,quiet,allow_forms,quiet_guard)),(EXTENSION,extension_code(world,occupied)),
             (OLD_EXTENSION,original),(CONTROL,bytes(control)),
             (creator.EXT_ENTRY,struct.pack('<2I',(2<<26)|(EXTENSION>>2),0))]
     return dict(serial=SERIAL,crc=CRC,source=str(source),world=world,resource=row,texture_groups=groups,

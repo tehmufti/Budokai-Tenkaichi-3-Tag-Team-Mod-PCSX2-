@@ -263,7 +263,7 @@ def native_machine(character=22):
     meta=bytearray(160);meta[0:4]=bytes.fromhex('d4029e02');meta[4]=2;meta[13]=0
     struct.pack_into('<I',meta,0x28,60);struct.pack_into('<3f',meta,0x2C,0.,1.,500.)
     struct.pack_into('<I',meta,0x3C,sbc.SBC_META_ID);c.write(SHARED_META,bytes(meta))
-    c.write(INIT_NODE,bytes(64));c.w(INIT_NODE+40,sbc.KIND0_INIT_CLASS);c.w(INIT_NODE+0x24,CHILD_POOL)
+    c.write(INIT_NODE,bytes(64));c.w(INIT_NODE+40,sbc.KIND0_INIT_CLASS());c.w(INIT_NODE+0x24,CHILD_POOL)
     c.w(INIT_NODE+56,INIT_BODY);c.w(CHILD_POOL,INIT_NODE)
     c.write(INIT_BODY,struct.pack('<4I',0,0x1DEB000,0x1DEB040,0x1DEB140))
     c.w(CHARACTER_DATA+0xA24,0x2C)
@@ -294,10 +294,10 @@ def native_machine(character=22):
             if bits&bit:flags|=flag
         m.w(NATIVE_BODY,flags)
     def free(m):c.native.append(('free',m.r[4],m.r[5]))
-    c.callbacks.update({sbc.RECORD_OF:record,sbc.CHARACTER:character_data,
-        sbc.SPECIAL_A:getter(1.,'a'),sbc.SPECIAL_DURATION:getter(2.,'duration'),
-        sbc.SPECIAL_SPEED:getter(46.296,'speed'),sbc.SPECIAL_HOMING:getter(0.,'homing'),
-        sbc.ALLOCATE:allocate,sbc.KIND0_UPDATE:update,sbc.KIND0_FREE:free})
+    c.callbacks.update({sbc.RECORD_OF():record,sbc.CHARACTER():character_data,
+        sbc.SPECIAL_A():getter(1.,'a'),sbc.SPECIAL_DURATION():getter(2.,'duration'),
+        sbc.SPECIAL_SPEED():getter(46.296,'speed'),sbc.SPECIAL_HOMING():getter(0.,'homing'),
+        sbc.ALLOCATE():allocate,sbc.KIND0_UPDATE():update,sbc.KIND0_FREE():free})
     return c
 
 
@@ -315,15 +315,15 @@ class NativeSpecialBeamTests(unittest.TestCase):
         route=sbc.native_route()
         self.assertEqual((route['slot'],route['family'],route['events'],route['fire_delay']),(4,0,(2,0x40,4,8),1))
         # 14B9B0's family table: kind0 dispatches class2C38E0; its init class is2C38C8.
-        self.assertEqual(u(0x2C3704+12),route['family_class']);self.assertEqual(u(0x2C3700+12),sbc.KIND0_INIT_CLASS)
+        self.assertEqual(u(0x2C3704+12),route['family_class']);self.assertEqual(u(0x2C3700+12),sbc.KIND0_INIT_CLASS())
         self.assertEqual(tuple(u(0x2C38E0+4*i) for i in range(3)),(A(0x155C60),A(0x155A70),A(0x155C10)))
         # Our class keeps the native constructor; the update/destructor wrap it.
         c=native_machine()
-        self.assertEqual(struct.unpack('<3I',c.read(sbc.NATIVE_CLASS,12)),(sbc.NATIVE_UPDATE,sbc.KIND0_CTOR,sbc.NATIVE_DTOR))
+        self.assertEqual(struct.unpack('<3I',c.read(sbc.NATIVE_CLASS,12)),(sbc.NATIVE_UPDATE,sbc.KIND0_CTOR(),sbc.NATIVE_DTOR))
         # 1CF740 fills a slot2..4 request through the +0x92C blast getters.
         jal=lambda at:(u(at)&0x3FFFFFF)<<2
         self.assertEqual([jal(at) for at in (0x1CF838,0x1CF848,0x1CF858,0x1CF868)],
-                         [sbc.SPECIAL_A,sbc.SPECIAL_DURATION,sbc.SPECIAL_SPEED,sbc.SPECIAL_HOMING])
+                         [sbc.SPECIAL_A(),sbc.SPECIAL_DURATION(),sbc.SPECIAL_SPEED(),sbc.SPECIAL_HOMING()])
         # The kind0 child dispatch hands the moving head, axis and scale to every rule.
         self.assertEqual((route['head'],route['axis'],route['scale']),(0x60,0x30,0xC))
 
@@ -357,7 +357,7 @@ class NativeSpecialBeamTests(unittest.TestCase):
         cases=[('character',lambda c:c.w(c.models[2]+12,0)),('meta',lambda c:c.w(SHARED_META+0x3C,0x4000009)),
                ('family',lambda c:c.write(SHARED_META+13,b'\x02')),('init',lambda c:c.w(INIT_NODE+40,0x2C3988)),
                ('pool owner',lambda c:c.w(CHILD_POOL,0)),('descriptor',lambda c:c.w(INIT_BODY+12,0x1DEB100)),
-               ('duration',lambda c:c.callbacks.__setitem__(sbc.SPECIAL_DURATION,lambda m:m.set_number(0,0.))),
+               ('duration',lambda c:c.callbacks.__setitem__(sbc.SPECIAL_DURATION(),lambda m:m.set_number(0,0.))),
                ('refused',lambda c:setattr(c,'allocation','refused')),('busy',lambda c:(c.w(sbc.NSTATE,sbc.NMAGIC),c.w(sbc.NSTATE+4,0x2600000)))]
         for name,bad in cases:
             c=native_machine();bad(c);before=c.read(SHARED_RECORD,80)

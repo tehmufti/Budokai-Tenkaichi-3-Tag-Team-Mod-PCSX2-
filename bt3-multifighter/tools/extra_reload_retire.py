@@ -73,8 +73,11 @@ def capture(ram,owned,*,body_context=None):
     # analog bytes. Their bit patterns can look exactly like EE pointers.
     # Every other aligned actor word is conservatively checked, including the
     # three cached attack-script pointers at5608/5612/5616.
+    # A body retirement (Fighter Gauntlet) may name further actor ranges that hold no pointers (actor_data).
+    data=tuple(body_context.get('actor_data',())) if body_context is not None else ()
     for actor in w['actors']:
-        require(not any(inside(u(actor+off)) for off in range(0,0x1600,4) if not 0x8C0<=off<0x910),
+        require(not any(inside(u(actor+off)) for off in range(0,0x1600,4) if not 0x8C0<=off<0x910 and
+                        not any(lo<=off<hi for lo,hi in data)),
                 'A captured actor retains an old resource pointer')
     # Every registered model must have released both bundle and texture group.
     vacant=[];texture_owner=False
@@ -171,9 +174,22 @@ def payload(c):
     # Refresh stale enemy halves before release. The current scheduler normally
     # makes this exact copy before any private manager is published.
     for index,(destination,before) in enumerate(c['copies']):
+        if c.get('guard_copies'):
+            # Unheld (Fighter Gauntlet): refresh a stale enemy half only while it still shows the retired body
+            # (its +24 dataset inside the old buffers and +0 the owner's side); an AI that retargeted meanwhile
+            # already holds another fighter's context and is left alone.
+            a.li(8,destination);a.lw(9,8);a.addiu(10,0,c['world']['physical']&1);a.branch(5,9,10,f'skip_copy{index}')
+            a.lw(9,8,24)
+            for k,(lo,size) in enumerate(c['ranges']):
+                a.li(10,lo);a.r(0x2B,11,9,10);a.branch(5,11,0,f'out{index}_{k}')
+                a.li(10,lo+size);a.r(0x2B,11,9,10);a.branch(5,11,0,f'stale{index}')
+                a.label(f'out{index}_{k}')
+            a.jump(f'skip_copy{index}')
+            a.label(f'stale{index}')
         a.li(8,destination);a.li(9,c['owner']);a.li(10,destination+0x520)
         a.label(f'copy{index}');a.lw(11,9);a.sw(11,8);a.addiu(8,8,4);a.addiu(9,9,4)
         a.branch(5,8,10,f'copy{index}')
+        if c.get('guard_copies'):a.label(f'skip_copy{index}')
     a.li(4,c['owned']['handle']);a.call(A(0x24B8A0))
     a.li(8,c['owned']['resource'])
     for off in (0,4,16,20,32,36,48):a.lw(9,8,off);a.branch(5,9,0,'error130')

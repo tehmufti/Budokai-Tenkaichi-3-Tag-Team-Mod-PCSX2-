@@ -236,8 +236,14 @@ class HeldExport(unittest.TestCase):
         old, new = prepare.patches(29099)['game/tools/fresh_team_trainer.py'][0]
         self.assertEqual(before.count(old), 1)
         changed = before.replace(old, new)
-        self.assertEqual(changed.split('        owner =')[0], before.split('        report = patch')[0])
-        self.assertIn('report = patch(self.source, manifest, output)', source)
+        # Oct 19: the offline archive is a PlayableExport; every guard before it is kept, and the private copy
+        # returns no export to join (its held checkpoint is the session's source)
+        anchor = '        export = PlayableExport('
+        self.assertEqual(changed.split('        owner =')[0] + '        self.index += 1\n',
+                         before.split(anchor)[0])
+        self.assertIn('        self.index += 1\n        return None\n', changed.split('        owner =')[1])
+        self.assertNotIn('PlayableExport(', changed)
+        self.assertIn('report = patch(self.source, self.manifest, self.output)', source)
 
 class PrivateAccelerationProfile(unittest.TestCase):
     def configure(self, hidden, windows):

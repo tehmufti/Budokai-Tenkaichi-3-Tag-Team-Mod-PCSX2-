@@ -565,6 +565,9 @@ def pnach():
     for address,data in code_pieces():
         for off in range(0,len(data),4):
             lines.append(f'patch=1,EE,{address+off:08X},word,{struct.unpack_from("<I",data,off)[0]:08X}')
+    # Tag Team Tournament: conditional (D-code) blocks; nothing is written until a tournament arms its CONTROL.
+    import tag_tournament
+    lines+=tag_tournament.pnach_lines()
     return ('\n'.join(lines)+'\n').encode()
 
 
@@ -672,12 +675,18 @@ class GuestLoadingScreen:
 
     def _picture(self,key,progress,message,*,error=None):
         with _RENDER_LOCK:
+            # A painted picture stays for its context (language, mode, players, teams): the next match with the
+            # same rosters - a return to character select, a mission retried - shows it at once instead of painting
+            # it again under the cover (about 0.4 s a stage). A new context drops them (prerender).
             with self._ahead_lock:
-                ahead=self._ahead.pop(key,None)
+                ahead=self._ahead.get(key)
                 if key[:4]==self._ahead_context:self._ahead_used.add(key)
             if ahead is None:
                 _,layers,packets=render(self.teams,progress,message,mode=self.mode,humans=self.humans,
                                         **({'error':error} if error else {}))
+                if not error and is_v4(layers):
+                    with self._ahead_lock:
+                        if key[:4]==self._ahead_context:self._ahead[key]=(layers,packets)
                 return layers,packets
         # A v4 picture does not depend on progress (the guest draws the gauge from the
         # descriptor), so a pre-rendered one only needs this progress's descriptor.

@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 
 from native_map import A
+from native_map import JPN
+from regional import MENU_ACCEPT, RAW_ACCEPT, RAW_BACK
 from prototype import Assembler
 import mode_menu as old
 import roster_selection_guard as roster
@@ -21,6 +23,10 @@ import fonts
 CODE, ROUTE, CONTROL, DATA, END = 0x06980000, 0x06980800, 0x06981800, 0x06981900, 0x06982000
 MAGIC = 0x53434E31
 MENU = 0x076FF000
+# Footers name the disc's own menu buttons (regional.RAW_ACCEPT / RAW_BACK): Japan confirms with Circle, backs with Cross.
+DETAIL_KEYS = 'Circle: play scenario    Cross: back' if JPN else 'Cross: play scenario    Triangle: back'
+LIST_KEYS = 'Up/Down: select   L1/R1: page   Circle: details' if JPN else 'Up/Down: select   L1/R1: page   Cross: details'
+RETURN_KEYS = 'Cross: return to Modded Modes' if JPN else 'Triangle: return to Modded Modes'
 # Control: magic, browser active, lease, edges, previous, route state,
 # route lease, selector owner, two roster counts, preset stage (-1 = choose).
 # Route states: 1 awaiting selector, 2 records published, 3 native stage select,
@@ -88,7 +94,7 @@ def route_code():
     a.lw(10,12,0x40)
     for state in (9,10):a.addiu(13,0,state);a.branch(4,10,13,'confirm')
     a.jump('hold')
-    a.label('confirm');a.li(10,old.PAD);a.addiu(13,0,0x200);a.sw(13,10,0x18C);a.sw(0,10,0x190);a.jr()
+    a.label('confirm');a.li(10,old.PAD);a.addiu(13,0,MENU_ACCEPT);a.sw(13,10,0x18C);a.sw(0,10,0x190);a.jr()
     a.label('finished');a.addiu(10,0,4);a.sw(10,8,20);a.jr()
     a.label('hold');a.li(10,old.PAD);a.sw(0,10,0x18C);a.sw(0,10,0x190);a.jr()
     a.label('fail');a.addiu(10,0,100);a.sw(10,8,20)
@@ -205,7 +211,7 @@ class Controller:
                         if f['reserve']:line(self.text('Reinforcement'),x,149+i*29,small,(245,184,63),232)
                 line(self.text('CPU Only' if self.cpu_only else '1 Player')+'  ‹  ›',24,294,font)
                 stage=d.get('stage');line(self.text('Arena: {arena}',arena=stage.get('name') or str(stage['id'])) if stage else self.text('Choose your arena after continuing.'),24,327)
-                line(self.text('Cross: play scenario    Triangle: back'),24,408)
+                line(self.text(DETAIL_KEYS),24,408)
             else:line(self.text('Unavailable scenario'),24,116,font);line(entry['error'],24,151)
         else:
             first=self.row//7*7
@@ -215,8 +221,8 @@ class Controller:
                 draw.rounded_rectangle((18,y,494,y+33),6,fill=(31,46,66),outline=(249,197,90) if chosen else (55,70,90),width=2)
                 line(entry['title'],29,y+6,font,(245,244,249) if not entry['error'] else (195,138,127),448)
             if not self.entries:line(self.text('No saved scenarios found.'),24,114,font)
-            line(self.text('Up/Down: select   L1/R1: page   Cross: details'),24,384)
-            line(self.text('Triangle: return to Modded Modes'),24,406)
+            line(self.text(LIST_KEYS),24,384)
+            line(self.text(RETURN_KEYS),24,406)
         if self.notice:line(self.notice,24,365,small,(255,155,126))
         return im.quantize(16,dither=Image.Dither.NONE).convert('RGB')
 
@@ -258,16 +264,16 @@ class Controller:
         if direction and direction==self.last_direction and now>=self.next_repeat:edges|=direction;self.next_repeat=now+.12
         elif direction!=self.last_direction:self.next_repeat=now+.4
         self.last_direction=direction;dirty=False
-        if edges&0x1000:
+        if edges&RAW_BACK:
             if self.detail:self.detail=False;self.notice='';dirty=True
             else:self.close(p);return True
         elif not self.detail and self.entries:
             step=(-1 if edges&0x10 else 1 if edges&0x40 else -7 if edges&0x400 else 7 if edges&0x800 else 0)
             if step:self.row=(self.row+step)%len(self.entries);dirty=True
-            if edges&0x4000:self.detail=True;dirty=True
+            if edges&RAW_ACCEPT:self.detail=True;dirty=True
         elif self.detail:
             if edges&0xA0:self.cpu_only=not self.cpu_only;dirty=True
-            if edges&0x4000:
+            if edges&RAW_ACCEPT:
                 try:
                     entry=self.entries[self.row]
                     if entry['error']:raise ValueError(entry['error'])
@@ -279,7 +285,7 @@ class Controller:
         return True
 
     def launch(self,p,document,cpu_only=False):
-        """The browser's Cross: arm one mission and let the native menus run it."""
+        """The browser's accept (Cross; Japan Circle): arm one mission and let the native menus run it."""
         import native_mode_menu as menu
         from story_runtime import validate_compilation
         document=copy.deepcopy(document);validate_compilation(document)

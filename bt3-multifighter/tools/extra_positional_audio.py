@@ -4,6 +4,13 @@ Only native sound types0/1 (banks4/8) bypass the old extra request suppression.
 The native four-request budget, spatial attenuation, loop dedupe and all-extra
 loop cleanup stay intact. Character banks, streamed voices and white overlays
 retain their previous guards. Offline guarded add-on; no emulator connection.
+
+Beam struggle streams (p88): the struggle coordinator's two type-4 stream SFX (STRUGGLE_STREAMS: the clash
+start at 1D8EDC and the overpowered loser's blast at 1D9244, both through 1DA4E8) are owned by the struggling
+fighter. Type 4 plays on stream channel owner+2, so an extra's owner would land on a voice channel; that is why
+they were suppressed and an extra's beam clash finished silently. They now pass with the owner byte set to the
+extra's side (physical & 1): channel 2/3, the same pair of channels a native leader-vs-leader struggle uses.
+Every other type-4 request of an extra keeps the old suppression.
 """
 from native_map import A, CRC, SERIAL, elf_path
 import argparse
@@ -20,6 +27,18 @@ CODE,CONTROL,END=0x077A0000,0x077AF000,0x077B0000
 MAGIC=0x504F5331
 HOOK=audio.REQUEST_HOOK
 NATIVE=elf_reader(elf_path(ROOT))[2]
+STREAM_KIND=4                                  # 1DA4E8's request type: stream channel owner+2 (265FA0)
+STREAMED_TO_SIDE=28                            # CONTROL counter: struggle streams routed to the side channel
+
+
+def _stream_id(site):
+    """The sound ID an 'ori a1,zero,ID' at a native struggle site passes to 1DA4E8 (read, never assumed)."""
+    word=struct.unpack('<I',NATIVE(site,4))[0]
+    if word>>16!=0x3405:raise ValueError(f'Native struggle sound site changed:{site:08X}')
+    return word&0xFFFF
+
+
+STRUGGLE_STREAMS=(_stream_id(A(0x1D8ED4)),_stream_id(A(0x1D9248)))   # 0x8D30 clash start, 0x8D31 overpowered
 SAVED=(5,8,9,10,11,12,13,14,15)
 
 
@@ -42,7 +61,12 @@ def payload():
     a.li(8,CONTROL);a.lw(9,8);a.li(12,MAGIC);a.branch(5,9,12,'prior')
     a.lw(9,8,4);a.lw(12,28,-22364);a.branch(5,9,12,'prior')
     a.lw(13,8,8);a.li(9,core.MODE+4);a.lw(9,9);a.branch(5,9,13,'prior')
-    a.i(11,9,6,2);a.branch(4,9,0,'prior')  # Only common banks0/1.
+    a.i(11,9,6,2);a.branch(5,9,0,'kind')  # Common banks0/1,
+    a.addiu(9,0,STREAM_KIND);a.branch(5,6,9,'prior')  # or one of the struggle's own streams.
+    for sid in STRUGGLE_STREAMS:
+        a.li(9,sid);a.branch(4,7,9,'kind')
+    a.jump('prior')
+    a.label('kind')
     a.move(15,5);a.move(14,0)
     a.i(11,9,15,2);a.branch(4,9,0,'physical')
     # Queued owner must be the actual physical actor, even when a native AI
@@ -60,7 +84,11 @@ def payload():
     a.label('allow');counter(a,16)
     a.lw(8,28,-22364);a.lw(9,8,288);a.i(10,9,9,4);a.branch(5,9,0,'room')
     counter(a,24)
-    a.label('room');a.i(63,15,29,0)  # Restore native a1 with actual owner ID.
+    a.label('room')
+    # A struggle stream plays on stream channel owner+2: give the extra its side's channel (2/3).
+    a.addiu(9,0,STREAM_KIND);a.branch(5,6,9,'store')
+    a.i(12,15,15,1);counter(a,STREAMED_TO_SIDE)
+    a.label('store');a.i(63,15,29,0)  # Restore native a1 with actual owner ID (a stream: its side).
     restore(a)
     for word in struct.unpack('<2I',NATIVE(HOOK,8)):a.emit(word)
     a.jump(HOOK+8)
@@ -114,8 +142,9 @@ def build_memory(ram,config=None,source='<offline-memory>'):
     return dict(serial=SERIAL,crc=CRC,source=str(source),control=CONTROL,
         status='COMMON POSITIONAL EXTRA SFX; LIVE AUDIO VERIFICATION REQUIRED',
         blocks=[dict(address=p,expected_hex=ram[p:p+len(data)].hex(),data_hex=data.hex()) for p,data in pieces],
-        telemetry=dict(qualified_requests=CONTROL+16,alias_owner_remaps=CONTROL+20,full_native_queue=CONTROL+24),
-        limits=['Only shared types0/1 banks4/8 are enabled for extras.',
+        telemetry=dict(qualified_requests=CONTROL+16,alias_owner_remaps=CONTROL+20,full_native_queue=CONTROL+24,
+                       struggle_streams=CONTROL+STREAMED_TO_SIDE),
+        limits=['Only shared types0/1 banks4/8 and the beam struggle streams are enabled for extras.',
                 'Native four-request budget, spatial attenuation, loop dedupe and stop cleanup are unchanged.',
                 'Character-specific banks, streamed voices, unsafe audio channel IDs and white overlays retain prior guards.'])
 

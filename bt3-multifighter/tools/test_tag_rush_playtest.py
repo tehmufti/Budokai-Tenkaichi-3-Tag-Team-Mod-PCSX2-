@@ -49,8 +49,8 @@ class LocalPlaytestEntryTests(unittest.TestCase):
                 ('training',True,False,'bt3-usa',True),('teams',True,False,'bt3-usa',True),
                 ('training_coop',True,False,'bt4-b14-rev2-eng',True),
                 ('training',False,False,'bt3-usa',False),('ffa',True,False,'bt3-usa',False),
-                ('teams',True,True,'bt3-usa',False),('teams',True,False,'bt3-pal',False),
-                ('teams',True,False,'bt3-jpn',False)):
+                ('teams',True,True,'bt3-usa',False),('teams',True,False,'bt3-pal',True),
+                ('teams',True,False,'bt3-jpn',True),('teams',True,True,'bt3-jpn',False)):
             events=[]
             session=SimpleNamespace(settings={'tag_team_rush_enabled':enabled},battle_mode=mode,source='fixture',
                 progress=lambda *args:events.append(('progress',args)),

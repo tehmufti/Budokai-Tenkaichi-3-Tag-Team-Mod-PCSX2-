@@ -5,7 +5,7 @@ own the private resource transaction before enabling commands99..103. Fusion
 104..106 and tag107 retain their existing bounds. No shared native queue row or
 scene roster is repurposed for an extra fighter.
 """
-from native_map import A, CRC, SERIAL, elf_path
+from native_map import A, CRC, SERIAL, elf_path, ticks
 import struct
 
 import extra_reload_requests as requests
@@ -27,6 +27,15 @@ FORM_ENABLE=requests.CONTROL+24
 # storage, 3 texture groups full, 4 no free resource record, 5 heap admission,
 # whose own reason word is extra_reload_heap.REASON) and whose actor it was.
 REFUSALS,REFUSED_REASON,REFUSED_ACTOR=16,20,24
+# p88 costume handshake: COSTUME_ENABLE (written by a worker that loads in the background) lets a costume row
+# (kind 0) pushed from a quiet.COSTUME_WAIT_ACTIONS action go through READY/ACK/FINISH like a form. READY waits
+# while the row is claimed (2) and at most CLAIM_UPDATES of its own calls while it is still unclaimed (1); past
+# that, and for every other costume row, the old answer (ready, no swap) stands and the worker swaps the costume
+# once the fighter is idle. WAIT_UPDATES/WAIT_GENERATION: per physical id, the unclaimed READY calls counted
+# for one row generation.
+COSTUME_ENABLE=CONTROL+0x30
+WAIT_UPDATES,WAIT_GENERATION=CONTROL+0x40,CONTROL+0x80
+CLAIM_UPDATES=ticks(30)
 SAVED=(8,9,10,11,12,13,14,15,16,17,24,25)
 NATIVE=elf_reader(elf_path(ROOT))[2]
 
@@ -154,11 +163,14 @@ def handshake(kind):
     a.label('form_receipt')
     a.i(11,8,4,2);a.branch(5,8,0,'fallback');a.r(0x2B,8,4,11);a.branch(4,8,0,'fallback')
     a.addiu(8,4,-2);a.r(0,8,0,8,6);a.li(16,requests.RECORDS);a.r(0x2D,16,16,8)
-    a.lw(8,16,56);a.addiu(9,0,1);a.branch(5,8,9,'fallback')
+    a.lw(8,16,56);a.addiu(9,0,1);a.branch(4,8,9,'row_kind')
+    a.branch(5,8,0,'fallback');a.li(9,COSTUME_ENABLE);a.lw(9,9);a.branch(4,9,0,'fallback')
+    a.label('row_kind');a.move(24,8)   # 1 a transformation row, 0 a costume row (handshake enabled)
     a.lw(9,16,8);a.r(0,8,0,4,2);a.li(10,quiet.core.POINTERS);a.r(0x2D,10,10,8)
     a.lw(8,10);a.branch(5,8,9,'fallback')
     a.lw(8,9,12);a.lw(10,16,12);a.branch(5,8,10,'fallback')
     a.lw(8,16,4)
+    a.branch(4,24,0,'costume')
     if kind=='ready':
         a.addiu(9,8,-3);a.i(11,2,9,3) # ready for staged3, commit-request4, committed5
     elif kind=='ack':
@@ -173,6 +185,35 @@ def handshake(kind):
         a.addiu(9,0,5);a.branch(5,8,9,'handled')
         a.addiu(8,0,6);a.sw(8,16,4)
         a.label('handled');a.move(2,0)
+    a.jump('done')
+    # A costume row: only while its owner is still in the costume-wait action that pushed it.
+    a.label('costume')
+    a.lw(9,16,8);a.lw(9,9,0x948);a.lw(10,16,60);a.branch(5,9,10,'fallback')
+    for action in quiet.COSTUME_WAIT_ACTIONS:a.addiu(12,0,action);a.branch(4,9,12,'costume_owner')
+    a.jump('fallback')
+    a.label('costume_owner')
+    if kind=='ready':
+        a.addiu(9,8,-3);a.i(11,9,9,3);a.branch(5,9,0,'costume_ready')    # staged3, commit-request4, committed5
+        a.addiu(9,0,2);a.branch(4,8,9,'costume_wait')                    # claimed: loading in the background
+        a.addiu(9,0,1);a.branch(5,8,9,'fallback')
+        # Unclaimed: wait CLAIM_UPDATES of this generation's calls at most, then the old answer.
+        a.r(0,9,0,4,2);a.li(10,WAIT_GENERATION);a.r(0x2D,10,10,9);a.li(13,WAIT_UPDATES);a.r(0x2D,13,13,9)
+        a.lw(11,10);a.lw(12,16);a.branch(4,11,12,'counted');a.sw(12,10);a.sw(0,13)
+        a.label('counted');a.lw(11,13);a.addiu(11,11,1);a.sw(11,13)
+        a.i(11,11,11,CLAIM_UPDATES+1);a.branch(4,11,0,'fallback')
+        a.label('costume_wait');a.move(2,0);a.jump('done')
+        a.label('costume_ready');a.addiu(2,0,1)
+    elif kind=='ack':
+        # Staged: hold on the next dispatch for the atomic costume commit (the transformation ACK's words).
+        a.addiu(9,0,3);a.branch(5,8,9,'fallback')
+        a.li(10,quiet.native.CONTROL);a.lw(11,10);a.li(12,quiet.native.MAGIC);a.branch(5,11,12,'fallback')
+        a.lw(11,28,-22364);a.sw(11,10,24)
+        a.addiu(8,0,4);a.sw(8,16,4);a.addiu(8,0,1);a.sw(8,10,16);a.move(2,0)
+    else:
+        a.addiu(9,0,4);a.branch(4,8,9,'costume_handled')                 # commit still pending
+        a.addiu(9,0,5);a.branch(5,8,9,'fallback')
+        a.addiu(8,0,6);a.sw(8,16,4)
+        a.label('costume_handled');a.move(2,0)
     a.jump('done')
     a.label('fallback')
     for i,r in enumerate(SAVED):a.i(55,r,29,8*i)

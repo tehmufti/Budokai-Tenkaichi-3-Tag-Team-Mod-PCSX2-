@@ -76,6 +76,7 @@ def poll_delay(worker,ordinary):
     An unheld background disc read lasts ~1.7s with the match running, so it
     gets a relaxed cadence instead of ~170 connect/preflight cycles.
     """
+    if getattr(worker,'job',None) is not None:return min(ordinary,.02)   # a Fighter Gauntlet slot load
     if worker is None or worker.form_job is None:return ordinary
     return min(ordinary,.05 if getattr(worker,'form_phase',None)=='io' else .01)
 
@@ -243,6 +244,11 @@ def candidate(ram,statuses=(1,),specific=None):
                     u(ram,actor+0x12E0)!=damaged):continue
         elif u(ram,model+12)!=character:continue
         if any(x not in (0xFFFFFFFF,character) for x in values[8:11]):continue
+        # p88: a costume row whose owner still waits in the action that pushed it is loaded there (background
+        # IO, then the native READY/ACK commit), like a leader's; otherwise the owner must be idle (11).
+        waiting=(not is_form and values[15] in runner.COSTUME_WAIT_ACTIONS and u(ram,actor+0x948)==values[15]
+                 and costume_handshake(ram))
+        if waiting:action=values[15]
         if u(ram,actor+0x948)!=action:continue
         # The private AI alias lives only inside a CPU decision slice. An
         # unheld snapshot can land in one at any moment, which used to defer
@@ -261,8 +267,15 @@ def candidate(ram,statuses=(1,),specific=None):
             if any(u(ram,manager+off) for off in (600,612,628)) or u(ram,manager+604)!=u(ram,manager+608):continue
         return dict(row=at,generation=generation,physical=physical,actor=actor,model=model,
                     model_id=mid,character=character,costume=costume,damaged=bool(damaged),
-                    old_resource=values[12],manager=manager,form=is_form,owner_action=action)
+                    old_resource=values[12],manager=manager,form=is_form,owner_action=action,waiting=waiting)
     return None
+
+
+def costume_handshake(ram):
+    """The guest READY/ACK/FINISH handshake for a waiting costume row is enabled (extra_reload_forms)."""
+    import extra_reload_forms
+    return bool(u(ram,extra_reload_forms.CONTROL) and u(ram,extra_reload_forms.FORM_ENABLE) and
+                u(ram,extra_reload_forms.COSTUME_ENABLE)==1)
 
 
 def room_hint(p,form=False):
@@ -295,10 +308,10 @@ def pending_hint(p,rows):
         if kind not in (0,1):continue
         if kind not in hints:hints[kind]=room_hint(p,form=bool(kind))
         if not hints[kind]:continue
-        action=action if kind else 11
+        actions=(action,) if kind else ((11,action) if action in runner.COSTUME_WAIT_ACTIONS else (11,))
         if kind and action not in range(236,243):continue
         if (p.read_u32(runner.core.POINTERS+4*(i+2))==actor and p.read_u32(actor)==i+2 and
-                p.read_u32(actor+0x948)==action and not p.read_u32(0x0778F100+4*(i+2))):
+                p.read_u32(actor+0x948) in actions and not p.read_u32(0x0778F100+4*(i+2))):
             return True
     return False
 
@@ -378,6 +391,8 @@ class Worker:
             if tuple(p.read_u32(form_module.CONTROL+off) for off in (4,8))!=(manager,count):
                 raise ValueError('Ordinary form service belongs to another match')
             p.write_u32(form_module.CONTROL,1);p.write_u32(form_module.FORM_ENABLE,1)
+            # p88: a waiting costume is only loaded where the IO runs unheld.
+            p.write_u32(form_module.COSTUME_ENABLE,int(self.background))
             auxiliary.arm(p,self.cell_auxiliary)
         p.write_u32(requests.CONTROL,1);self.active=True;self.failure=None;return self
 
@@ -453,6 +468,7 @@ class Worker:
         if forms:
             import extra_reload_forms
             p.write_u32(extra_reload_forms.CONTROL,1);p.write_u32(extra_reload_forms.FORM_ENABLE,1)
+            p.write_u32(extra_reload_forms.COSTUME_ENABLE,int(self.background))
             auxiliary.arm(p,self.cell_auxiliary)
         if not was_quiet:self.resume(p)
         return manifest
@@ -655,7 +671,7 @@ class Worker:
             # Costumes and Cell's action-239 pair keep today's fully held path:
             # the auxiliary mesh IO and the form share one serial IO workspace
             # and one capacity reservation across both loads.
-            if self.background and job['form'] and job['owner_action']!=239:
+            if self.background and ((job['form'] and job['owner_action']!=239) or job.get('waiting')):
                 return self._start_background(p,ram,job)
             claim=dict(blocks=[word_block(ram,job['row']+4,2)])
             self.apply(p,claim)
@@ -984,7 +1000,8 @@ class Worker:
             ram=self._snapshot(p)
             if candidate(ram,(4,))!=job:raise RuntimeError('Native transformation owner changed before commit; match remains held')
             view=self._analysis_view_for(ram,('commit',))
-            manifest=self._build('commit',commit.build_memory,view,quiet=True,retire_staged=True,form=True)
+            manifest=self._build('commit',commit.build_memory,view,quiet=True,retire_staged=True,form=job['form'],
+                                 **({'waiting':True} if job.get('waiting') else {}))
             self._install_stage(p,'commit',ram,manifest,job)
             ram=self._snapshot(p)
             if (u(ram,commit.AI_META)!=5 or u(ram,commit.CONTROL+36)!=1 or
@@ -992,7 +1009,9 @@ class Worker:
                 raise RuntimeError('Native transformation final identity check failed; match remains held')
             ram=self._complete_resources(p,ram,job)
             self.apply(p,dict(blocks=[word_block(ram,job['row']+52,5),word_block(ram,job['row']+4,5)]))
-            self.form_job=None;self.progress('Transformation complete');self._release(p);return True
+            self.form_job=None
+            self.progress('Transformation complete' if job['form'] else 'Fighter costume updated in its native action')
+            self._release(p);return True
         except Exception as exc:
             import player_errors;self.failure=player_errors.short(exc);self.progress(self.failure);raise
 

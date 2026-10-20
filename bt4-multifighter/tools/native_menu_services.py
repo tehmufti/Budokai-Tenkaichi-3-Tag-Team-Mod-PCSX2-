@@ -13,6 +13,7 @@ CODE=0x07690000
 CONTROL=0x076FF000
 MAGIC=0x324D4E42
 TEXT,STOCK_TEXT=0x076E2000,0x076E6000
+GAUNTLET_TEXT=0x06CD2000     # gauntlet_mode.GTEXT (page 6)
 DESCRIPTION,NARRATION,FADE,RESET,PULSE=CODE+0x3000,CODE+0x4000,CODE+0x4800,CODE+0x5000,CODE+0x6000
 SFX,RETURN=CODE+0x6400,CODE+0x6800
 CANCEL=CODE+0x7800
@@ -64,7 +65,10 @@ def description():
     a.i(11,13,12,24);a.branch(4,13,0,'native')
     a.label('mod');a.r(0x2B,13,12,10);a.branch(5,13,0,'selected');a.r(0x23,12,12,10);a.jump('mod')
     a.label('selected');a.r(0,12,0,12,2);a.r(0x21,12,12,11);a.lw(12,12,0x118)
-    a.i(11,13,12,8);a.branch(4,13,0,'native');a.lw(13,8,8);a.i(11,10,13,6);a.branch(4,10,0,'native')
+    a.i(11,13,12,8);a.branch(4,13,0,'native');a.lw(13,8,8);a.i(11,10,13,7);a.branch(4,10,0,'native')
+    # Page 6, the Fighter Gauntlet picker: its own DBT, one string per row label (gauntlet_mode.GTEXT).
+    a.addiu(10,0,6);a.branch(5,13,10,'custom_text');a.move(6,12);a.li(12,GAUNTLET_TEXT);a.jump('bind')
+    a.label('custom_text')
     a.r(0,13,0,13,3);a.r(0x21,6,12,13);a.li(12,TEXT);a.jump('bind')
     a.label('stock');a.lw(10,8,36);a.branch(4,10,0,'native');a.i(11,10,6,64);a.branch(4,10,0,'native');a.li(12,STOCK_TEXT)
     a.label('bind');a.li(9,A(0x2FF0D8));a.lw(9,9);a.li(10,0x100000);a.r(0x2B,10,9,10);a.branch(5,10,0,'native')
@@ -255,7 +259,11 @@ def fade():
     a.i(63,2,29,8)
     import coop_character_select
     import player_slot_labels
-    a.call(coop_character_select.DRAW);a.call(player_slot_labels.CODE);restore(a);a.jr();return a.finish()
+    a.call(coop_character_select.DRAW);a.call(player_slot_labels.CODE)
+    # Tag Team Tournament guidance (entry turns, roster draft, team badges) once its pnach is READY.
+    import tag_tournament
+    tag_tournament.ready_call(a,tag_tournament.DRAW_CODE,'tournament_draw')
+    restore(a);a.jr();return a.finish()
 
 
 def code_pieces():

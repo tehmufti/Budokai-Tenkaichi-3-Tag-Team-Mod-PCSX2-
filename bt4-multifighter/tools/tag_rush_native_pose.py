@@ -164,7 +164,7 @@ def tick_code():
     fp.fconst(a,1,(90.-60.)*ACTOR_HZ/60.);fp.fop(a,3,0,0,1)
     a.label('speed_ready');a.i(57,0,23,3200)
     a.move(4,22);a.move(5,0);a.call(A(0x1C4920))
-    for fn in (0x24C958,0x24E2B0,0x24E3F8):a.move(4,23);a.call(A(fn))
+    for fn in (A(0x24C958),A(0x24E2B0),A(0x24E3F8)):a.move(4,23);a.call(fn)
     a.li(2,1);a.jump('done');a.label('borrowed');a.move(2,0);a.jump('done')
     a.label('no');a.li(2,2);a.label('done');tag.restore(a,2);a.jr()
     data=a.finish();assert TICK+len(data)<=END;return data

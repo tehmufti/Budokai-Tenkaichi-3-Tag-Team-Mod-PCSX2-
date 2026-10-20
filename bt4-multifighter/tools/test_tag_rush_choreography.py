@@ -193,23 +193,28 @@ class ChoreographyTests(unittest.TestCase):
             wide,_=shots.custom_sample(shot,.5)
             self.assertGreater(math.dist(wide[12:15],own_focus),60.)
 
-    def test_unavailable_floor_or_invalid_record_never_places_actor(self):
-        c=machine();before=c.read(MODEL+2384,32)
+    def test_unavailable_floor_keeps_the_anchor_height_and_invalid_record_never_places(self):
+        # A mark without a terrain answer keeps the checked origin height; the attack goes on.
+        c=machine()
         c.callbacks[staging.safety.QUERY]=lambda m:m.r.__setitem__(2,0)
-        self.assertEqual(apply(c,0),0);self.assertEqual(c.read(MODEL+2384,32),before)
+        self.assertEqual(apply(c,0),1);self.assertEqual(c.fr(MODEL+2388),-40.)
         c.w(tag.CONTROL+staging.TABLE_OFFSET,0);c.r[4]=4;run(c,staging.QUERY);self.assertEqual(c.r[2],0)
 
-    def test_airborne_marks_clear_hills_and_refuse_insufficient_vertical_space(self):
+    def test_airborne_marks_clear_hills_and_keep_the_anchor_height_under_a_low_ceiling(self):
         c=machine()
         def hill(m):m.set_number(0,-180.);m.r[2]=1
         c.callbacks[staging.safety.QUERY]=hill
         self.assertEqual(apply(c,0),1)
         self.assertEqual(c.fr(MODEL+2388),-240.)
-        c=machine();before=c.read(MODEL+2384,16)
+        c=machine()
         def too_high(m):m.set_number(0,-300.);m.r[2]=1
         c.callbacks[staging.safety.QUERY]=too_high
-        self.assertEqual(apply(c,0),0)
-        self.assertEqual(c.read(MODEL+2384,16),before)
+        self.assertEqual(apply(c,0),1)
+        self.assertEqual(c.fr(MODEL+2388),-40.)
+        c=machine();c.fw(STATE+116,-345.)
+        c.callbacks[staging.safety.QUERY]=too_high
+        self.assertEqual(apply(c,0),1)
+        self.assertEqual(c.fr(MODEL+2388),-330.,'clamped below the ceiling')
 
     def test_mixed_retreat_stays_outside_the_beam_composition(self):
         for variant in ('mixed_ki_lead','mixed_ki_partner'):

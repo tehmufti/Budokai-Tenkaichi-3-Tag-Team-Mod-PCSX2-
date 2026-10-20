@@ -101,13 +101,55 @@ class Roster:
     def copy(self):return copy.deepcopy(self)
 
 
-def p12(roster, in_match):
+def _routed(roster, player, slot, devices=None):
+    """The key that feeds match slot `slot` (1..4) from tournament player `player`'s check-in seat, ('pass', None)
+    when PCSX2's own port `slot` already is that player's controller, or (None, None) for neutral."""
+    seat = roster.seat(player) if roster is not None else None
+    if seat is None and roster is None:
+        # No check-in roster (e.g. a watcher restarted mid-tournament): the game's default order - players 1/2 on
+        # PCSX2's ports 1/2, players 3/4 on the 3rd/4th controllers.
+        if player <= 2:
+            return ('pass', None) if player == slot else ('key', PSEUDO.get(player))
+        classic = classic_keys(devices or {}, None)
+        return ('key', classic[player-3]) if player-3 < len(classic) else (None, None)
+    if seat is None or seat.lost:
+        return None, None
+    if seat.source == 'hub':
+        return 'key', seat.key
+    if seat.source == 'native':
+        port = seat.native_port or player
+        return ('pass', None) if port == slot and slot <= 2 else ('key', seat.key)
+    if seat.source in ('pseudo', 'default'):
+        # PCSX2's own port n (keyboard, custom bindings or a pad PCSX2 reads): copied when it moves to another slot.
+        port = player if seat.source == 'default' else int(str(seat.key).rsplit(':', 1)[-1])
+        return ('pass', None) if port == slot and slot <= 2 else ('key', PSEUDO.get(port))
+    if seat.source == 'classic':
+        classic = classic_keys(devices or {}, roster)
+        index = player-3
+        return ('key', classic[index]) if 0 <= index < len(classic) else (None, None)
+    return None, None
+
+
+def p12(roster, in_match, order=None):
     """(armed, pass_mask, keys) for the P1/P2 override.
+
+    order (Tag Team Tournament): the tournament player numbers of match slots 1..n, so player p's own controller
+    drives whichever slot p has in this match (a PCSX2 port that moves is copied through its 'pcsx2:k' key).
 
     armed: some seat 1-2 is 'hub', or is lost during a match. A set PASS bit (k-1) leaves PCSX2's record of port k
     untouched: native, pseudo, default and empty seats, and lost seats outside a match (menus stay navigable).
     keys: the controller each overridden seat publishes (None: neutral)."""
     armed, mask, keys = False, 0, [None, None]
+    if order:
+        for slot in (1, 2):
+            if slot > len(order):
+                mask |= 1 << (slot-1); continue
+            how, key = _routed(roster, order[slot-1], slot)
+            if how == 'pass':
+                mask |= 1 << (slot-1)
+            else:
+                armed = True; keys[slot-1] = key
+        return armed, mask, tuple(keys)
     for number in (1, 2):
         seat = roster.seat(number) if roster is not None else None
         if seat is None:
@@ -135,8 +177,14 @@ def classic_keys(devices, roster=None):
     return [d.key for d in classic_order(devices)[2:] if not d.native_confirmed and d.key not in claimed][:2]
 
 
-def private(roster, devices=None):
-    """(P3 key, P4 key): the controllers of seats 3 and 4 (None: neutral)."""
+def private(roster, devices=None, order=None):
+    """(P3 key, P4 key): the controllers of seats 3 and 4 (None: neutral). order: as in p12, for slots 3 and 4."""
+    if order:
+        out = []
+        for slot in (3, 4):
+            how, key = _routed(roster, order[slot-1], slot, devices) if slot <= len(order) else (None, None)
+            out.append(key if how == 'key' else None)
+        return tuple(out)
     keys, classic = [], classic_keys(devices or {}, roster)
     for number in (3, 4):
         seat = roster.seat(number) if roster is not None else None

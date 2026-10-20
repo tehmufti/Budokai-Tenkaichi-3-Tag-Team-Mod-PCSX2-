@@ -7,7 +7,7 @@ the original shot cuts while a private camera keeps unrelated views separate.
 """
 import math
 import struct
-from native_map import A, ACTOR_HZ
+from native_map import A, ACTOR_HZ, FLAG
 from prototype import Assembler
 import fresh_team_combat as core
 import fusion_partner_lifecycle as full
@@ -32,7 +32,7 @@ START, STEP, FINISH = tag.START, tag.STEP, tag.FINISH
 START_BODY,STEP_BODY,BODIES_END=0x06D89800,0x06D8B800,0x06D8D800
 FX_BODY,FX_BODY_END=0x06D8D800,0x06D8E800
 FINISH_BODY,FINISH_BODY_END=0x06D91000,0x06D93000
-ANCHOR = STEP+0xA40  # Internal START helper, sharing its private stack scratch.
+ANCHOR = STEP+0x400  # Internal START helper, sharing its private stack scratch (room for its fallback spots).
 ALIGN = FINISH+0xC00  # Scoped native paired-body alignment, never a global scan.
 FX_STEP = FINISH+0xAC0
 RECOVERY, RECOVERY_END = 0x06D0D800, 0x06D0E000
@@ -103,7 +103,7 @@ def native_idle(a,actor):
     a.move(4,actor);a.call(A(0x1E23D0))
 
 
-def common_anchor(a, victim, destination, fail):
+def common_anchor(a, victim, destination, fail, prefix='anchor'):
     """One bounded stage anchor; native bone contact places the victim later."""
     import arena_bounds
     a.r(0,8,0,victim,2);a.li(9,core.POINTERS);a.r(0x21,8,8,9);a.lw(22,8)
@@ -118,23 +118,23 @@ def common_anchor(a, victim, destination, fail):
     fp.fconst(a,1,20.0);fp.fop(a,0x34,0,0,1);a.branch(17,8,1,fail)
     a.i(49,2,29,destination);a.i(49,3,29,destination+8)
     fp.fop(a,2,4,2,2);fp.fop(a,2,5,3,3);fp.fop(a,0,4,4,5);fp.fop(a,2,5,0,0)
-    fp.fop(a,0x36,0,4,5);a.branch(17,8,1,'anchor_radial')
+    fp.fop(a,0x36,0,4,5);a.branch(17,8,1,prefix+'_radial')
     fp.fop(a,4,4,4,4);fp.fop(a,3,0,0,4);fp.fop(a,2,2,2,0);fp.fop(a,2,3,3,0)
     a.i(57,2,29,destination);a.i(57,3,29,destination+8)
-    a.label('anchor_radial');a.i(49,0,12,4);fp.fconst(a,1,ANCHOR_ROOT_UP)
+    a.label(prefix+'_radial');a.i(49,0,12,4);fp.fconst(a,1,ANCHOR_ROOT_UP)
     a.i(49,4,29,0x354);fp.fop(a,2,1,1,4);fp.fop(a,0,0,0,1);a.i(57,0,29,0x358)
     a.i(49,2,12,8);fp.fconst(a,1,40.0);fp.fop(a,2,1,1,4);fp.fop(a,1,2,2,1)
     fp.fop(a,0x34,0,0,2);a.branch(17,8,0,fail)
     a.i(49,3,29,destination+4);fp.fop(a,1,3,3,1)
-    fp.fop(a,0x34,0,3,0);a.branch(17,8,0,'anchor_ceiling');fp.fop(a,6,3,0)
-    a.label('anchor_ceiling');fp.fop(a,0x34,0,2,3);a.branch(17,8,0,'anchor_floor');fp.fop(a,6,3,2)
-    a.label('anchor_floor');a.i(57,3,29,destination+4)
+    fp.fop(a,0x34,0,3,0);a.branch(17,8,0,prefix+'_ceiling');fp.fop(a,6,3,0)
+    a.label(prefix+'_ceiling');fp.fop(a,0x34,0,2,3);a.branch(17,8,0,prefix+'_floor');fp.fop(a,6,3,2)
+    a.label(prefix+'_floor');a.i(57,3,29,destination+4)
     a.addiu(4,29,destination);a.call(safety.FLOOR)
-    a.branch(4,2,0,'anchor_ready');a.i(49,0,29,destination+12)
+    a.branch(4,2,0,prefix+'_ready');a.i(49,0,29,destination+12)
     fp.fconst(a,1,40.0);a.i(49,2,29,0x354);fp.fop(a,2,1,1,2)
     fp.fop(a,1,0,0,1);a.i(57,0,29,destination+4)
     a.i(49,1,29,0x358);fp.fop(a,0x34,0,0,1);a.branch(17,8,1,fail)
-    a.label('anchor_ready');a.li(8,0x3F800000);a.sw(8,29,destination+12)
+    a.label(prefix+'_ready');a.li(8,0x3F800000);a.sw(8,29,destination+12)
 
 
 def anchor_code():
@@ -170,7 +170,14 @@ def anchor_code():
     a.i(49,1,29,0x350);fp.fop(a,0x34,0,1,0);a.branch(17,8,0,'scale_kept');a.i(57,0,29,0x350)
     a.label('scale_kept');a.i(49,1,29,0x354);fp.fop(a,0x34,0,1,2);a.branch(17,8,0,'height_kept');a.i(57,2,29,0x354)
     a.label('height_kept');a.addiu(20,20,1);a.li(8,3);a.branch(5,20,8,'dimensions')
-    common_anchor(a,18,0x340,'no');finite(a,29,(0x340,0x344,0x348),'no')
+    # The victim's spot first; a hill, ceiling or wall there falls back to the
+    # initiator's, then the helper's spot (all three are within dash reach).
+    a.li(20,2)
+    a.label('anchor_try');a.r(0,8,0,20,2);a.addiu(9,29,0x300);a.r(0x21,8,8,9);a.lw(13,8)
+    common_anchor(a,13,0x340,'anchor_next');finite(a,29,(0x340,0x344,0x348),'anchor_next');a.jump('anchored')
+    a.label('anchor_next');a.li(8,1);a.branch(4,20,8,'no');a.li(8,2);a.branch(5,20,8,'anchor_helper')
+    a.move(20,0);a.jump('anchor_try');a.label('anchor_helper');a.li(20,1);a.jump('anchor_try')
+    a.label('anchored')
     a.li(2,1);a.jump('done')
     a.label('no');a.move(2,0)
     a.label('done');a.lw(20,29,0x338);a.lw(31,29,0x334);a.jr()
@@ -185,14 +192,17 @@ def start_code():
     apply to the current model character, so a transformed form is checked anew.
     """
     a=Assembler(START_BODY);tag.save(a);a.move(16,4);a.move(17,5);a.move(18,6)
+    # Diagnostics only: the last START milestone (CONTROL start_check, 0x100 = accepted).
+    a.li(19,CONTROL);a.li(8,1);a.sw(8,19,tag.C['start_check'])
     a.call(tag.GATE);a.branch(4,2,0,'reject');a.li(19,CONTROL)
+    a.li(8,2);a.sw(8,19,tag.C['start_check'])
     a.lw(8,19,tag.C['active']);a.branch(5,8,0,'reject')
     for x,y in ((16,17),(16,18),(17,18)):a.branch(4,x,y,'reject')
     a.r(0x26,8,16,17);a.i(12,8,8,1);a.branch(5,8,0,'reject')
     a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'reject')
     for k,reg in enumerate((16,17,18)):a.sw(reg,29,0x300+4*k)
     a.move(20,0);a.sw(0,29,0x30C)
-    a.label('preflight')
+    a.label('preflight');a.addiu(8,20,0x10);a.sw(8,19,tag.C['start_check'])
     a.r(0,8,0,20,2);a.addiu(9,29,0x300);a.r(0x21,8,8,9);a.lw(21,8)
     a.lw(9,19,8);a.r(0x2B,8,21,9);a.branch(4,8,0,'reject')
     a.r(0,8,0,21,2);a.li(9,core.POINTERS);a.r(0x21,8,8,9);a.lw(22,8)
@@ -201,7 +211,9 @@ def start_code():
     a.label('victim_preflight');a.call(safety.VICTIM_PREFLIGHT)
     a.label('preflight_answer');a.branch(4,2,0,'reject')
     actors.model(a,22,23,'reject')
+    a.addiu(8,20,0x20);a.sw(8,19,tag.C['start_check'])
     a.move(4,23);a.call(retarget.CHECK);a.branch(4,2,0,'reject')
+    a.addiu(8,20,0x30);a.sw(8,19,tag.C['start_check'])
     a.li(25,ADMISSION);a.lw(10,25);full.pointer(a,10,4096,'reject')
     a.lw(8,23,12);a.lw(9,25,4);a.addiu(11,9,-1);a.i(11,11,11,4096)
     a.branch(4,11,0,'reject');a.r(0x2B,9,8,9);a.branch(4,9,0,'reject')
@@ -212,6 +224,7 @@ def start_code():
     a.label('not_attacker')
     # Decoder scratch, placement/framing bones and both reviewed beam hands.
     # Native opening/impact cues use31; custom one-hand finishers use45.
+    a.addiu(8,20,0x40);a.sw(8,19,tag.C['start_check'])
     a.lw(10,23,5728);full.pointer(a,10,98348,'reject')
     a.lw(10,23,192);full.pointer(a,10,8,'reject')
     for bone in (2,3,17,31,45,52):
@@ -223,11 +236,18 @@ def start_code():
     a.i(11,9,20,2);a.branch(4,9,0,'own_pose_checked')
     a.lw(10,25);a.lw(8,23,12);a.r(0x21,10,10,8);a.i(36,8,10,0)
     a.i(12,8,8,2);a.branch(4,8,0,'own_pose_checked')
-    a.move(4,23);a.call(native_pose.SELECT);a.branch(1,2,0,'reject')
+    a.addiu(8,20,0x50);a.sw(8,19,tag.C['start_check'])
+    # No usable own beam pose: this attacker takes the melee role, so the
+    # pair still gets a general variant instead of a refused tag after the dash.
+    a.move(4,23);a.call(native_pose.SELECT);a.branch(1,2,0,'demote_melee')
+    a.jump('own_pose_checked')
+    a.label('demote_melee');a.lw(24,29,0x30C);a.li(8,1);a.r(4,8,20,8);a.r(0x27,8,8,0)
+    a.r(0x24,24,24,8);a.sw(24,29,0x30C)
     a.label('own_pose_checked')
     finite(a,23,(2384,2388,2392,2400,2404,2408),'reject')
     a.addiu(20,20,1);a.li(8,3);a.branch(5,20,8,'preflight')
     # Ki bits 00->melee, 01->lead beam, 10->partner beam, 11->two beams.
+    a.li(8,0x60);a.sw(8,19,tag.C['start_check'])
     a.lw(24,29,0x30C);a.li(20,1);a.branch(4,24,0,'variant');a.li(20,0);a.li(8,3)
     a.branch(4,24,8,'variant');a.addiu(20,24,1);a.label('variant')
     # Fix the two story roles regardless of which player requested the tag.
@@ -265,6 +285,7 @@ def start_code():
         a.lw(8,10,4*k);full.pointer(a,8,2400,'reject',temp=11,test=9)
         if k==1:a.label(f'no_clip{k}')
     a.addiu(22,22,64);a.addiu(23,23,1);a.branch(5,23,25,'descriptor')
+    a.li(8,0x61);a.sw(8,19,tag.C['start_check'])
     a.li(12,STAGING);a.lw(12,12);full.pointer(a,12,4*choreography.MAX_PHASES*16,'reject')
     a.li(22,0);a.li(10,TABLE)
     a.label('previous_staging');a.branch(4,22,20,'staging_base')
@@ -276,6 +297,7 @@ def start_code():
     a.addiu(22,22,1);a.lw(9,29,0x318);a.branch(5,22,9,'staging')
     # Prepared native descriptors must exist before consuming either meter.
     # Parsing occurs during setup under the private allocator, never here.
+    a.li(8,0x62);a.sw(8,19,tag.C['start_check'])
     a.li(12,effects.CONTROL)
     for off,value in ((0,effects.MAGIC),(12,1),(28,2)):
         a.lw(8,12,off);a.li(9,value);a.branch(5,8,9,'reject')
@@ -283,8 +305,11 @@ def start_code():
     for role in (0,1):
         a.li(12,effects.ROWS+role*effects.STRIDE);a.lw(8,12,effects.R['prepared'])
         a.li(9,effects.PREPARED);a.branch(5,8,9,'reject')
+    a.li(8,0x63);a.sw(8,19,tag.C['start_check'])
     a.call(ANCHOR);a.branch(4,2,0,'reject')
+    a.li(8,0x64);a.sw(8,19,tag.C['start_check'])
     a.call(camera.INIT);a.branch(4,2,0,'reject')
+    a.li(8,0x100);a.sw(8,19,tag.C['start_check'])
     a.li(8,camera.TAIL);a.sw(0,8)
     a.li(18,STATE);a.li(8,SCENE_MAGIC);a.sw(8,18,S['magic'])
     a.lw(8,29,0x314);a.sw(8,18,S['staging'])
@@ -347,6 +372,7 @@ def step_code():
     a.lw(8,17,S['retiring']);a.branch(4,8,0,'scene_live')
     a.lw(4,17,S['cancelled']);a.call(FINISH);a.jump('done');a.label('scene_live')
     a.li(21,ROWS);a.move(20,0)
+    a.li(8,1);a.sw(8,16,tag.C['end_check']);
     a.label('identities');identity(a,21,'cancel','step')
     actors.hp(a,22,'cancel');a.addiu(20,20,1);a.addiu(21,21,STRIDE)
     a.li(8,3);a.branch(5,20,8,'identities')
@@ -354,7 +380,7 @@ def step_code():
     a.r(0,8,0,18,6);a.lw(19,17,S['base']);a.r(0x21,19,19,8);a.sw(19,17,S['descriptor'])
     a.lw(8,17,S['entered']);a.branch(4,8,18,'animate')
     a.sw(18,17,S['entered']);a.sw(0,17,S['ticks']);a.move(20,0);a.li(21,ROWS)
-    a.move(4,18);a.call(staging.QUERY);a.sw(2,17,S['placement'])
+    a.li(8,2);a.sw(8,16,tag.C['end_check']);a.move(4,18);a.call(staging.QUERY);a.sw(2,17,S['placement'])
     a.lw(8,19,28);a.i(12,8,8,assets.CUSTOM_FINISHER);a.branch(4,8,0,'placement_valid')
     a.branch(4,2,0,'cancel');a.label('placement_valid')
     a.branch(4,2,0,'settle_captured');a.call(staging.BEGIN);a.branch(4,2,0,'cancel');a.label('settle_captured')
@@ -371,10 +397,10 @@ def step_code():
     a.move(4,22);a.addiu(5,17,S['phase_origin']);a.addiu(6,17,S['phase_rotation']);a.lw(7,23,2596)
     a.call(A(0x1D7418))
     a.lw(6,17,S['placement']);a.branch(4,6,0,'native_placement')
-    a.move(4,20);a.move(5,21);a.move(7,17);a.call(staging.APPLY);a.branch(4,2,0,'cancel')
+    a.li(8,3);a.sw(8,16,tag.C['end_check']);a.move(4,20);a.move(5,21);a.move(7,17);a.call(staging.APPLY);a.branch(4,2,0,'cancel')
     a.label('native_placement')
     a.move(4,23);a.call(A(0x24E2B0))
-    a.move(4,20);a.move(5,21);a.move(6,19);a.call(native_pose.ENTER)
+    a.li(8,4);a.sw(8,16,tag.C['end_check']);a.move(4,20);a.move(5,21);a.move(6,19);a.call(native_pose.ENTER)
     a.li(8,1);a.branch(4,2,8,'phase_next');a.branch(5,2,0,'cancel')
     # Suppress the recipient's automatic self-retarget exactly while decoding;
     # then adapt from the real donor bind pose once, without double scaling.
@@ -382,7 +408,7 @@ def step_code():
     a.sw(10,29,0x300);a.sw(8,29,0x304);a.sw(0,10)
     a.move(4,23);a.move(5,0);a.move(6,0);a.li(7,1);a.call(A(0x24D038))
     a.lw(10,29,0x300);a.lw(8,29,0x304);a.sw(8,10)
-    a.lw(4,23,2880);a.move(5,23);a.lw(8,19,60);a.r(0,9,0,20,2)
+    a.li(8,5);a.sw(8,16,tag.C['end_check']);a.lw(4,23,2880);a.move(5,23);a.lw(8,19,60);a.r(0,9,0,20,2)
     a.r(0x21,8,8,9);a.lw(6,8);a.move(7,0);a.move(8,0);a.call(retarget.RETARGET);a.branch(4,2,0,'cancel')
     # 24D038 decodes the new clip but does not reset the former animation's
     # blend clocks. Our authored clock bypasses their native decay; retaining
@@ -396,10 +422,10 @@ def step_code():
     a.emit((17<<26)|(4<<21)|(8<<16)|(20<<11));a.emit((17<<26)|(20<<21)|(20<<11)|(20<<6)|32)
     fp.fconst(a,21,60.0/ACTOR_HZ);fp.fop(a,2,20,20,21)
     a.label('pose');a.lw(22,21,R['actor']);a.lw(23,21,R['model'])
-    a.move(4,20);a.move(5,21);a.call(native_pose.TICK)
+    a.li(8,6);a.sw(8,16,tag.C['end_check']);a.move(4,20);a.move(5,21);a.call(native_pose.TICK)
     a.li(8,1);a.branch(4,2,8,'pose_next');a.branch(5,2,0,'cancel')
     a.lw(8,19,28);a.i(12,8,8,assets.CUSTOM_FINISHER);a.branch(5,8,0,'authored_pose')
-    a.move(4,20);a.move(5,21);a.call(RECOVERY)
+    a.li(8,7);a.sw(8,16,tag.C['end_check']);a.move(4,20);a.move(5,21);a.call(RECOVERY)
     a.li(8,1);a.branch(4,2,8,'pose_next');a.branch(5,2,0,'cancel')
     a.label('authored_pose')
     a.r(0,8,0,20,2);a.r(0x21,24,19,8);a.lw(8,24,4);a.branch(4,8,0,'pose_next')
@@ -411,13 +437,13 @@ def step_code():
     a.move(4,23);a.call(A(0x24C958));a.move(4,23);a.call(A(0x24E2B0));a.move(4,23);a.call(A(0x24E3F8))
     a.label('pose_next');a.addiu(20,20,1);a.addiu(21,21,STRIDE);a.li(8,3);a.branch(5,20,8,'pose')
     a.lw(8,19,28);a.i(12,8,8,assets.CUSTOM_FINISHER);a.branch(5,8,0,'aligned')
-    a.call(ALIGN);a.branch(4,2,0,'cancel');a.jump('placement_finished')
-    a.label('aligned');a.call(staging.TICK);a.branch(4,2,0,'cancel')
+    a.li(8,8);a.sw(8,16,tag.C['end_check']);a.call(ALIGN);a.branch(4,2,0,'cancel');a.jump('placement_finished')
+    a.label('aligned');a.li(8,9);a.sw(8,16,tag.C['end_check']);a.call(staging.TICK);a.branch(4,2,0,'cancel')
     a.lw(8,19,28);a.i(12,8,8,special.RESTRAIN);a.branch(4,8,0,'placement_finished')
-    a.call(ALIGN);a.branch(4,2,0,'cancel');a.label('placement_finished')
-    a.call(FX_STEP);a.branch(4,2,0,'cancel')
+    a.li(8,8);a.sw(8,16,tag.C['end_check']);a.call(ALIGN);a.branch(4,2,0,'cancel');a.label('placement_finished')
+    a.li(8,10);a.sw(8,16,tag.C['end_check']);a.call(FX_STEP);a.branch(4,2,0,'cancel')
     a.call(audio.TICK)
-    a.call(damage_schedule.TICK);a.branch(4,2,0,'cancel')
+    a.li(8,11);a.sw(8,16,tag.C['end_check']);a.call(damage_schedule.TICK);a.branch(4,2,0,'cancel')
     # Disc-authored shots use the real lead root and the same phase clock as
     # the borrowed poses. The fallback remains for incomplete research packs.
     a.lw(4,17,S['phase']);a.lw(5,17,S['ticks']);a.li(8,ROWS)
@@ -429,7 +455,7 @@ def step_code():
     a.li(21,ROWS);a.move(20,0);a.move(24,0)
     for off in (64,68,72):a.sw(0,17,off)
     a.label('focus');a.r(0,8,0,20,2);a.r(0x21,9,19,8);a.lw(8,9,4);a.branch(4,8,0,'focus_next')
-    a.lw(23,21,R['model']);a.lw(10,23,3436+4*17);full.pointer(a,10,80,'cancel')
+    a.li(8,12);a.sw(8,16,tag.C['end_check']);a.lw(23,21,R['model']);a.lw(10,23,3436+4*17);full.pointer(a,10,80,'cancel')
     finite(a,10,(64,68,72),'cancel')
     for off in range(0,12,4):
         a.i(49,0,10,64+off);a.i(49,1,17,S['focus']+off);fp.fop(a,0,0,0,1);a.i(57,0,17,S['focus']+off)
@@ -492,6 +518,8 @@ def finish_code():
     a=Assembler(FINISH_BODY);tag.save(a);a.move(18,4);a.li(16,CONTROL);a.li(17,STATE)
     a.lw(8,16,tag.C['active']);a.li(9,1);a.branch(5,8,9,'done')
     a.lw(8,16,4);a.lw(9,28,-22364);a.branch(5,8,9,'stale_world')
+    # Diagnostics only: the caller that first ended this scene.
+    a.lw(8,17,S['retiring']);a.branch(5,8,0,'site_kept');a.sw(31,16,tag.C['end_site']);a.label('site_kept')
     a.lw(8,17,S['cancelled']);a.r(0x25,18,18,8);a.sw(18,17,S['cancelled'])
     a.li(8,1);a.sw(8,17,S['retiring'])
     a.lw(8,17,S['settle_ticks']);a.addiu(8,8,1);a.sw(8,17,S['settle_ticks'])
@@ -617,6 +645,11 @@ def finish_code():
     goku_idle_fallback(a,'goku_released','goku_cancel_idle')
     a.label('goku_released');a.li(8,camera.TAIL);a.sw(0,8)
     a.lw(8,16,tag.C['cancelled']);a.addiu(8,8,1);a.sw(8,16,tag.C['cancelled'])
+    # A cinematic that could not play to its end refunds both attackers' meters.
+    for key in ('initiator','partner'):
+        a.lw(9,16,tag.C[key]);a.lw(10,16,tag.C['count']);a.r(0x2B,10,9,10);a.branch(4,10,0,f'refunded_{key}')
+        a.r(0,9,0,9,5);a.li(8,tag.METERS);a.r(0x21,8,8,9);a.lw(9,16,tag.C['charge_ticks']);a.sw(9,8,tag.T['charge'])
+        a.label(f'refunded_{key}')
     # A full-screen pass can leave our private camera selected until the next
     # renderer pass. Release only those bindings still owned by this scene;
     # never overwrite another player's camera or a new renderer/world.
@@ -713,7 +746,7 @@ def align_code():
     a.lw(4,20,R['model_id']);a.li(5,52);a.addiu(6,29,0x310);a.call(A(0x2058E0))
     a.lw(4,21,R['model_id']);a.li(5,3);a.addiu(6,29,0x320);a.call(A(0x2058E0))
     finite(a,29,(0x310,0x314,0x318,0x320,0x324,0x328),'no')
-    a.lw(4,21,R['actor']);a.li(5,0x34);a.call(A(0x1DAC78))
+    a.lw(4,21,R['actor']);a.li(5,FLAG(0x34));a.call(A(0x1DAC78))
     fp.fconst(a,3,1.0);a.branch(4,2,0,'delta')
     finite(a,23,(3204,),'no');a.i(49,0,23,3204);fp.fconst(a,1,0.0)
     fp.fop(a,0x34,0,0,1);a.branch(17,8,1,'no');fp.fop(a,0x34,0,3,0);a.branch(17,8,1,'no')

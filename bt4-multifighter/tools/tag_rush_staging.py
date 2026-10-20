@@ -69,7 +69,7 @@ def apply_code():
     for i,off in enumerate(fp.terrain.QUERY_GLOBALS):a.lw(8,28,off);a.sw(8,29,0x20+4*i)
     a.i(49,12,20,4);a.move(4,29);a.call(safety.QUERY)
     for i,off in enumerate(fp.terrain.QUERY_GLOBALS):a.lw(8,29,0x20+4*i);a.sw(8,28,off)
-    a.branch(4,2,0,'no')
+    a.branch(4,2,0,'plain')
     a.i(49,2,19,108);fp.fconst(a,1,choreography.MIN_CLEARANCE)
     fp.fop(a,2,1,1,2);fp.fop(a,1,3,0,1)  # Maximum safe Y above terrain.
     a.i(49,0,19,36);fp.fconst(a,1,choreography.AIR_HEIGHT)
@@ -78,8 +78,8 @@ def apply_code():
     fp.fop(a,0x34,0,3,0);a.branch(17,8,0,'above_terrain');fp.fop(a,6,0,3)
     a.label('above_terrain');a.i(49,1,20,4);fp.fconst(a,4,20.)
     fp.fop(a,2,4,4,2);fp.fop(a,0,1,1,4)
-    fp.fop(a,0x34,0,3,1);a.branch(17,8,1,'no')
-    fp.fop(a,0x34,0,0,1);a.branch(17,8,0,'below_ceiling');fp.fop(a,6,0,1)
+    fp.fop(a,0x34,0,3,1);a.branch(17,8,1,'plain')
+    a.label('clamp_ceiling');fp.fop(a,0x34,0,0,1);a.branch(17,8,0,'below_ceiling');fp.fop(a,6,0,1)
     a.label('below_ceiling');a.i(57,0,29,4)
     a.li(8,0x3F800000);a.sw(8,29,12)
     for off in range(0,16,4):a.lw(8,29,off);a.sw(8,17,FINAL_ROOT+off)
@@ -95,6 +95,11 @@ def apply_code():
     a.i(49,1,19,132);fp.fop(a,0,0,0,1);a.i(57,0,29,20)
     a.lw(4,17,4);a.move(5,29);a.addiu(6,29,16);a.lw(8,17,8);a.lw(7,8,2596)
     a.call(A(0x1D7418));a.label('yes');a.li(2,1);a.jump('done')
+    # No terrain answer under this mark, or a hill reaching the ceiling: keep the
+    # anchor's checked origin height (plus the mark's own offset) below the ceiling.
+    # Cancelling here cut a connected attack in the middle of its combination.
+    a.label('plain');a.i(49,0,19,116);a.i(49,1,18,4);a.i(49,2,19,108);fp.fop(a,2,1,1,2);fp.fop(a,0,0,0,1)
+    a.i(49,1,20,4);fp.fconst(a,4,20.);fp.fop(a,2,4,4,2);fp.fop(a,0,1,1,4);a.jump('clamp_ceiling')
     a.label('no');a.move(2,0);a.label('done');a.addiu(29,29,0x60);camera.restore(a,skip=(2,));a.jr()
     data=a.finish();assert APPLY+len(data)<=BEGIN;return data
 

@@ -51,7 +51,8 @@ C = dict(magic=0, manager=4, count=8, enabled=12, active=16, members=20, shared=
          charge_ticks=48, damage=52, training_full=56, ready=60,
          last_held=64, consumed=68, clock=72, requested=76, start_requests=80,
          completed=84, cancelled=88, training=92, scene_table=96, approaching=100,
-         keep_meter_on_miss=104,sacrifice_enabled=108,sacrifice_multiplier=112)
+         keep_meter_on_miss=104,sacrifice_enabled=108,sacrifice_multiplier=112,
+         end_site=116,end_check=120,start_check=124)
 T = dict(charge=0, inviter=4, target=8, expiry=12, allies=16, cpu_held=20, cpu_consumed=24, cpu_ticket=28)
 PRESS_WORDS = (328, 336, 340)
 
@@ -444,12 +445,12 @@ def tick_code():
     # Leaving a battle must return borrowed clips even though the ordinary
     # charging/consent gate has already closed. Pausing keeps the scene held.
     a.lw(8,16,C['active']);a.branch(4,8,0,'gate')
-    a.lw(8,16,C['manager']);a.lw(9,28,-22364);a.branch(5,8,9,'cancel_scene')
-    a.li(12,core.MODE);a.lw(9,12,8);a.branch(5,8,9,'cancel_scene')
-    a.lw(8,12);a.li(9,1);a.branch(5,8,9,'cancel_scene')
-    for off in (C['enabled'],C['ready']):a.lw(8,16,off);a.branch(4,8,0,'cancel_scene')
-    a.li(12,A(0x2FEB38));a.lw(12,12);full.pointer(a,12,0x108,'cancel_scene')
-    a.lw(8,12);a.li(9,3);a.branch(5,8,9,'cancel_scene')
+    a.lw(8,16,C['manager']);a.lw(9,28,-22364);a.branch(5,8,9,'cancel_world')
+    a.li(12,core.MODE);a.lw(9,12,8);a.branch(5,8,9,'cancel_world')
+    a.lw(8,12);a.li(9,1);a.branch(5,8,9,'cancel_world')
+    for off in (C['enabled'],C['ready']):a.lw(8,16,off);a.branch(4,8,0,'cancel_ready')
+    a.li(12,A(0x2FEB38));a.lw(12,12);full.pointer(a,12,0x108,'cancel_battle')
+    a.lw(8,12);a.li(9,3);a.branch(5,8,9,'cancel_battle')
     import tag_rush_pause as active_pause
     a.call(active_pause.CHECK);a.li(8,active_pause.CANCEL);a.branch(4,2,8,'cancel_scene')
     a.branch(4,2,0,'done');a.jump('active_gate_passed')
@@ -513,6 +514,11 @@ def tick_code():
     a.label('cancel');a.li(8,-1);a.sw(8,18,T['inviter']);a.sw(0,18,T['expiry'])
     a.label('next_team');a.addiu(18,18,METER_STRIDE);a.addiu(17,17,1);a.branch(5,17,19,'team')
     a.lw(8,16,C['active']);a.branch(4,8,0,'done');a.label('scene_step');a.call(STEP);a.jump('done')
+    # Diagnostics only: which TICK gate ended the scene (CONTROL end_check).
+    a.label('cancel_world');a.li(8,101);a.jump('cancel_mark')
+    a.label('cancel_ready');a.li(8,102);a.jump('cancel_mark')
+    a.label('cancel_battle');a.li(8,103)
+    a.label('cancel_mark');a.sw(8,16,C['end_check'])
     a.label('cancel_scene');a.li(4,1);a.call(FINISH)
     a.label('done');restore(a);a.jr();data=a.finish();assert TICK+len(data)<=BUFFER_INPUT;return data
 

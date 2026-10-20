@@ -311,6 +311,17 @@ class SwitchTests(unittest.TestCase):
             update(c, 0, 60); self.assertEqual(target(c), 1, name)
             release(c); update(c); self.assertEqual(target(c), 3, name)
 
+    def test_a_stick_click_while_a_blast_or_ultimate_is_commanded_never_takes_the_attacker(self):
+        """p89: the warning tap is L3, the stick's own click; Charge Ki + Down + Triangle pushed firmly clicks it."""
+        for how in ('command', 'move'):
+            c = self.attacked(); update(c)
+            if how == 'command': update(c, L3 | sel.L2 | sel.TRIANGLE); update(c, sel.L2 | sel.TRIANGLE)
+            else: act(c, 0, 261); update(c, L3); update(c, 0); act(c, 0, 303); update(c, 0, 30); act(c, 0, 11)
+            update(c, 0, 30)
+            self.assertEqual(target(c), 1, how); self.assertEqual(tcount(c, 'applied'), 0, how)
+            self.assertEqual(sel_counter(c, 'command_vetoes'), 1, how)
+            self.assertEqual(tap(c), 3, 'a plain tap during the warning still takes the attacker')
+
 
 def sel_counter(c, name): return c.u(sel.CONTROL+sel.FIELDS[name])
 

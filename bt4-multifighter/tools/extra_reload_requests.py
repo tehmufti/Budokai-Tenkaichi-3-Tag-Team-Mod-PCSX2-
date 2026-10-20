@@ -23,7 +23,9 @@ ROWS=policy.MAX_ACTORS-2
 assert RECORDS+ROWS*STRIDE<=END,'Request rows overrun their reservation'
 FUSION_CONTROL,FUSION_RESERVED=0x077DF000,0x077D9000
 # Row: generation,status,actor,actualID,model,char,costume,damaged,anim,combat,
-# sound,physical,oldresource,result,reserved,reserved. Status1 pending,2 claimed.
+# sound,physical,oldresource,result,kind,owner action. Status1 pending,2 claimed.
+# p88: a costume row (kind 0) records the action its owner pushed it from at +60, so the worker can load
+# it while that native action waits for it (extra_reload_quiet.COSTUME_WAIT_ACTIONS) instead of only once idle.
 
 
 def payload():
@@ -65,7 +67,7 @@ def payload():
     a.label('generation');a.sw(11,24)
     for off,r in ((8,14),(12,15),(16,17),(20,5),(24,6),(28,7),(32,8),(36,9),(40,10),(44,4)):
         a.sw(r,24,off)
-    a.lw(11,17,20);a.sw(11,24,48);a.sw(0,24,52);a.sw(0,24,56);a.sw(0,24,60)
+    a.lw(11,17,20);a.sw(11,24,48);a.sw(0,24,52);a.sw(0,24,56);a.lw(11,14,0x948);a.sw(11,24,60)
     a.addiu(11,0,1);a.sw(11,24,4)  # Publish the complete request last.
     a.lw(11,16,12);a.addiu(11,11,1);a.sw(11,16,12);a.jump('done')
     a.label('unsupported');a.lw(11,16,16);a.addiu(11,11,1);a.sw(11,16,16);a.jump('done')

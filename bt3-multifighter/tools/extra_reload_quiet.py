@@ -37,11 +37,17 @@ BG_IDLE_CALLS=30
 LOADER_STATE,LOADER_HANDLE,LOADER_PENDING=A(0x31E760),A(0x31E764),A(0x31E77C)
 TASK_FIFO=A(0x2FF120)
 SCENE_FLAGS,SCENE_RELOAD_MASK=A(0x3337B8),0x3800
+# p88: native actions that push their owner's damaged costume and then wait in READY (1D6360) for it, as the
+# native leader path does: 260 is the overpowered beam-struggle loser (handler 1FBA90). While such an action
+# waits, a costume reload for an extra may be loaded and committed with the owner in it (like the transformation
+# actions 236..242), so the battle damage appears when the native fighter's does instead of after it is idle.
+COSTUME_WAIT_ACTIONS=(260,)
 
 
 def checks(world,allow_forms=False):
     action=world.get('owner_action',11) if allow_forms else 11
-    if action!=11 and action not in range(236,243):raise ValueError('Unsupported reload owner action')
+    if action!=11 and action not in range(236,243) and action not in COSTUME_WAIT_ACTIONS:
+        raise ValueError('Unsupported reload owner action')
     return [(native.CONTROL,native.MAGIC),(native.CONTROL+16,1),(native.CONTROL+20,1),
             (native.CONTROL+24,world['manager']),(world['actor']+0x948,action)]
 
@@ -77,6 +83,7 @@ def code():
     a.i(12,8,20,3);a.branch(5,8,0,'error110');a.lw(8,20);a.branch(5,8,19,'error110')
     a.lw(8,20,0x948);a.lw(9,16,36);a.branch(5,9,0,'expected_action');a.addiu(9,0,11)
     a.label('expected_action');a.branch(5,8,9,'error110');a.addiu(9,0,11);a.branch(4,8,9,'action_valid')
+    for action in COSTUME_WAIT_ACTIONS:a.addiu(9,0,action);a.branch(4,8,9,'action_valid')
     a.addiu(8,8,-236);a.i(11,8,8,7);a.branch(4,8,0,'error110');a.label('action_valid')
     a.li(8,core.PAIR+4);a.lw(8,8);a.branch(5,8,0,'error110')
     # Validate both constants before dereferencing a requested control block.
@@ -106,6 +113,27 @@ def code():
     result=a.finish();assert len(result)<0x2000;return result
 
 
+def owner_pairs(ram,pairs):
+    """Caller-named owner checks that replace the hold ACK words (Fighter Gauntlet: a hidden, retired extra
+    reloaded while the match runs). Every pair must hold in `ram` now; the guest re-checks them before acting."""
+    pairs=tuple(pairs)
+    if not pairs:raise ValueError('Owner checks need at least one word')
+    for p,v in pairs:
+        if type(p) is not int or type(v) is not int or p%4 or not 0x100000<=p<=len(ram)-4 or not 0<=v<=0xFFFFFFFF:
+            raise ValueError('Invalid owner check')
+        if struct.unpack_from('<I',ram,p)[0]!=v:raise ValueError('Reload owner check does not hold')
+    return pairs
+
+
+def owner_guard(pairs):
+    """quiet_guard-compatible emitter for owner_pairs (t0/t1 only)."""
+    pairs=tuple(pairs)
+    def emit(a,world,label,allow_forms=True):
+        for p,v in pairs:
+            a.li(8,p);a.lw(8,8);a.li(9,v);a.branch(5,8,9,label)
+    return emit
+
+
 def background_guard(row,generation,action):
     """quiet_guard-compatible emitter for an unheld background IO body.
 
@@ -117,10 +145,12 @@ def background_guard(row,generation,action):
         raise ValueError('Background guard requires an explicit row, generation and action')
     if not 0x100000<=row<=0x08000000-64 or row%4:raise ValueError('Invalid background request row')
     if not 1<=generation<=0xFFFFFFFF:raise ValueError('Invalid background request generation')
-    if action not in range(236,243):raise ValueError('Background IO serves transformation actions236..242')
+    if action not in range(236,243) and action not in COSTUME_WAIT_ACTIONS:
+        raise ValueError('Background IO serves transformation actions236..242 and costume-wait actions')
+    kind=int(action in range(236,243))      # a transformation row (1) or a waiting costume row (0)
     def emit(a,world,label,allow_forms=True):
         a.li(10,row)
-        for off,value in ((0,generation),(4,2),(8,world['actor']),(56,1),(60,action)):
+        for off,value in ((0,generation),(4,2),(8,world['actor']),(56,kind),(60,action)):
             a.lw(8,10,off);a.li(9,value);a.branch(5,8,9,label)
         a.li(8,world['actor']);a.lw(8,8,0x948);a.li(9,action);a.branch(5,8,9,label)
     return emit
@@ -161,7 +191,10 @@ def background_code():
     a.li(9,0x100000);a.r(0x2B,8,20,9);a.branch(5,8,0,'error110')
     a.li(9,0x08000000-0x1600);a.r(0x2B,8,9,20);a.branch(5,8,0,'error110')
     a.i(12,8,20,3);a.branch(5,8,0,'error110');a.lw(8,20);a.branch(5,8,19,'error110')
-    a.lw(21,16,36);a.addiu(8,21,-236);a.i(11,8,8,7);a.branch(4,8,0,'error110')
+    a.lw(21,16,36)
+    for action in COSTUME_WAIT_ACTIONS:a.addiu(9,0,action);a.branch(4,21,9,'owner_action')
+    a.addiu(8,21,-236);a.i(11,8,8,7);a.branch(4,8,0,'error110')
+    a.label('owner_action')
     a.li(8,core.PAIR+4);a.lw(8,8);a.branch(5,8,0,'error110')
     a.lw(8,16,20);a.li(9,entry);a.branch(5,8,9,'error110')
     a.lw(8,16,24);a.li(9,control);a.branch(5,8,9,'error110')

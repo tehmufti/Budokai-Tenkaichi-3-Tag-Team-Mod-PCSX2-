@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import struct
 import tempfile
+import threading
 import unicodedata
 
 from native_map import A, ADAPTER, GP, GPO, SERIAL
@@ -196,6 +197,94 @@ def cached_assets(iso):
     return plan,key
 
 
+# The two disc-derived reviews below cost several seconds of host time per match (beam/donor clips decoded again,
+# pose profiles rebuilt from the disc) and depend only on the selected disc file and the asset pack. One watcher
+# process runs them once per (disc identity, pack contents, function) and keeps the result; a failure is never
+# remembered, so it is raised again on the next match exactly as before. prefetch() runs them on a background thread
+# while the guest still loads the selected fighters, so a first match does not wait for them either.
+_MEMO_LOCK = threading.Lock()
+_MEMO = {}
+
+
+def _pack_digest(pack):
+    digest = hashlib.sha256(_json({k: v for k, v in pack.items() if k != 'blocks'}))
+    for address, data in pack['blocks']:
+        digest.update(struct.pack('<2I', address, len(data)));digest.update(data)
+    return digest.hexdigest()
+
+
+def _disc_key(iso):
+    """The disc file's identity (path, size, time, adapter, asset sources), or None when it cannot be read: such a call
+    is never remembered and runs exactly as before."""
+    try:return _identity(iso)[2]
+    except (OSError,ValueError):return None
+
+
+def reviewed_once(pack, iso):
+    """review_playtest_assets(pack, iso), once per process for this disc file and pack (raises like it)."""
+    disc = _disc_key(iso)
+    if disc is None:
+        review_playtest_assets(pack, iso=iso);return
+    key = ('review', id(review_playtest_assets), disc, _pack_digest(pack))
+    with _MEMO_LOCK:
+        if key not in _MEMO:
+            review_playtest_assets(pack, iso=iso)
+            _MEMO[key] = True
+
+
+def pose_assets(iso, bt4):
+    """pose_profiles.build_assets(iso, bt4=bt4), once per process for this disc file; a private copy each call."""
+    disc = _disc_key(iso)
+    if disc is None:return pose_profiles.build_assets(iso, bt4=bt4)
+    key = ('pose', id(pose_profiles.build_assets), disc, bool(bt4))
+    with _MEMO_LOCK:
+        if key not in _MEMO:
+            _MEMO[key] = pose_profiles.build_assets(iso, bt4=bt4)
+        return copy.deepcopy(_MEMO[key])
+
+
+def assets_once(iso):
+    """cached_assets(iso), read and validated once per process for this disc file (a private copy each call); one
+    caller builds it while any other waits, so the warm-up and a starting match never build the pack twice."""
+    disc = _disc_key(iso)
+    if disc is None:return cached_assets(iso)
+    key = ('assets', id(cached_assets), disc)
+    with _MEMO_LOCK:
+        if key not in _MEMO:
+            _MEMO[key] = cached_assets(iso)
+        return copy.deepcopy(_MEMO[key])
+
+
+def admission_once(iso, exclude=()):
+    """disc_admission(iso), once per process for this disc file (a private copy each call)."""
+    disc = _disc_key(iso)
+    if disc is None or exclude:return disc_admission(iso, exclude)
+    key = ('admission', id(disc_admission), disc)
+    with _MEMO_LOCK:
+        if key not in _MEMO:
+            _MEMO[key] = disc_admission(iso)
+        return copy.deepcopy(_MEMO[key])
+
+
+def prefetch(settings, battle_mode='teams', online=False):
+    """Warm the memo above (and the on-disk pose and admission caches) for a match that will install tag attacks.
+    Never raises: the install itself repeats whatever did not finish here and reports its own errors."""
+    try:
+        import mod_settings
+        import tag_rush_availability
+        options = mod_settings.validate_settings(settings)
+        if tag_rush_availability.preparation_reason(options, battle_mode, ROOT, adapter=ADAPTER, online=online):
+            return False
+        iso = selected_iso()
+        pack, _ = assets_once(iso)
+        reviewed_once(pack, iso)
+        pose_assets(iso, SERIAL == 'SLUS-21978')
+        admission_once(iso)
+        return True
+    except Exception:  # noqa: BLE001 - a warm-up only
+        return False
+
+
 def _costume_count(character):
     if SERIAL=='SLUS-21978':
         # Imported fighters can expose nine costumes. Use the selected disc's
@@ -228,7 +317,76 @@ def _roster(ram,count):
     return result
 
 
-def admission_block(pack,admission):
+# Native special kinds (metadata byte 316+slot, slots 2..4; 203C40 maps kind 4/5 -> 283, 6 -> 286, 8 -> 292):
+# all three of Nam's specials are such physical rushes. A fighter whose every special slot is one of these has no
+# ki move at all, whatever the disc language calls it.
+RUSH_KINDS = frozenset((4, 5, 6, 8))
+
+
+def _rush_only(iso, character):
+    """True when every special slot of this fighter is a physical rush (no ki/beam special)."""
+    import model_assets
+    try:
+        import bt4_resources  # noqa: F401 - this adapter keeps the metadata in the parameter archive
+    except ImportError:
+        metadata = model_assets.package_entry(assets._mesh_package(iso, character), 24)
+    else:
+        metadata = model_assets.package_entry(model_assets.read_archive_entry(iso, 4150 + character), 2)[0x29D0:0x2C50]
+    if len(metadata) != 640:
+        return False
+    return all(metadata[316 + slot] in RUSH_KINDS for slot in (2, 3, 4))
+
+
+def disc_admission(iso, exclude=()):
+    """Every other disc fighter, assessed on its default costume in both clothing states.
+
+    A fighter can transform during the match or be loaded later (Fighter
+    Gauntlet waves, reloads); its form then still has a reviewed admission and
+    a tag variant. Selected roster costumes keep their own exact assessment.
+    One bounded, checksummed read per ISO and source revision.
+    """
+    import character_names
+    names=character_names.character_table()
+    try:path,identity,key=_identity(iso)
+    except (OSError,ValueError):return []  # no readable disc: the prepared roster alone, as before
+    cache=CACHE_ROOT/('admission-'+key+'.json')
+    rows=None
+    try:
+        if cache.stat().st_size>1024*1024:raise ValueError('Tag admission cache is too large')
+        record=json.loads(cache.read_text(encoding='utf-8'))
+        if record.get('identity')!=identity or record.get('sha256')!=hashlib.sha256(_json(record.get('rows'))).hexdigest():
+            raise ValueError('Tag admission cache changed')
+        rows=record['rows']
+        if (not isinstance(rows,list) or any(not isinstance(r,dict) or type(r.get('character')) is not int
+                or type(r.get('supported')) is not bool or type(r.get('rush_only')) is not bool for r in rows)):
+            raise ValueError('Invalid tag admission cache')
+    except (OSError,ValueError,KeyError,TypeError):rows=None
+    if rows is None:
+        rows=[dict(row,incompatible_bones=list(row['incompatible_bones'])) for row in assets.character_admission(
+            path,[dict(character=c,costume=0,damaged=d) for c in sorted(names) if 0<=c<4096 for d in (False,True)])]
+        kinds={}
+        for row in rows:
+            if row['character'] not in kinds:
+                try:kinds[row['character']]=_rush_only(path,row['character'])
+                except (ValueError,IndexError,KeyError,struct.error):kinds[row['character']]=False
+            row['rush_only']=kinds[row['character']]
+        record=dict(identity=identity,rows=rows,sha256=hashlib.sha256(_json(rows)).hexdigest())
+        temporary=None
+        try:
+            CACHE_ROOT.mkdir(parents=True,exist_ok=True)
+            with tempfile.NamedTemporaryFile('wb',dir=CACHE_ROOT,prefix='admission-'+key+'.',suffix='.tmp',delete=False) as out:
+                temporary=Path(out.name);out.write(_json(record))
+            os.replace(temporary,cache)
+        except OSError:pass
+        finally:
+            if temporary is not None:
+                try:temporary.unlink(missing_ok=True)
+                except OSError:pass
+    excluded=set(exclude)
+    return [row for row in rows if row['character'] not in excluded and row['character'] in names]
+
+
+def admission_block(pack,admission,rush_only=()):
     """Admit reviewed model topologies, never another mod's numeric IDs.
 
     Currently only the selected costumes are assessed. Unknown/new forms stay
@@ -243,6 +401,8 @@ def admission_block(pack,admission):
     non_ki={normalized(n) for n in ('Hercule','Mr. Satan','Mr Satan','Satan','Videl',
             'Great Saiyaman 2','Great Saiyaman II','Great Saiyawoman','Gran Saiyaman 2','Yajirobe',
             'Nam','Android 8','Android Eight','Octavio','General Blue','Chi-Chi','Milk')}
+    # Fighters whose every special is a rush (Spopovich, BT4's Kid Uub) come from the disc data
+    # (rush_only, see disc_admission), so translated labels never change the variant.
     size=max(names)+1
     if not 1<=size<=4096:raise ValueError('Unknown tag-rush character table size')
     flags=bytearray(size)
@@ -255,7 +415,7 @@ def admission_block(pack,admission):
         if character in refused:continue
         name=names[character].get('base_name') or names[character].get('name','')
         if not name:raise ValueError('A tag-rush fighter has an empty character name')
-        flags[character]=1 | (0 if normalized(name) in non_ki else 2)
+        flags[character]=1 | (0 if normalized(name) in non_ki or character in rush_only else 2)
     # Additional cinematic source banks have their own reservations. Admission
     # belongs only in the main asset tail, never after the highest guest address.
     main_ends=[p+len(b) for p,b in pack['blocks'] if assets.BASE<=p<p+len(b)<=assets.END]
@@ -579,7 +739,7 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
     if _u(ram,modes.CONTROL+12)==modes.FFA:return _not_usable('Tag rush requires teammates; free-for-all is unchanged.',source)
     roster=_roster(ram,count)
     try:
-        pack,identity=cached_assets(iso)
+        pack,identity=assets_once(iso)
         admission=assets.character_admission(iso,roster)
     except (OSError,ValueError) as error:return _not_usable(str(error),source)
     if any(not row['supported'] for row in admission) and not reviewed:
@@ -591,7 +751,7 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
     if not callable(getattr(scene,'installation',None)):
         return _not_usable('Tag-rush cinematic installation is not complete.',source)
     if reviewed:
-        try:review_playtest_assets(pack,iso=iso)
+        try:reviewed_once(pack,iso)
         except (ValueError,KeyError,TypeError,struct.error) as error:
             return _not_usable('Tag attack assets are incomplete: '+str(error),source,characters=admission)
     try:pack=with_beam_colors(pack)
@@ -600,12 +760,14 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
     scene_plan=scene.installation(pack,roster,options,**({'reviewed_assets':True} if reviewed else {}))
     if not scene_plan.get('usable'):
         return _not_usable(' '.join(scene_plan.get('limitations') or ['Tag-rush cinematic effects are not ready.']),source,characters=admission)
-    try:admission_data,admission_words=admission_block(pack,admission)
+    disc=admission_once(iso);selected={row['character'] for row in admission}
+    try:admission_data,admission_words=admission_block(pack,admission+[row for row in disc if row['character'] not in selected],
+                                                       rush_only={row['character'] for row in disc if row.get('rush_only')})
     except ValueError as error:return _not_usable(str(error),source,characters=admission)
     hold_receipt=_authored_hold_receipt(scene_plan['blocks'])
     pose_plan=None
     if reviewed:
-        try:pose_plan=pose_profiles.build_assets(iso,bt4=SERIAL=='SLUS-21978')
+        try:pose_plan=pose_assets(iso,SERIAL=='SLUS-21978')
         except (OSError,ValueError,KeyError,struct.error) as error:
             return _not_usable('Tag beam poses are incomplete: '+str(error),source,characters=admission)
         admission_words=dict(admission_words);admission_words[pose_profiles.TABLE_OFFSET]=pose_plan['table_address']

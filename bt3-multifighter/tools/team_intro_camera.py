@@ -42,8 +42,12 @@ def payload(previous):
     a.lw(9, 8, 20); a.branch(5, 9, 3, 'previous')
     a.lw(9, 8, 16); a.li(8, intro.BATTLE); a.lw(8, 8)
     a.branch(4, 8, 0, 'previous'); a.branch(5, 8, 9, 'previous')
-    a.lw(9, 8); a.addiu(9, 9, -1); a.i(11, 9, 9, 2)
-    a.branch(4, 9, 0, 'previous')
+    # Phases 1/2, and phase 0 when the intro was asked to start with the stage's crowd shots (team_intro.CROWD, a
+    # Tag Team Tournament match: this camera is installed after the loading's own phase 0, so that is the replay).
+    a.lw(9, 8); a.i(11, 2, 9, 3); a.branch(4, 2, 0, 'previous')
+    a.branch(5, 9, 0, 'phase_ok')
+    a.li(2, intro.CROWD); a.lw(2, 2); a.branch(4, 2, 0, 'previous')
+    a.label('phase_ok')
     a.li(8, start.CONTROL); a.lw(9, 8); a.branch(5, 9, 3, 'previous')
     a.lw(9, 8, 8); a.branch(5, 9, 11, 'previous')
     a.lw(9, 8, 4); a.branch(5, 9, 0, 'previous')
@@ -99,7 +103,7 @@ def build_memory(ram, source='<offline-memory>'):
         status='NATIVE INTRO CAMERA HANDOFF; LIVE BOTH-SPEAKER CHECK REQUIRED',
         blocks=[dict(address=p,expected_hex=ram[p:p+len(d)].hex(),data_hex=d.hex()) for p,d in pieces],
         control=CONTROL,previous=previous,telemetry={'native_intro_views':CONTROL+16},
-        behavior=['Only held captured intro phases1/2 use native shared cinematic/priority camera selection.',
+        behavior=['Only held captured intro phases0/1/2 use native shared cinematic/priority camera selection.',
                   'Cinematic time advances once; existing complete camera state binding remains in place.',
                   'Combat, result, actor positions, animations, targets and resource ownership are unchanged.'])
 

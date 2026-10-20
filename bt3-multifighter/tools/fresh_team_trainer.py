@@ -95,6 +95,7 @@ import stage_transition
 import model_slot_guards
 import texture_queue_guard
 import throw_camera
+import grab_attach
 import stage_debris_guard
 from selected_team_capture import capture
 from battle_mode_policy import ACTOR_COUNTS
@@ -103,6 +104,9 @@ ROOT = Path(__file__).resolve().parents[1]
 STATES = runtime_profile.STATES
 PREFIX = f'{SERIAL} ({game_profile.pcsx2_crc()}).'
 ACK_ADDRESS = 0x073BFF00  # Reserved immutable stage token, outside game heaps.
+# The pause between two reads of a guest step's status word: each read is one short PINE connection, and a step
+# that finishes waits on average half of this before the next one starts (0.2 s before Oct 19).
+POLL = .05
 # An actor's native idle-update count. The idle handler (1EE968; PAL 1EED40) plays the idle taunt, action 67, once
 # it passes 90 (PAL 75): about 3 s of held idle. Seen live in the preparation hold (P-1).
 IDLE_COUNT = 0x3D8
@@ -301,7 +305,7 @@ def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assig
 
 
 def final_team_manifest(ram, activation, source, play_intro=False, pause_others=True, pause_mode=None, present_mask=None,
-                        settings=None, battle_mode='teams', humans=1, assignment=None, mission=None):
+                        settings=None, battle_mode='teams', humans=1, assignment=None, mission=None, gauntlet=None):
     """Compose all playability guards before exposing the first ready frame."""
     training=battle_mode in ('training','training_coop')
     if training:battle_mode='coop' if battle_mode=='training_coop' else 'teams'
@@ -350,6 +354,9 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # Scripted pair cameras (grabs, clashes, hits) anchor on the actual pair
     # instead of the two leaders.
     builders.append(lambda r: throw_camera.build_memory(r, source=source))
+    # The native hold (1D7C30) keeps only the last grab of an update: with two grabs at once the other victim
+    # slid backwards while still being hit. Hold every grab with its own thrower.
+    builders.append(lambda r: grab_attach.build_memory(r, source=source))
     builders.append(lambda r: extra_positional_audio.build_memory(r, source=source))
     builders.append(lambda r: extra_reload_worker.install_memory(r, source=source, enabled=True, forms=True))
     # Chained onto the actor-update hook before team_participation, which stays
@@ -463,6 +470,10 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
                 any(a['type']=='transform' for e in mission['events'] for a in e['actions'])):
             builders.append(lambda r: npc_transform_policy.build_memory(r,settings=preferences,source=source,force=True))
         builders.append(lambda r: story_runtime.build_memory(r,mission,source=source))
+        if gauntlet is not None:
+            # Fighter Gauntlet: its waves run on the story runtime just installed (hooks chained after it).
+            import gauntlet_runtime
+            builders.append(lambda r: gauntlet_runtime.build_memory(r,run=gauntlet,source=source))
     # Wraps those entries, the damage accumulator and the overhead-bar call again, so it is the last builder.
     import lockon_threat
     builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
@@ -501,6 +512,47 @@ START_FROZE = ('The game stopped responding while the match was starting: its pi
 START_STALL_SECONDS = 10   # the number in START_FROZE (a translated sentence, not a template value)
 SLOTS_FULL = ('Need two free savestate slots between 220 and 239 in {folder}, but the others hold savestates this mod '
               'did not create, which it never overwrites. Move those files out of that folder, then start {play} again')
+
+
+# Builders final_team_manifest imports on first use (about a second of imports on a first match).
+WARM_MODULES = ('cinematic_position', 'cinematic_position_camera', 'ground_locomotion', 'extra_intros', 'vanish_pair_guard',
+                'body_swap_worker', 'modded_training', 'fusion_duration_worker', 'beam_struggle', 'beam_assist_pose',
+                'buu_ultimate_fanout', 'inactive_actor_guard', 'four_player_mode', 'split_borders', 'tournament_ringout',
+                'rush_cinematics', 'lockoff_target', 'lockon_select', 'lockon_threat', 'revive_targeting', 'fusion_buffs',
+                'native_hud_style')
+
+
+def warm_preparation(settings, battle_mode):
+    """Host work every preparation repeats, done ahead on a background thread (the watcher starts it in the menus,
+    a preparation again as it begins): the builder imports above, the walking/running clips ground_clips keeps for the
+    process, and the tag attacks' disc reviews (tag_rush_install.prefetch, only when this match will install them,
+    exactly as install_tag_rush decides). Each result is one the preparation computes itself in this process, from the
+    same disc file and settings; nothing reaches the game. Never raises: the preparation repeats anything unfinished
+    and reports its own errors."""
+    import threading
+    def warm():
+        import importlib
+        for name in WARM_MODULES:
+            try:importlib.import_module(name)
+            except Exception:pass  # noqa: BLE001 - the preparation imports it again and reports
+        try:
+            options=mod_settings.validate_settings(settings)
+            if options['ground_running']:
+                import ground_locomotion
+                ground_locomotion.layout_profiles(options.get('ground_motion_style','classic'))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            import tag_rush_availability
+            if tag_rush_availability.preparation_reason(settings, battle_mode, ROOT):
+                return
+            import tag_rush_install
+            tag_rush_install.prefetch(settings, battle_mode)
+        except Exception:  # noqa: BLE001 - a warm-up only; install_tag_rush reports any real problem
+            pass
+    thread = threading.Thread(target=warm, name='preparation-warm-up', daemon=True)
+    thread.start()
+    return thread
 
 
 class Session:
@@ -799,7 +851,7 @@ class Session:
                 reason = reasons.get(value, reasons.get(None, 'A setup step reported an error'))
                 raise RuntimeError(f'{reason} (step "{label}", guest status {value} at {address:08X})')
             if budget.expired: break
-            time.sleep(.2)
+            time.sleep(POLL)
         raise TimeoutError(f'{label}: the game did not finish this step within {timeout} seconds')
 
     def prepare(self):
@@ -814,6 +866,13 @@ class Session:
         if mission is not None:
             import story_runtime
             mission=story_runtime.validate_selection(mission,selection,ram,self.humans,self.assignment)
+        import gauntlet_mode
+        gauntlet=gauntlet_mode.armed(mission)
+        if gauntlet is not None:
+            # A gauntlet match: ring-outs never decide it and downed teammates can be revived.
+            self.settings=mod_settings.validate_settings(gauntlet_mode.settings_for(self.settings))
+        # Host work every preparation repeats runs while the guest loads the fighters (warm_preparation).
+        warm_preparation(self.settings, self.battle_mode)
         if self.battle_mode in ('coop','training_coop') or self.humans>=3 or self.assignment is not None:
             battle_mode_policy.validate_roster('coop' if self.battle_mode=='training_coop' else 'teams' if self.battle_mode=='training' else self.battle_mode,2*selection['members_per_side'],
                                                selection['participation_mask'],self.humans,self.assignment)
@@ -871,7 +930,8 @@ class Session:
         # Install every dependent quality patch before the first exposed frame.
         final = final_team_manifest(ram, activation, self.source, play_intro=self.play_intro,
             pause_mode=self.settings[mod_settings.MODE_KEY], present_mask=selection['participation_mask'],
-            settings=self.settings, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,mission=mission)
+            settings=self.settings, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,mission=mission,
+            gauntlet=gauntlet)
         self.install(final, 'complete-team')
         if mission is not None:
             write_json(self.run/'mission.json',mission)
@@ -885,11 +945,31 @@ class Session:
         self.wait_counter(ai.CONTROL+0x10, 10)
         self.install_tag_rush()
         ram = self.snapshot('ready-held')
-        self.export_playable(ram)
+        # The rematch archive is written while the arena is uncovered and the start is acknowledged (a
+        # StreamingSession); its result is joined before this preparation can succeed (PlayableExport).
+        export = self.export_playable(ram)
         # The optional presentation callback uncovers the ready arena before
         # the data-only start signal. No save or reload occurs after uncovering.
-        self.progress('Ready', 6)
-        self.release_start()
+        try:
+            self.progress('Ready', 6)
+            self.release_start()
+        except BaseException:
+            # The start's own failure is the one reported; the archive is still finished first.
+            if export is not None:
+                try:export.join()
+                except BaseException:pass  # noqa: BLE001
+            raise
+        if export is not None:
+            try:export.join()
+            except Exception as error:  # noqa: BLE001 - the match has started: it goes on without a rematch checkpoint
+                # Before the start this failure kept the arena held under an error cover; now the fight is already
+                # running, so only Fight Again is lost (the watcher reports it then: rematch_unavailable).
+                self.rematch_unavailable=f'{type(error).__name__}: {error}'
+                print(f'WARNING: The rematch checkpoint could not be written ({self.rematch_unavailable}); '
+                      'Fight Again is unavailable for this match.',flush=True)
+        if gauntlet is not None:
+            write_json(self.run/'gauntlet.json',gauntlet)
+            gauntlet_mode.consumed()
         if mission is not None:
             try:story_missions.consumed(mission)
             except (OSError,ValueError,KeyError) as error:
@@ -898,7 +978,8 @@ class Session:
                 print(f'Warning: match started, but the queued story mission could not be cleared: {error}',flush=True)
         status = dict(mode=self.mode, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,
             settings=self.settings, slots=[s for s,_ in self.slots],
-            status='active', playable_state=str(self.source))
+            status='active', playable_state=None if getattr(self,'rematch_unavailable',None) else str(self.source))
+        if getattr(self,'rematch_unavailable',None):status['rematch_unavailable']=self.rematch_unavailable
         # Only a retained original checkpoint is named (F9): the state-load path keeps its
         # .p2s; a streaming run's original image is scratch that compaction removes.
         original = next(self.run.glob('*original-selected-match.p2s'), None)
@@ -934,9 +1015,12 @@ class Session:
         if struct.unpack_from('<I',ram,native_preparation.CONTROL)[0]==native_preparation.MAGIC:
             manifest['blocks'].append(dict(address=native_preparation.CONTROL,
                 expected_hex=ram[native_preparation.CONTROL:native_preparation.CONTROL+4].hex(),data_hex='00000000'))
-        report = patch(self.source, manifest, output)
-        write_json(self.run/'playable-export.json', report)
-        self.index += 1; self.source = output
+        self.index += 1
+        export = PlayableExport(self, self.source, manifest, output)
+        if not getattr(self, 'background_export', False):
+            export.run(); export.join(); return None
+        export.start()
+        return export
 
     def install_tag_rush(self):
         """Prepare enabled offline tag attacks after participation is ready.
@@ -983,6 +1067,9 @@ class Session:
             if self.play_intro and (p.read_u32(team_intro.CONTROL) != 1 or
                     p.read_u32(team_intro.CONTROL+8) != manager):
                 raise ValueError('Prepared intro identity changed')
+            if self.play_intro and getattr(self, 'tournament', None) is not None:
+                # Tag Team Tournament: the stage's crowd shots play now, after the loading (skipped before it).
+                team_intro.crowd_first(p)
             p.write(request, struct.pack('<I', 1))
         budget = ActiveRuntimeBudget(90 if self.play_intro else 10)
         stall, heartbeat = ActiveRuntimeBudget(START_STALL_SECONDS), None
@@ -1016,7 +1103,7 @@ class Session:
                 running = budget.observe(p.status())
                 if running and p.read_u32(address) >= minimum: return
             if budget.expired: break
-            time.sleep(.2)
+            time.sleep(POLL)
         raise TimeoutError(f'No expected game-frame progress at {address:08X}')
 
     def wait_idle_leaders(self, actors=None):
@@ -1047,14 +1134,47 @@ class Session:
                         for a in held: p.write_u32(a+IDLE_COUNT, 0)
                     return
             if budget.expired: break
-            time.sleep(.2)
+            time.sleep(POLL)
         if actors is not None:
             from native_preparation import launcher
             raise ValueError(spawn_placement.NOT_IDLE.format(play=launcher()))
         raise TimeoutError('Both held leaders did not return to idle for preparation')
 
 
+class PlayableExport:
+    """The rematch archive (export_playable): the held checkpoint with only its start request, cover and transport
+    words changed, written by patch_state.patch. A StreamingSession writes it on a thread while the arena is
+    uncovered and the start is acknowledged; join() waits for it, raises its error, and only then names the archive
+    as the session's playable source. Every guard and check runs exactly as before; nothing loads it in between."""
+    def __init__(self, session, source, manifest, output):
+        self.session, self.source, self.manifest, self.output = session, source, manifest, output
+        self.thread, self.error, self.done = None, None, False
+
+    def run(self):
+        from patch_state import patch
+        try:
+            report = patch(self.source, self.manifest, self.output)
+            write_json(self.session.run/'playable-export.json', report)
+        except BaseException as error:  # noqa: BLE001 - raised again by join()
+            self.error = error
+
+    def start(self):
+        import threading
+        self.thread = threading.Thread(target=self.run, name='playable-export', daemon=True)
+        self.thread.start()
+
+    def join(self):
+        if self.thread is not None:self.thread.join()
+        if self.done:return
+        self.done = True
+        if self.error is not None:raise self.error
+        self.session.source = self.output
+
+
 class StreamingSession(Session):
+    # The rematch archive is written while the uncovered match starts (PlayableExport).
+    background_export = True
+
     """Prepare on the native frame thread; save only the final rematch image.
 
     Builders receive every stage image in memory under the path they are given
@@ -1067,6 +1187,12 @@ class StreamingSession(Session):
         # A pause at a stage boundary waits for the player instead of failing (F2).
         with self.running_client() as p:
             native.quiet(p)
+            tournament=getattr(self,'tournament',None)
+            if label=='original-selected-match' and tournament is not None:
+                # Tag Team Tournament: the fresh native battle, held, before anything is prepared. The watcher loads
+                # it after the team match and lets the native tournament read the team result on a clean state.
+                import tag_tournament
+                tournament['original']=tag_tournament.save_original(self,p,tournament['token'])
             if label!='ready-held':
                 ram=native.read_ram(p)
         if label=='ready-held':

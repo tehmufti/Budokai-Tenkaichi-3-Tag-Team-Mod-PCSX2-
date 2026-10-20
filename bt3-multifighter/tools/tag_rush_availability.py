@@ -4,7 +4,7 @@ from pathlib import Path
 
 ONLINE_PREPARATION_ENV = 'TAGTEAM_ONLINE_PREPARATION'
 ONLINE_PREPARATION_MARKER = 'online-held-export-owner.json'
-SUPPORTED_ADAPTERS = frozenset(('bt3-usa', 'bt4-b14-rev2-eng'))
+SUPPORTED_ADAPTERS = frozenset(('bt3-usa', 'bt3-pal', 'bt3-jpn', 'bt4-b14-rev2-eng'))
 
 
 def preparation_reason(settings, battle_mode, root, *, adapter=None, online=False):
@@ -20,5 +20,5 @@ def preparation_reason(settings, battle_mode, root, *, adapter=None, online=Fals
         from native_map import ADAPTER
         adapter = ADAPTER
     if adapter not in SUPPORTED_ADAPTERS:
-        return 'Tag-team rush currently supports BT3 USA and BT4 English/Spanish.'
+        return 'Tag-team rush currently supports BT3 (USA, Europe, Japan) and BT4 English/Spanish.'
     return ''

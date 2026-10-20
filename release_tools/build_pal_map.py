@@ -222,7 +222,12 @@ class Evaluator:
 def scan(tools):
     """Statically known USA arguments: A (addresses), GPO/base-28 (gp offsets), RANGE (ranges)."""
     found = dict(addr={}, gp={}, ranges={}, dynamic=[])
-    for f in sorted(tools.glob('*.py')):
+    # The online kit (online/netplay and its pinned modtools) runs on the same disc through the same table.
+    online = tools.parent / 'online' / 'netplay'
+    files = sorted(tools.glob('*.py'))
+    if online.is_dir():
+        files += sorted(online.glob('*.py')) + sorted((online / 'modtools').glob('*.py'))
+    for f in files:
         if f.name.startswith('test_') or f.name == 'native_map.py':
             continue
         text = f.read_text(encoding='utf-8')

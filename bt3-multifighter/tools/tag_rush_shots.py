@@ -387,9 +387,9 @@ def update_code():
     a.lw(20,28,-22180);a.lw(21,28,-22176);a.lw(22,28,-22172)
     full.pointer(a,21,832,'no');full.pointer(a,22,0xC44,'no');a.lw(23,22,0xC40)
     a.move(4,29);a.call(A(0x120098))
-    for off,function in ((0,0x120398),(4,0x120428),(8,0x120308)):
+    for off,function in ((0,A(0x120398)),(4,A(0x120428)),(8,A(0x120308))):
         a.addiu(4,29,0x80);a.call(A(0x120098))
-        a.addiu(4,29,0x80);a.move(5,4);a.i(49,12,29,0x40+off);a.call(A(function))
+        a.addiu(4,29,0x80);a.move(5,4);a.i(49,12,29,0x40+off);a.call(function)
         a.move(4,29);a.addiu(5,29,0x80);a.move(6,29);a.call(A(0x1201B8))
     for off in (0,4,8):
         a.i(49,0,17,off);a.i(49,1,29,0x54 if off==4 else 0x50);fp.fop(a,2,0,0,1);a.i(57,0,29,48+off)

@@ -19,6 +19,9 @@ MAX_BLOCKS = CAPACITY // (RECORD_SIZE + 2)
 HOOK, NATIVE = A(0x12BC84), A(0x126FB0)
 MAGIC = 0x42545032
 INCLUDE_SINGLE_FFA = CONTROL+60
+# The battle mode the gate captures (battle setup +8): 0 = Duel. A Tag Team Tournament sets 4 (the native
+# tournament) while it is armed; tag_tournament and the watcher keep it 0 otherwise.
+ACCEPTED_MODE = CONTROL+64
 # Control: magic,request,ack,status,quiet,quiet_ack,manager,blocks,bytes,
 # failure_block,frames,combat_frames,armed,captured,deferred_intro,include_single_ffa.
 REGS = tuple(range(1, 26)) + (28, 30, 31)
@@ -35,10 +38,13 @@ def restore(a):
     a.addiu(29, 29, STACK)
 
 
-def gate_code(heal_any_substate=True):
+def gate_code(heal_any_substate=True, accepted_mode_word=True, skip_stage_intro=True):
     """heal_any_substate=False emits the beta.35/36 gate (previous_gate_images), which rewrote only phase-1
-    substates below 4."""
+    substates below 4. accepted_mode_word=False emits the gates before the Tag Team Tournament, which compared the
+    battle mode with a constant 0 (the same two words as the ACCEPTED_MODE load and its nop). skip_stage_intro=False
+    emits the gate before Oct 19, which let the duel's phase-0 stage shots play out under the mod's loading cover."""
     import extra_reload_quiet as reload_job
+    import guest_loading_screen as cover
     a=Assembler(GATE)
     # Keep the native predecessor's result/register behavior exactly.
     a.addiu(29,29,-16);a.i(63,31,29,0);a.call(NATIVE)
@@ -49,7 +55,10 @@ def gate_code(heal_any_substate=True):
     a.lw(8,16,48);a.branch(4,8,0,'normal')
     a.lw(8,16,52);a.branch(5,8,0,'normal')
     for address,value in ((A(0x3337C0),1),(A(0x331DD0),0),(A(0x31BE04),0),(0xD8080,0),(A(0x2FF084),0),(A(0x2FF08C),0)):
-        a.li(8,address);a.lw(8,8);a.li(9,value);a.branch(5,8,9,'normal')
+        a.li(8,address);a.lw(8,8)
+        if address==A(0x331DD0) and accepted_mode_word:a.lw(9,16,ACCEPTED_MODE-CONTROL);a.emit(0)
+        else:a.li(9,value)
+        a.branch(5,8,9,'normal')
     a.li(8,A(0x331DC8));a.lw(9,8,192);a.lw(10,8,816)
     # One to TEAM_CAPACITY members a side. More falls back to a native match.
     for reg in (9,10):
@@ -69,7 +78,21 @@ def gate_code(heal_any_substate=True):
     # frame, before 2129B0/217520 reads it, so a 5 from any source is healed before it can stall.
     a.lw(8,17,8);a.i(14 if heal_any_substate else 11,9,8,4);a.branch(4,9,0,'normal')
     a.addiu(8,0,4);a.sw(8,17,8);a.addiu(8,0,1);a.sw(8,16,56);a.jump('normal')
-    a.label('ready_phase');a.addiu(8,8,-2);a.i(11,9,8,2);a.branch(4,9,0,'normal')
+    a.label('ready_phase')
+    if skip_stage_intro:
+        # Phase 0 plays the stage's camera shots (217C78 starts shots at substates 0/2/4, 217CF0 waits for each)
+        # for about ten seconds, all of them under the mod's loading cover. Once that cover is up (its CONTROL holds
+        # MAGIC), substate 6 is the phase's own "done" case: 217CF0 returns 1 next frame and the phase exit 217DB8
+        # stops a shot still playing and fades in, exactly as the end of the last shot does. A tournament keeps
+        # its crowd shots: the watcher raises the cover only as they end. Native values are 0..6 only.
+        a.branch(5,8,0,'ready_check')
+        a.li(11,cover.CONTROL);a.lw(9,11);a.li(10,cover.MAGIC);a.branch(5,9,10,'normal')
+        # Only the battle-surface cover (CONTROL+32 surface 0; a menu picture is 1).
+        a.lw(9,11,32);a.branch(5,9,0,'normal')
+        a.lw(9,17,8);a.i(11,10,9,6);a.branch(4,10,0,'normal')
+        a.addiu(9,0,6);a.sw(9,17,8);a.jump('normal')
+        a.label('ready_check')
+    a.addiu(8,8,-2);a.i(11,9,8,2);a.branch(4,9,0,'normal')
     a.li(8,A(0x2FEB14));a.lw(17,8)
     a.li(9,0x100000);a.r(0x2B,10,17,9);a.branch(5,10,0,'normal')
     a.li(9,0x7FFF000);a.r(0x2B,10,17,9);a.branch(4,10,0,'normal')
@@ -211,16 +234,28 @@ def previous_gate_images():
     """Gate images a prepared capture or preset may hold instead of the current gate; captured_transport and
     preset_cosmetics.transport_memory accept them and the transport rewrites them to gate_code(). In order,
     de-duplicated:
-    - gate_code(heal_any_substate=False): this build's gate with the beta.35/36 phase-1 rewrite (sltiu < 4, not
-      xori != 4; one word, GATE+0x220);
+    - the gate beta.37 through Version 13.4 shipped (before the Tag Team Tournament): it compares the battle mode with
+      a constant 0 (two words, GATE+0xF4: lui/ori instead of the ACCEPTED_MODE load and a nop). Frozen per adapter in
+      dispatch_gate_history.pre_tournament_image; gate_code(accepted_mode_word=False) only for an adapter without one;
+    - gate_code(heal_any_substate=False, accepted_mode_word=False): that gate with the beta.35/36 phase-1 rewrite
+      (sltiu < 4, not xori != 4; one more word, GATE+0x220);
     - the gate beta.35/36 actually shipped for this adapter, frozen in dispatch_gate_history (sha256 pinned in
       test_native_preparation). Only that copy is exact once the gate changes elsewhere; a rebuild is not.
-    Skipped for an adapter those releases did not ship."""
+    Skipped for an adapter those releases did not ship;
+    - the gate from the Tag Team Tournament to Oct 19 (before the stage-shot skip), frozen per adapter in
+      dispatch_gate_history.pre_stage_skip_image; gate_code(skip_stage_intro=False) only for an adapter without one."""
     import native_map
     import dispatch_gate_history as history
-    images=[gate_code(heal_any_substate=False)]
+    images=[history.pre_tournament_image(native_map.ADAPTER) or gate_code(accepted_mode_word=False,skip_stage_intro=False),
+            gate_code(heal_any_substate=False,accepted_mode_word=False,skip_stage_intro=False)]
     shipped=history.beta36_image(native_map.ADAPTER)
     if shipped is not None and shipped not in images:images.append(shipped)
+    pre_skip=history.pre_stage_skip_image(native_map.ADAPTER) or gate_code(skip_stage_intro=False)
+    if pre_skip not in images:images.append(pre_skip)
+    # The pre-tournament gate as the current code emits it (with the stage-shot skip): no release shipped it, but a
+    # capture holding it is as safe to upgrade as the frozen one above.
+    rebuilt=gate_code(accepted_mode_word=False)
+    if rebuilt not in images:images.append(rebuilt)
     return tuple(images)
 
 

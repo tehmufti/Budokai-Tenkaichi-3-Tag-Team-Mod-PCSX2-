@@ -91,12 +91,12 @@ class CinematicPolicyTests(unittest.TestCase):
         apply(ram,p.build_memory(ram))
         # Reconstruct precisely the pre-fusion/pre-corpse policy (build_memory installed the beta.37
         # participants emission, whose PROTECT/FOREIGN/PENDING no earlier release had).
-        current=dict(p.program(participants=True,form_gate=True))
+        current=dict(p.program(participants=True,form_gate=True,view_grace=True))
         for address,data in p.program(False):
             ram[address:address+len(current[address])]=bytes(len(current[address]))
             ram[address:address+len(data)]=data
         ram[p.COOP_FUSION:p.COOP_FUSION+len(p.coop_fusion())]=bytes(len(p.coop_fusion()))
-        for address in (p.PROTECT,p.FOREIGN,p.PENDING,p.PROTECT_ACTIVE,p.FORM_GATE,p.FORM_TRACK):ram[address:address+len(current[address])]=bytes(len(current[address]))
+        for address in (p.PROTECT,p.FOREIGN,p.PENDING,p.PROTECT_ACTIVE,p.FORM_GATE,p.FORM_TRACK,p.GRACE):ram[address:address+len(current[address])]=bytes(len(current[address]))
         p.validate_memory(ram)
         manifest=p.build_memory(ram);self.assertTrue(manifest['blocks'])
         apply(ram,manifest);self.assertEqual(p.build_memory(ram)['blocks'],[])
@@ -110,7 +110,7 @@ class CinematicPolicyTests(unittest.TestCase):
                 ram=bytearray(old.RAM);apply(ram,p.pause.build_memory(ram,mode='none'))
                 apply(ram,p.build_memory(ram,ultimate=True))
                 # The previous classifier shipped before the beta.37 participants emission.
-                for address,data in p.program(participants=True,form_gate=True):ram[address:address+len(data)]=bytes(len(data))
+                for address,data in p.program(participants=True,form_gate=True,view_grace=True):ram[address:address+len(data)]=bytes(len(data))
                 for address,data in p.program():ram[address:address+len(data)]=data
                 if expanded:
                     manager,count=struct.unpack_from('<2I',ram,p.CONTROL+4)
@@ -123,7 +123,7 @@ class CinematicPolicyTests(unittest.TestCase):
                 manifest=p.build_memory(ram,ultimate=True)
                 self.assertEqual(sorted(b['address'] for b in manifest['blocks']),
                                  sorted([p.PREPARE,p.ULTIMATE_OWNER,p.ULTIMATE_STOP,p.PROTECT,p.FOREIGN,p.PENDING,p.PROTECT_ACTIVE,
-                                         p.STORE,p.SHARED_FORM,p.ULTIMATE_FRAME,p.FORM_GATE,p.FORM_TRACK]))
+                                         p.STORE,p.SHARED_FORM,p.ULTIMATE_FRAME,p.FORM_GATE,p.FORM_TRACK,p.GRACE]))
                 apply(ram,manifest)
                 self.assertEqual(p.build_memory(ram,ultimate=True)['blocks'],[])
                 ram[p.ULTIMATE_OWNER:p.ULTIMATE_OWNER+len(previous)]=previous

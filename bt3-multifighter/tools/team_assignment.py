@@ -10,7 +10,9 @@ never blocks: it reads hub snapshots only.
 import struct
 import time
 from localization import tr
+from native_map import JPN
 from prototype import Assembler
+from regional import RAW_ACCEPT, RAW_BACK
 import fonts
 
 CODE, RESOLVE, END = 0x06911000, 0x06911800, 0x06912000
@@ -47,10 +49,16 @@ NOTICES={
     'unmapped':'{name} has no gamepad layout here; it can still play as player 1 or 2 through PCSX2 (TTM-CTRL-21).',
 }
 NOTICE_SECONDS=8.0
-FOOTER_P1='Player 1: Up/Down select · Left/Right team · Cross continue · Triangle back'
+# Player 1's footers name the disc's own menu buttons (regional.RAW_ACCEPT / RAW_BACK): Japan confirms with Circle
+# and goes back with Cross.
+FOOTER_P1_USA='Player 1: Up/Down select · Left/Right team · Cross continue · Triangle back'
+FOOTER_P1_JPN='Player 1: Up/Down select · Left/Right team · Circle continue · Cross back'
+FOOTER_P1=FOOTER_P1_JPN if JPN else FOOTER_P1_USA
 FOOTER_ALL='Everyone: START join · Left/Right own team · SELECT leave'
 # Free-for-all has no teams: its footers leave Left/Right out.
-FOOTER_P1_FFA='Player 1: Up/Down select · Cross continue · Triangle back'
+FOOTER_P1_FFA_USA='Player 1: Up/Down select · Cross continue · Triangle back'
+FOOTER_P1_FFA_JPN='Player 1: Up/Down select · Circle continue · Cross back'
+FOOTER_P1_FFA=FOOTER_P1_FFA_JPN if JPN else FOOTER_P1_FFA_USA
 FOOTER_ALL_FFA='Everyone: START join · SELECT leave'
 GOLD,WHITE,DIM,GREEN,RED,PANEL,EDGE,BLUE,ORANGE,BG,TEXT=((249,197,90),(242,244,249),(150,162,182),(117,227,161),
     (240,104,92),(31,46,66),(64,80,102),(71,184,241),(246,120,102),(10,16,28),(203,216,234))
@@ -117,6 +125,12 @@ def resolve_code():
         a.addiu(10,0,choice);a.branch(4,9,10,'assigned')
     a.jump('legacy');a.label('assigned')
     a.r(0,24,0,14,1);a.r(0x21,24,24,13)
+    # Tag Team Tournament roster draft: every slot of the pass has its picker (CPU slots: the team's first player).
+    import tag_tournament
+    a.li(9,tag_tournament.DRAFT);a.lw(10,9);a.li(2,tag_tournament.DRAFT_MAGIC);a.branch(5,10,2,'seats')
+    a.i(11,10,24,12);a.branch(4,10,0,'seats')
+    a.r(0x21,10,9,24);a.i(36,2,10,4);a.branch(4,2,0,'seats');a.jr()
+    a.label('seats')
     for seat in range(4):
         a.lw(10,8,SEATS+4*seat);a.branch(5,10,24,f'next{seat}')
         a.addiu(2,0,seat+1);a.jr();a.label(f'next{seat}')
@@ -306,7 +320,7 @@ class Controller:
             self.teams=[seat.team for seat in roster.seats]
         buttons=p.read_u32(MENU+BUTTONS)
         if buttons:p.write_u32(MENU+BUTTONS,0)
-        if buttons&0x1000:
+        if buttons&RAW_BACK:
             p.write_u32(MENU+STATE,0);p.write_u32(MENU+VALID,0);self.close(p);return True
         if not self.screen.presented(p):buttons=0
         elif not self.input_ready:
@@ -320,7 +334,7 @@ class Controller:
             if self.hub is not None:
                 try:self.hub.set_team(self.row+1,self.teams[self.row])
                 except RuntimeError:pass
-        if buttons&0x4000:
+        if buttons&RAW_ACCEPT:
             if self.row==len(self.teams)+1:
                 if self.hub is not None:
                     try:self.hub.clear_checkins()

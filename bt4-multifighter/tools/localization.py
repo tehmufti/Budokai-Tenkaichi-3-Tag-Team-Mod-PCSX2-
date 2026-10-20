@@ -124,6 +124,9 @@ ES = {
     'No saved scenarios found.': 'No hay escenarios guardados.',
     'Up/Down: select   L1/R1: page   Cross: details': 'Arriba/Abajo: elegir   L1/R1: página   Cruz: detalles',
     'Triangle: return to Modded Modes': 'Triángulo: volver a los modos del mod',
+    'Circle: play scenario    Cross: back': 'Círculo: jugar    Cruz: volver',
+    'Up/Down: select   L1/R1: page   Circle: details': 'Arriba/Abajo: elegir   L1/R1: página   Círculo: detalles',
+    'Cross: return to Modded Modes': 'Cruz: volver a los modos del mod',
     '3 Players': '3 jugadores', '4 Players': '4 jugadores', 'CPU Only': 'Solo CPU',
     'Mod Settings': 'Ajustes del mod', 'Back': 'Volver', 'Mod modes': 'Modos del mod',
     'Original game menu': 'Menú original',
@@ -143,8 +146,8 @@ ES = {
     'Tag-team rush: shared camera and pause': 'Rush en equipo: cámara compartida y pausa',
     'Goku and Piccolo: sacrifice damage': 'Goku y Piccolo: daño de sacrificio',
     'Sacrifice damage multiplier (Goku and enemy)': 'Multiplicador del sacrificio (Goku y rival)',
-    'Offline team matches on BT3 USA and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. On a miss, only the fighter who started the rush loses meter. Keep meter after a missed rush preserves both meters. The three participants follow the attack camera; Shared camera and pause includes everyone. Training full affects Modded Training only. For Goku (Early) and Piccolo (Early), sacrifice multiplies damage to the enemy and also hurts Goku. The multiplier applies to both; off keeps normal damage without hurting Goku. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online or on BT3 Europe/Japan.':
-        'Combates por equipos sin conexión en BT3 USA y BT4. Cada luchador tiene un medidor. Con ambos llenos, pulsa Cargar ki + Triángulo + Izquierda (stick o cruceta) para invitar o aceptar al fijar al mismo rival; suelta Triángulo e Izquierda antes de repetir. Un aliado CPU acepta automáticamente. Al fallar, solo se gasta el medidor de quien inicia el ataque. Conservar medidor si el Rush falla conserva ambos medidores. Los tres participantes siguen la cámara del ataque; Cámara compartida y pausa incluye a todos. Medidor lleno solo afecta a Entrenamiento mod. Con Goku (Inicio) y Piccolo (Inicio), el sacrificio multiplica el daño al rival y también daña a Goku. El multiplicador afecta a ambos; desactivado, mantiene el daño normal sin herir a Goku. No pueden participar gigantes, formas no compatibles ni fusiones con control dividido. Se aplica al siguiente combate; la revancha conserva sus ajustes. No disponible en línea ni en BT3 Europa/Japón.',
+    'Offline team matches on BT3 (USA, Europe and Japan) and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. On a miss, only the fighter who started the rush loses meter. Keep meter after a missed rush preserves both meters. The three participants follow the attack camera; Shared camera and pause includes everyone. Training full affects Modded Training only. For Goku (Early) and Piccolo (Early), sacrifice multiplies damage to the enemy and also hurts Goku. The multiplier applies to both; off keeps normal damage without hurting Goku. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online.':
+        'Combates por equipos sin conexión en BT3 (EE. UU., Europa y Japón) y BT4. Cada luchador tiene un medidor. Con ambos llenos, pulsa Cargar ki + Triángulo + Izquierda (stick o cruceta) para invitar o aceptar al fijar al mismo rival; suelta Triángulo e Izquierda antes de repetir. Un aliado CPU acepta automáticamente. Al fallar, solo se gasta el medidor de quien inicia el ataque. Conservar medidor si el Rush falla conserva ambos medidores. Los tres participantes siguen la cámara del ataque; Cámara compartida y pausa incluye a todos. Medidor lleno solo afecta a Entrenamiento mod. Con Goku (Inicio) y Piccolo (Inicio), el sacrificio multiplica el daño al rival y también daña a Goku. El multiplicador afecta a ambos; desactivado, mantiene el daño normal sin herir a Goku. No pueden participar gigantes, formas no compatibles ni fusiones con control dividido. Se aplica al siguiente combate; la revancha conserva sus ajustes. No disponible en línea.',
     'Preparing tag attacks': 'Preparando ataques en equipo',
     'Beam struggles': 'Forcejeos de rayos',
     'Movement': 'Movimiento',
@@ -296,6 +299,8 @@ ES = {
     'Player 1: Up/Down select · Left/Right team · Cross continue · Triangle back': 'Jugador 1: Arriba/abajo elegir · Izq./der. equipo · Cruz continuar · Triángulo volver',
     'Everyone: START join · Left/Right own team · SELECT leave': 'Todos: START unirse · Izq./der. tu equipo · SELECT salir',
     'Player 1: Up/Down select · Cross continue · Triangle back': 'Jugador 1: Arriba/abajo elegir · Cruz continuar · Triángulo volver',
+    'Player 1: Up/Down select · Left/Right team · Circle continue · Cross back': 'Jugador 1: Arriba/abajo elegir · Izq./der. equipo · Círculo continuar · Cruz volver',
+    'Player 1: Up/Down select · Circle continue · Cross back': 'Jugador 1: Arriba/abajo elegir · Círculo continuar · Cruz volver',
     'Everyone: START join · SELECT leave': 'Todos: START unirse · SELECT salir',
     # Controller hub lines (TTM-CTRL-20..24; the watcher prefixes the code) and the back-on line.
     "Players 3 and 4 cannot join: the mod's controller reader (SDL2) did not start ({detail}). Players 1 and 2 keep their PCSX2 controllers. On Linux install libsdl2-2.0-0 (Debian/Ubuntu), SDL2 or sdl2-compat.": 'Los jugadores 3 y 4 no pueden unirse: el lector de mandos del mod (SDL2) no se ha iniciado ({detail}). Los jugadores 1 y 2 siguen con sus mandos de PCSX2. En Linux instala libsdl2-2.0-0 (Debian/Ubuntu), SDL2 o sdl2-compat.',
@@ -1548,14 +1553,14 @@ ES.update({'Visual preview': 'Vista previa',
  'Charging to Sparking': 'Cargando Sparking',
  'Sparking': 'Sparking',
  'Locked off': 'Sin objetivo',
- 'Offline team matches on BT3 USA and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. On a miss, only the fighter who started the rush loses meter. Keep meter after a missed rush preserves both meters. The three participants follow the attack camera; Shared camera and pause includes everyone. For Goku (Early) and Piccolo (Early), sacrifice multiplies damage to the enemy and also hurts Goku. The multiplier applies to both; off keeps normal damage without hurting Goku. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online or on BT3 Europe/Japan.': 'Combates '
+ 'Offline team matches on BT3 (USA, Europe and Japan) and BT4. Each fighter has a meter. With both full, press Charge Ki + Triangle + Left (stick or D-pad) to invite or accept while targeting the same enemy; release Triangle and Left before repeating. A CPU ally accepts automatically. On a miss, only the fighter who started the rush loses meter. Keep meter after a missed rush preserves both meters. The three participants follow the attack camera; Shared camera and pause includes everyone. For Goku (Early) and Piccolo (Early), sacrifice multiplies damage to the enemy and also hurts Goku. The multiplier applies to both; off keeps normal damage without hurting Goku. Giants, unsupported forms and split-control fusions cannot join. Applies next match; Fight Again keeps its settings. Unavailable online.': 'Combates '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'por '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'equipos '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'sin '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'conexión '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'en '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'BT3 '
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'USA '
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              '(EE. UU., Europa y Japón) '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'y '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'BT4. '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'Cada '
@@ -1690,11 +1695,7 @@ ES.update({'Visual preview': 'Vista previa',
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'No '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'disponible '
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               'en '
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'línea '
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'ni '
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'en '
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'BT3 '
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'Europa/Japón.',
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'línea.',
  'Modded Training takes one to four players; share a team to practice together. The CPU stands still or fights back. Health refills after the delay, and ki and blast stocks refill. The full tag meter option keeps every Tag Attack ready in Modded Training. With health refill off, defeats can end the session. Native Training stays in the original menu. Applies from the next session; a Fight Again rematch keeps the settings of its session.': 'Entrenamiento '
                                                                                                                                                                                                                                                                                                                                                                                                                                                            'mod '
                                                                                                                                                                                                                                                                                                                                                                                                                                                            'admite '
@@ -1804,4 +1805,163 @@ ES.update({
     'Off': 'Desactivado',
     'Fades after {seconds} s': 'Se desvanece en {seconds} s',
     'Grows only in 16:9 with 3-4 views': 'Solo crece en 16:9 con 3-4 vistas',
+})
+
+# Tag Team Tournament (tag_tournament, the Modded Modes row and its setup panel, the watcher's lines).
+ES.update({
+    'Tag Team Tournament': 'Torneo por equipos',
+    'World Tournament with teams of one to five.\nChoose players, team size and tournament,\nthen pick every team once.':
+        'Torneo Mundial con equipos de uno a cinco.\nElige jugadores, tamaño y torneo;\nluego elige cada equipo una vez.',
+    'TAG TEAM TOURNAMENT': 'TORNEO POR EQUIPOS',
+    'Teams of one to five fight through the World Tournament.': 'Equipos de uno a cinco luchan en el Torneo Mundial.',
+    'Players': 'Jugadores',
+    'CPU only': 'Solo CPU',
+    'Team size': 'Tamaño de equipo',
+    'PLAYER {n}': 'JUGADOR {n}',
+    '<  TEAM {t}  >': '<  EQUIPO {t}  >',
+    'Team {t} has more players than fighters.': 'El equipo {t} tiene más jugadores que luchadores.',
+    'Up/Down select · Left/Right change': 'Arriba/Abajo elegir · Izq./Der. cambiar',
+    'TEAM {t}': 'EQUIPO {t}',
+    'Fighter {k}: Player {p}': 'Luchador {k}: Jugador {p}',
+    'Fighter {k}: CPU': 'Luchador {k}: CPU',
+    'Team {t} - Player {p}': 'Equipo {t} - Jugador {p}',
+    'Next: Team {t} picks its fighters (Team Battle select), then the tournament starts on its own.':
+        'Ahora el equipo {t} elige a sus luchadores (selección de Team Battle); luego el torneo empieza solo.',
+    'Next: one fighter select for both teams (Team {t} top, Team {u} bottom), then the tournament starts on its own.':
+        'Ahora una sola selección para los dos equipos (equipo {t} arriba, equipo {u} abajo); luego el torneo '
+        'empieza solo.',
+    'Next: the fighter select, two teams at a time ({n} teams), then the tournament starts on its own.':
+        'Ahora la selección de luchadores, dos equipos cada vez ({n} equipos); luego el torneo empieza solo.',
+    'CPU only: Player 1 picks the team to follow (every fighter is a CPU), then the tournament starts on its own.':
+        'Solo CPU: el jugador 1 elige el equipo al que seguir (todos los luchadores son CPU); luego el torneo '
+        'empieza solo.',
+    'Tournament': 'Torneo',
+    'Difficulty': 'Dificultad',
+    '1 Dragon Ball': '1 Bola de Dragón',
+    '2 Dragon Balls': '2 Bolas de Dragón',
+    '3 Dragon Balls': '3 Bolas de Dragón',
+    'World Tournament': 'Torneo Mundial',
+    'World Martial Arts Big Tournament': 'Gran Torneo de Artes Marciales',
+    'Cell Games': 'Juegos de Cell',
+    'Otherworld Tournament': 'Torneo del Otro Mundo',
+    'Yamcha Game': 'Juego de Yamcha',
+    'Tournament of Power': 'Torneo del Poder',
+    'Team {t} - Player {p}: pick your fighter (Custom = Potara, then color), then confirm.':
+        'Equipo {t} - Jugador {p}: elige tu luchador (Custom = Potara, luego color) y confirma.',
+    'Top: Team {t}. Bottom: Team {u}. Each picks one fighter, then confirms.':
+        'Arriba: equipo {t}. Abajo: equipo {u}. Cada uno elige un luchador y confirma.',
+    'Player 1: pick the team to follow, fighters 1 to {n} (all CPU), then confirm the team.':
+        'Jugador 1: elige el equipo al que seguir, luchadores 1 a {n} (todos CPU), y confirma el equipo.',
+    'CPU only: register the one leader to follow.': 'Solo CPU: inscribe el líder al que seguir.',
+    'Team {t} - Player {p}: pick fighters 1 to {n} (Custom = Potara, then color), then confirm the team.':
+        'Equipo {t} - Jugador {p}: elige los luchadores 1 a {n} (Custom = Potara, luego color) y confirma el equipo.',
+    'Top: Team {t}. Bottom: Team {u}. Pick fighters 1 to {n} each, then confirm the team.':
+        'Arriba: equipo {t}. Abajo: equipo {u}. Cada uno elige los luchadores 1 a {n} y confirma el equipo.',
+    'At the entry choose How many people = {n}, then register in this order:':
+        'En la inscripción elige How many people = {n} e inscribe en este orden:',
+    'Team {t} - Player {p}, this way please!': '¡Equipo {t} - Jugador {p}, por aquí, por favor!',
+    'Register your leader: {name}.': 'Inscribe a tu líder: {name}.',
+    'Register your team leader.': 'Inscribe al líder de tu equipo.',
+    'Register the leader you want to follow!': '¡Inscribe al líder al que quieres seguir!',
+    'How many people is {got}, but this tournament has {n} human team(s).':
+        'How many people es {got}, pero este torneo tiene {n} equipo(s) humano(s).',
+    'Press Triangle to go back and choose {n}.': 'Pulsa Triángulo para volver y elegir {n}.',
+    'Team {t}: leader is {name} (picked at the entry, not the drafted {drafted}).':
+        'Equipo {t}: el líder es {name} (inscrito en la entrada, no el elegido {drafted}).',
+    'with {names}': 'con {names}',
+    'Tag Team Tournament: {winner} won the final and the tournament!':
+        'Torneo por equipos: ¡{winner} ganó la final y el torneo!',
+    'Tag Team Tournament: pick every team (Team Battle select); the tournament then starts on its own.':
+        'Torneo por equipos: elige todos los equipos (selección de Team Battle); luego el torneo empieza solo.',
+    'The Tag Team Tournament roster pick needs menu checkpoints; it was cancelled.':
+        'La elección de equipos del torneo necesita los puntos de control del menú; se canceló.',
+    'Cross continue · Triangle back · START join · SELECT leave':
+        'X continuar · Triángulo volver · START unirse · SELECT salir',
+    'Tag Team Tournament ({setup}): Dragon World Tour opens on the bracket.':
+        'Torneo por equipos ({setup}): Dragon World Tour se abre en el cuadro del torneo.',
+    'This tournament match does not have its teams; the game plays it normally.':
+        'Este combate del torneo no tiene sus equipos; el juego lo juega con normalidad.',
+    'Tag Team Tournament: {winner} won; the tournament continues.':
+        'Torneo por equipos: ganó {winner}; el torneo continúa.',
+    'The tournament match was left without a result: back to the main menu.':
+        'Se salió del combate del torneo sin resultado: vuelta al menú principal.',
+    'Tournament results...': 'Resultados del torneo...',
+    'The tournament could not continue after this match.': 'El torneo no pudo continuar tras este combate.',
+    "Next is a CPU match: {a}'s team vs {b}'s team. Watch it?": 'Ahora lucha la CPU: equipo de {a} contra equipo de {b}. ¿Quieres verlo?',
+    '{accept}: Watch · {back}: Skip': '{accept}: Ver · {back}: Saltar',
+    '{accept} continue · {back} back · START join · SELECT leave': '{accept} continuar · {back} volver · START unirse · SELECT salir',
+    'Press {back} to go back and choose {n}.': 'Pulsa {back} para volver y elegir {n}.',
+    'CPU matches': 'Combates de la CPU',
+    'Ask each time': 'Preguntar cada vez',
+    'Always watch': 'Verlos siempre',
+    'Always skip': 'Saltarlos siempre',
+    'Leader: Player {p}': 'Líder: Jugador {p}',
+    '{k}: Player {p}': '{k}: Jugador {p}',
+    '{k}: CPU': '{k}: CPU',
+})
+
+# Fighter Gauntlet (gauntlet_mode panel and watcher lines, gauntlet_runtime in-match texts, the Modded Modes
+# row and its description). Keys the earlier blocks already translate are not repeated.
+ES.update({
+    'Fighter Gauntlet': 'Desafío de oleadas',
+    'Beat wave after wave in one match.\nChoose a gauntlet, your team,\nthe HP per wave and the arena.': 'Supera oleada tras oleada en un combate.\nElige un desafío, tu equipo,\nla vida por oleada y el escenario.',
+    'Beat wave after wave in one match.\nChoose a gauntlet, then your team,\nthe HP back per wave and the arena.': 'Supera oleada tras oleada en un combate.\nElige un desafío y luego tu equipo,\nla vida recuperada y el escenario.',
+    'Beat every wave in one match.': 'Supera todas las oleadas en un combate.',
+    'HP back per wave': 'Vida recuperada por oleada',
+    '{n} waves - Final: {boss}': '{n} oleadas - Final: {boss}',
+    '1 wave - Final: {boss}': '1 oleada - Final: {boss}',
+    'CPU from {low} to {high}.': 'CPU de {low} a {high}.',
+    'CPU {level}.': 'CPU {level}.',
+    'Up/Down select · Left/Right change · Cross continue · Triangle back': 'Arriba/Abajo elegir · Izq./Der. cambiar · Equis continuar · Triángulo volver',
+    'Up/Down select · Left/Right change · Circle continue · Cross back': 'Arriba/Abajo elegir · Izq./Der. cambiar · Círculo continuar · Equis volver',
+    'FIGHTER GAUNTLET': 'DESAFÍO DE OLEADAS',
+    'Beat every wave in one match. Your team keeps its health between waves.': 'Supera todas las oleadas en un combate. Tu equipo conserva su vida entre oleadas.',
+    'Gauntlet': 'Desafío',
+    'HP per wave': 'Vida por oleada',
+    '{n} waves': '{n} oleadas',
+    '1 wave': '1 oleada',
+    'Waves: {list}': 'Oleadas: {list}',
+    'Team 1: {n} fighter(s), {h} player(s), {c} CPU teammate(s). Pick them next, then the arena.': 'Equipo 1: {n} luchador(es), {h} jugador(es), {c} compañero(s) CPU. Elígelos a continuación y luego el escenario.',
+    'Up/Down select · Left/Right change · L1/R1 category · Cross continue · Triangle back': 'Arriba/Abajo elegir · Izq./Der. cambiar · L1/R1 categoría · Equis continuar · Triángulo volver',
+    'Up/Down select · Left/Right change · L1/R1 category · Circle continue · Cross back': 'Arriba/Abajo elegir · Izq./Der. cambiar · L1/R1 categoría · Círculo continuar · Equis volver',
+    'None (no health back)': 'Ninguna (sin recuperar vida)',
+    'CPU {low} → {high}': 'CPU {low} → {high}',
+    'CPU {level}': 'CPU {level}',
+    'FIRST WAVES': 'PRIMERAS OLEADAS',
+    'FINAL BOSS': 'JEFE FINAL',
+    'Very Easy': 'Muy fácil', 'Easy': 'Fácil', 'Hard': 'Difícil', 'Very Hard': 'Muy difícil',
+    '1/4 bar': '1/4 de barra',
+    '1/2 bar': '1/2 barra',
+    '1 bar': '1 barra',
+    'Full': 'Completa',
+    'Fighter Gauntlet: pick Team 1 ({n} fighters). The enemies are chosen by the gauntlet.': 'Desafío de oleadas: elige el Equipo 1 ({n} luchadores). El desafío elige a los enemigos.',
+    'WAVE {n} / {count}': 'OLEADA {n} / {count}',
+    'REACHED WAVE {n} / {count}': 'LLEGASTE A LA OLEADA {n} / {count}',
+    'NEXT WAVE': 'SIGUIENTE OLEADA',
+    'GET READY': 'PREPARATE',
+    'GAUNTLET CLEARED': 'DESAFIO SUPERADO',
+    'Fighter Gauntlet: {title} ({waves} waves), {humans} player(s), team of {size}, HP per wave: {refill}.': 'Desafío de oleadas: {title} ({waves} oleadas), {humans} jugador(es), equipo de {size}, vida por oleada: {refill}.',
+    'Fighter Gauntlet armed: wave 1 is {names}.': 'Desafío de oleadas preparado: la oleada 1 es {names}.',
+    'Fighter Gauntlet: wave {n} / {count} - {label}.': 'Desafío de oleadas: oleada {n} / {count} - {label}.',
+    'Fighter Gauntlet cleared: all {count} waves.': 'Desafío de oleadas superado: las {count} oleadas.',
+    'Fighter Gauntlet over: reached wave {n} / {count}.': 'Fin del desafío de oleadas: llegaste a la oleada {n} / {count}.',
+    'Fighter Gauntlet: {name} ready in enemy slot {slot} ({seconds:.1f} s, the match kept running).': 'Desafío de oleadas: {name} listo en el puesto enemigo {slot} ({seconds:.1f} s, el combate siguió).',
+    'Fighter Gauntlet: {name} could not be loaded ({reason}); the wave goes on without it.': 'Desafío de oleadas: no se pudo cargar a {name} ({reason}); la oleada sigue sin él.',
+    'Fighter Gauntlet: setup left ({why}).': 'Desafío de oleadas: configuración abandonada ({why}).',
+    'Fighter Gauntlet: wave 1 / {count} - fight!': 'Desafío de oleadas: oleada 1 / {count} - ¡a pelear!',
+    'Fighter Gauntlet: wave {n} / {count} enters.': 'Desafío de oleadas: entra la oleada {n} / {count}.',
+    'Fighter Gauntlet: wave {n} / {count} cleared; next wave in 15 s.': 'Desafío de oleadas: oleada {n} / {count} superada; la siguiente en 15 s.',
+    'Fighter Gauntlet: Retry - the run starts again at wave 1.': 'Desafío de oleadas: reintentar - el desafío vuelve a empezar en la oleada 1.',
+    '{n} gauntlet(s) in the file could not be used.': 'No se pudieron usar {n} desafío(s) del archivo.',
+    'Test': 'Prueba',
+    'Sagas': 'Sagas',
+    'Eras': 'Épocas',
+    'Movies': 'Películas',
+    'Races': 'Razas',
+    'Teams': 'Equipos',
+    'Factions': 'Facciones',
+    'Heroes and villains': 'Héroes y villanos',
+    'Themes': 'Temas',
+    'Rosters': 'Plantillas',
+    'CPU only: the whole team is CPU and you watch. L1/R1 switch the fighter you follow.': 'Solo CPU: todo el equipo es CPU y tú miras. L1/R1 cambian el luchador que sigues.',
 })

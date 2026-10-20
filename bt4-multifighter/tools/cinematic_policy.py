@@ -132,6 +132,26 @@ FORM_LIVE = 0xC0
 # Set by prepare for the frame an extra's admitted (worker-claimed) form forced the whole native
 # activation stop; store() then never stops another activation's participants (see store).
 FORM_FORCE = 0xBC
+# View grace (view_grace emissions, p94). An ultimate's activation camera can stop an update or two before the
+# camera of its hit phase starts (live, BT3 USA 2P: Goku's 264 ran its camera, then nothing for two updates, then
+# the 303/315 director camera), and an extra's form close-up can lose its proof for an update around its reload.
+# Every view consumer then answered "no owner" and split screen flashed back to two halves and the split HUD for
+# those frames, inside one shared presentation. Each proof of ULTIMATE_OWNER / SHARED_FORM records its owner
+# (GRACE_OWNER = physical+1), kind (GRACE_KIND 1 ultimate, 2 form) and action (GRACE_ACTION) and arms GRACE_LEFT;
+# prepare spends one per update. When either routine would answer "no", GRACE answers the recorded owner again,
+# with v1 = GRACE_ANSWER, while updates remain, the category and its shared view are still enabled, no arena is
+# being replaced, the owner is a living registered fighter, and its action is the recorded one (an ultimate; the
+# hit phase's new action ends it) or still of the form family (a form), and for an ultimate while no cinematic
+# camera runs (a running camera is the ordinary logic's to judge). A graced answer is presentation only:
+# ultimate_stop treats GRACE_ANSWER as no owner (nobody held, no hold bookkeeping), every fighter is published
+# as a member. A proof whose latch FOREIGN refused arms nothing. GRACE_USED counts graced answers (telemetry).
+GRACE = 0x07119000
+GRACE_OWNER, GRACE_KIND, GRACE_LEFT, GRACE_USED, GRACE_ACTION = 0x90, 0x94, 0x98, 0x9C, 0xA0
+GRACE_UPDATES = ticks(60)   # 2 s. The gap is the thrown ball's flight (264 runs with no camera until the 303/315
+# hit camera), so it grows with the distance: BT4's Spirit Bomb 13 updates, BT3 Europe Super Spirit Bomb 19 (p98,
+# split flash 0.17 s with ticks(16)). A presentation that really ended keeps its one view at most this long while
+# its owner stays in the same action (then splits)
+GRACE_ANSWER = 3
 # Native return addresses with their proven actor register and displacement.
 SCRIPT_ACTORS = {
     (16,0):(A(0x1C1E2C),A(0x1D64CC),A(0x200AB4)),
@@ -231,12 +251,16 @@ def classify():
     return a.finish()
 
 
-def prepare(shared_stop=True,participants=False,form_gate=False):
+def prepare(shared_stop=True,participants=False,form_gate=False,grace=False):
     import special_camera_arbitration as arbitration
     bail='bail' if shared_stop else 'done'
     a=Assembler(PREPARE);save(a)
     a.call(OLD_PREPARE)
     a.li(8,CONTROL);a.sw(0,8,24);a.sw(0,8,28);a.sw(0,8,32)
+    if grace:
+        # One update of view grace is spent here, once per update (see GRACE).
+        a.lw(9,8,GRACE_LEFT);a.branch(4,9,0,'grace_spent');a.addiu(9,9,-1);a.sw(9,8,GRACE_LEFT)
+        a.label('grace_spent')
     if form_gate:a.sw(0,8,FORM_FORCE)
     if shared_stop:
         a.sw(0,8,SHARED_STOP)
@@ -785,7 +809,7 @@ def priority(enhanced=True,complete_ultimates=True,shared_stop=True,rush_support
     data=a.finish();assert len(data)<SHARED_FORM-PRIORITY;return data
 
 
-def shared_form_owner(script_stop_fix=True,form_gate=False):
+def shared_form_owner(script_stop_fix=True,form_gate=False,grace=False):
     """v0=the one living transformation owning the shared view, v1=1.
 
     Transformation close-ups are actor-local by design, so this needs no
@@ -822,14 +846,17 @@ def shared_form_owner(script_stop_fix=True,form_gate=False):
     a.addiu(8,0,1);a.branch(5,21,8,'no')
     a.r(4,8,23,8);a.li(9,CONTROL);a.addiu(11,0,1)
     a.sw(11,9,ULTIMATE_KIND);a.sw(8,9,ULTIMATE_MEMBERS)
+    if grace:record_grace(a,22,2)
     a.move(2,22);a.addiu(3,0,1);a.jump('return')
-    a.label('no');a.move(2,0);a.move(3,0)
+    a.label('no')
+    if grace:a.addiu(4,0,2);a.call(GRACE);a.branch(5,2,0,'return')
+    a.move(2,0);a.move(3,0)
     a.label('return');restore(a,skip=(2,3));a.jr()
     data=a.finish();assert len(data)<CONTROL-SHARED_FORM;return data
 
 
 def ultimate_owner(native_cameras=True,activation_cameras=True,shared_stop=True,script_stop_fix=True,*,all_activations=True,
-                   participants=False):
+                   participants=False,grace=False):
     """v0=live ultimate actor, v1=local1/director2; publishes exact members.
 
     No action-only latch: camera priority or authenticated native ownership
@@ -840,6 +867,18 @@ def ultimate_owner(native_cameras=True,activation_cameras=True,shared_stop=True,
     if shared_stop:a.sw(0,29,224);a.sw(0,29,232)
     a.li(8,CONTROL);a.sw(0,8,ULTIMATE_KIND);a.sw(0,8,ULTIMATE_MEMBERS)
     gate(a,'no');a.move(16,10)
+    if grace:
+        # A tag rush borrows the native rush slot for its approach dash (261 then 285, tag_rush_approach) and
+        # owns the camera from the approach through its tail (tag_rush_camera, ahead of every selector). In
+        # its split mode the three participants follow the attack camera and nobody else is paused, yet the
+        # dash read as a checked ultimate here: the HUD went to the single-view layout over the two tag views
+        # (both halves the same dash camera) and the shared stop froze every bystander (live, p94 G2). Answer
+        # no owner then; the tag's shared mode keeps the ordinary rules (one view, everyone paused).
+        import tag_rush_camera as tag_camera
+        tag_camera.emit_presentation(a,'not_tag_split')
+        a.lw(9,8,tag_camera.SHARED);a.branch(5,9,0,'not_tag_split')
+        a.move(2,0);a.move(3,0);a.jump('return')
+        a.label('not_tag_split')
     # Manager stop is also raised throughout native ultimate impact scripts.
     # Camera ownership must survive it; combat holds are handled separately.
     if not script_stop_fix:
@@ -980,6 +1019,7 @@ def ultimate_owner(native_cameras=True,activation_cameras=True,shared_stop=True,
         # survives the moment every actor-side proof of it expires.
         a.addiu(9,18,1);a.sw(9,8,LATCH_OWNER);a.sw(21,8,LATCH_MEMBERS)
         a.sw(0,8,LATCH_AGE);a.lw(9,28,-22180);a.sw(9,8,LATCH_CAMERA)
+        if grace:record_grace(a,19,1)
         if participants:a.label('published')
     a.move(2,19);a.move(3,20);a.jump('return')
     if shared_stop:
@@ -1007,10 +1047,56 @@ def ultimate_owner(native_cameras=True,activation_cameras=True,shared_stop=True,
         a.label('latched_owned')
         a.li(8,CONTROL);a.lw(21,8,LATCH_MEMBERS);a.addiu(9,0,1)
         a.sw(9,8,ULTIMATE_KIND);a.sw(21,8,ULTIMATE_MEMBERS)
+        if grace:record_grace(a,19,1)
         a.move(2,19);a.addiu(3,0,1);a.jump('return')
-    a.label('no');a.move(2,0);a.move(3,0)
+    a.label('no')
+    if grace:a.addiu(4,0,1);a.call(GRACE);a.branch(5,2,0,'return')
+    a.move(2,0);a.move(3,0)
     a.label('return');restore(a,skip=(2,3));a.jr()
     data=a.finish();assert len(data)<NATIVE_CAMERA_OWNER-ULTIMATE_OWNER;return data
+
+
+def record_grace(a,actor,kind):
+    """Inline: arm the view grace for the proven owner in register `actor` (kind 1 ultimate, 2 form).
+    Clobbers t0/t1 only."""
+    a.li(8,CONTROL);a.lw(9,actor,0);a.addiu(9,9,1);a.sw(9,8,GRACE_OWNER)
+    a.lw(9,actor,2376);a.sw(9,8,GRACE_ACTION)
+    a.addiu(9,0,kind);a.sw(9,8,GRACE_KIND);a.addiu(9,0,GRACE_UPDATES);a.sw(9,8,GRACE_LEFT)
+
+
+def grace_code():
+    """a0 = kind (1 ultimate, 2 form) -> v0 the recorded owner's actor, v1 = GRACE_ANSWER, while its grace lasts.
+
+    See GRACE. Publishes kind 1 and every fighter as a member; ultimate_stop holds nobody for this answer.
+    """
+    a=Assembler(GRACE);save(a);a.move(17,4)
+    gate(a,'no');a.move(16,10)
+    a.li(8,continuity.SCENE_FLAGS);a.lw(8,8);a.i(12,8,8,0x2000);a.branch(5,8,0,'no')
+    a.li(8,CONTROL);a.lw(9,8,GRACE_LEFT);a.branch(4,9,0,'no')
+    a.lw(9,8,GRACE_KIND);a.branch(5,9,17,'no')
+    a.addiu(11,0,1);a.branch(5,17,11,'form_enabled')
+    a.lw(9,8,16);a.branch(4,9,0,'no');a.jump('enabled')
+    a.label('form_enabled');a.lw(9,8,20);a.branch(4,9,0,'no');a.lw(9,8,TRANSFORM_VIEW);a.branch(4,9,0,'no')
+    a.label('enabled')
+    a.lw(18,8,GRACE_OWNER);a.branch(4,18,0,'no');a.addiu(18,18,-1)
+    a.r(0x2B,9,18,16);a.branch(4,9,0,'no')
+    a.move(4,18);a.call(continuity.LOOKUP);a.branch(4,3,0,'no')
+    a.li(8,core.POINTERS);a.r(0,9,0,18,2);a.r(0x2D,8,8,9);a.lw(19,8);a.branch(4,19,0,'no')
+    a.lw(8,19);a.branch(5,8,18,'no')
+    a.lw(4,19,2376);a.addiu(11,0,1);a.branch(5,17,11,'form_action')
+    # An ultimate: exactly the action its last proof saw, and no cinematic camera running at all.
+    a.li(8,CONTROL);a.lw(9,8,GRACE_ACTION);a.branch(5,4,9,'no')
+    a.lw(20,28,-22180);a.branch(4,20,0,'answer')
+    camera_running(a,20,'answer','grace');a.jump('no')
+    a.label('form_action');a.call(CLASSIFY);a.addiu(8,0,2);a.branch(5,2,8,'no')
+    a.label('answer')
+    a.li(8,CONTROL);a.addiu(9,0,1);a.sw(9,8,ULTIMATE_KIND)
+    a.r(4,9,16,9);a.addiu(9,9,-1);a.sw(9,8,ULTIMATE_MEMBERS)
+    a.lw(9,8,GRACE_USED);a.addiu(9,9,1);a.sw(9,8,GRACE_USED)
+    a.move(2,19);a.addiu(3,0,GRACE_ANSWER);a.jump('return')
+    a.label('no');a.move(2,0);a.move(3,0)
+    a.label('return');restore(a,skip=(2,3));a.jr()
+    data=a.finish();assert len(data)<OLD_STORE-GRACE;return data
 
 
 def native_camera_owner():
@@ -1057,7 +1143,7 @@ def native_camera_owner():
     data=a.finish();assert len(data)<ULTIMATE_STOP-NATIVE_CAMERA_OWNER;return data
 
 
-def ultimate_stop(shared_stop=True,rush_support=True,participants=False):
+def ultimate_stop(shared_stop=True,rush_support=True,participants=False,grace=False):
     """Maintain checked cinematic pause after native activation flags expire.
 
     Bounded: see HOLD_AGE. A presentation that never ends releases everyone after
@@ -1077,6 +1163,7 @@ def ultimate_stop(shared_stop=True,rush_support=True,participants=False):
     a.addiu(9,9,-1);a.sw(9,8,HOLD_COOLDOWN);a.sw(0,8,HOLD_AGE);a.jump('done')
     a.label('hold_owner')
     shared_owner(a,'hold_idle','stop',shared_stop,rush_support)
+    if grace:a.addiu(8,0,GRACE_ANSWER);a.branch(4,3,8,'hold_idle')
     a.li(8,CONTROL);a.sw(0,8,HOLD_IDLE)
     # Any live block suppresses every hold, not just the owner that overran: a second fighter
     # must not be able to freeze the match again with a fresh budget one update later.
@@ -1418,10 +1505,12 @@ def result_bridge(base,native,kind):
 
 
 def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activation_cameras=True,shared_stop=True,script_stop_fix=True,rush_support=True,
-            participants=False,independent=True,form_gate=False):
+            participants=False,independent=True,form_gate=False,view_grace=False):
     """participants=False is exactly the beta.36 emission (old receipts and installs); build_memory always
     asks for participants=True, which adds PROTECT/FOREIGN and their call sites, and form_gate=True,
-    which adds FORM_GATE/FORM_TRACK and their call sites (form_gate=False is the 13.3 emission)."""
+    which adds FORM_GATE/FORM_TRACK and their call sites (form_gate=False is the 13.3 emission);
+    build_memory also asks for view_grace=True (GRACE and its call sites, and ULTIMATE_OWNER's split tag-rush
+    refusal; False is the 13.6 emission)."""
     old_prep=fresh.rebound(pause.prepare_code,PREPARE=OLD_PREPARE)(legacy=False)
     old_store=fresh.rebound(pause.store_code,STORE=OLD_STORE)(legacy=False)
     assert OLD_STORE+len(old_store)<=PROTECT
@@ -1429,7 +1518,9 @@ def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activati
     shared_stop=shared_stop and activation_cameras
     participants=participants and complete_ultimates
     form_gate=form_gate and participants and shared_stop and script_stop_fix
-    parts=[(CODE,selector(complete_ultimates,activation_cameras,shared_stop,rush_support=rush_support)),(PREPARE,prepare(shared_stop,participants and shared_stop,form_gate)),(STORE,store(form_gate)),(CLASSIFY,classify()),
+    view_grace=view_grace and form_gate
+    parts=[(GRACE,grace_code())] if view_grace else []
+    parts+=[(CODE,selector(complete_ultimates,activation_cameras,shared_stop,rush_support=rush_support)),(PREPARE,prepare(shared_stop,participants and shared_stop,form_gate,view_grace)),(STORE,store(form_gate)),(CLASSIFY,classify()),
             (VIEW,view(enhanced)),(BIND,bind(complete_ultimates,shared_stop,rush_support)),(SUBJECT,subject(enhanced)),(PRIORITY,priority(enhanced,complete_ultimates,shared_stop,rush_support)),
             (RESULT_ACTOR,result_bridge(RESULT_ACTOR,A(0x1DC178),'actor')),
             (RESULT_MODEL,result_bridge(RESULT_MODEL,A(0x12B1D0),'model')),
@@ -1438,10 +1529,10 @@ def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activati
             (OLD_PREPARE,old_prep),(OLD_STORE,old_store)] + ([(COOP_FUSION,coop_fusion())] if enhanced else [])
     if complete_ultimates:
         parts += [(ULTIMATE_OWNER,ultimate_owner(native_cameras,activation_cameras,shared_stop,script_stop_fix,
-                                                 participants=participants)),
-                  (ULTIMATE_STOP,ultimate_stop(shared_stop,rush_support,participants)),(ULTIMATE_FRAME,ultimate_frame(script_stop_fix,form_gate))]
+                                                 participants=participants,grace=view_grace)),
+                  (ULTIMATE_STOP,ultimate_stop(shared_stop,rush_support,participants,view_grace)),(ULTIMATE_FRAME,ultimate_frame(script_stop_fix,form_gate))]
         if native_cameras:parts.append((NATIVE_CAMERA_OWNER,native_camera_owner()))
-        if shared_stop:parts.append((SHARED_FORM,shared_form_owner(script_stop_fix,form_gate)))
+        if shared_stop:parts.append((SHARED_FORM,shared_form_owner(script_stop_fix,form_gate,view_grace)))
         if script_stop_fix:parts += [(SCRIPT_STOP,script_stop()),(BYSTANDERS,bystanders(rush_support))]
         if participants:
             parts += [(PROTECT,protect(independent)),(PENDING,pending())]
@@ -1490,18 +1581,19 @@ def validate_memory(ram,manager=None,count=None):
     recognized=complete=None
     # participants=True is the beta.37 emission; False is every earlier one, upgraded in place by build_memory.
     # form_gate=True (FORM_GATE) is the current emission; the same options without it are 13.3's.
-    for options in [(c,n,e,a,s,f,r,q,g) for c in (True,False) for n in ((True,False) if c else (False,))
+    for options in [(c,n,e,a,s,f,r,q,g,v) for c in (True,False) for n in ((True,False) if c else (False,))
                     for e in (True,False) for a in ((True,False) if n else (False,))
                     for s in ((True,False) if a else (False,)) for f in (True,False) for r in (True,False)
-                    for q in ((True,False) if c else (False,)) for g in ((True,False) if q and s and f else (False,))]:
-        complete,native_cameras,enhanced,activation,shared,stop_fix,rush_support,participants,gated=options
+                    for q in ((True,False) if c else (False,)) for g in ((True,False) if q and s and f else (False,))
+                    for v in ((True,False) if g else (False,))]:
+        complete,native_cameras,enhanced,activation,shared,stop_fix,rush_support,participants,gated,graced=options
         candidate=program(enhanced,complete_ultimates=complete,native_cameras=native_cameras,
                           activation_cameras=activation,shared_stop=shared,script_stop_fix=stop_fix,rush_support=rush_support,
-                          participants=participants,form_gate=gated)+hooks(complete,stop_fix)
+                          participants=participants,form_gate=gated,view_grace=graced)+hooks(complete,stop_fix)
         candidate=[(p,selector_dependency(ram,p,b)) for p,b in candidate]
         if all(ram[p:p+len(data)]==data for p,data in candidate):
             recognized=candidate;break
-        if participants:
+        if participants and not graced:
             # The exact preceding protection pass only knew the foreground
             # camera's members. Its private unused helper gap must remain
             # empty for build_memory to install the independent handshake pass.
@@ -1556,7 +1648,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
     installed=u(CONTROL)==MAGIC
     if installed:
         installed_parts=validate_memory(ram,manager,count)
-        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True,form_gate=True)+hooks()]
+        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True,form_gate=True,view_grace=True)+hooks()]
         parts=[]
         if installed_parts!=current:
             old=dict(installed_parts)
@@ -1587,7 +1679,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
             if ram[p:p+len(data)]!=data:raise ValueError(f'Pre-cinematic hook changed at{p:08X}')
         control=bytearray(0x100);struct.pack_into('<6I',control,0,MAGIC,manager,count,battle,int(ultimate),int(transformation))
         struct.pack_into('<I',control,TRANSFORM_VIEW,shared_form)
-        parts=program(participants=True,form_gate=True)+hooks()+[(CONTROL,bytes(control))]
+        parts=program(participants=True,form_gate=True,view_grace=True)+hooks()+[(CONTROL,bytes(control))]
     if installed:
         for off,value in ((16,ultimate),(20,transformation),(TRANSFORM_VIEW,shared_form)):
             data=struct.pack('<I',int(value))

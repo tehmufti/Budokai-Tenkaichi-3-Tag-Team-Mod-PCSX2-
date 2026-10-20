@@ -70,7 +70,7 @@ MARKS = ROWS+STRIDE*modes.ENGINE_ACTORS
 PRESSED = (336, 340)     # the pad record's pressed words (native: edge and auto-repeat; quad: its edge copies)
 FIELDS = dict(magic=0, manager=4, order=8, stick=12, confirm=16, after_ko=20, marker=24, colour=28,
               steps=32, aims=36, ko=40, masked=44, markers=48, unchanged=52, viewer=56, side=60,
-              reserved2=64, restored=68, release_unlocks=72, result=76, keys=0x80, aim_result=0xB0,
+              command_vetoes=64, restored=68, release_unlocks=72, result=76, keys=0x80, aim_result=0xB0,
               style=0xB4, quad=0xB8, size_h=0xBC, size_r=0xC0)
 ORDERS = {'left_to_right': 0, 'nearest_first': 1, 'selection_order': 2}
 AFTER_KO = {'game_default': 0, 'nearest_to_centre': 1}
@@ -101,6 +101,13 @@ STICK = 0xF00000
 LEFT, RIGHT, DOWN, UP = 0x100000, 0x200000, 0x400000, 0x800000
 R3 = 0x4
 INVALID = 0xFFFFFFFF
+# A Blast or Ultimate being commanded (emit_command_veto): Charge Ki (L2) + Triangle held, or an action field in
+# 253..312 (first, count): the Blast/Ultimate actions up to the performer's paired hit 301..303, not the victim's
+# 313..315 (a victim's click still waits for the queue's safe point, as before).
+L2, TRIANGLE = 0x100, 0x1000
+COMMAND_BUTTONS = L2 | TRIANGLE
+COMMAND_ACTIONS = (253, 60)
+COMMAND_FIELDS = (2376, 2380, 2388, 2392, 2396, 2400)   # current, requested, queued (the previous action 2384 lingers)
 # The target arrow (beta.37): a bevelled gold dart (17 px wide) in one gouraud packet of 11 triangles, in paint order: a
 # soft shadow (4), the dark outline (4: 2 px along both top edges, 1.25 px on the sides, the wing corners bevelled
 # 2.5 px), the lit face, the shaded face and a glint. ((x, y) in sixteenths of a pixel from the tip, GS ABGR.)
@@ -449,6 +456,29 @@ def emit_gate(a, closed, tag):
         a.addiu(9, 8, -start); a.i(11, 9, 9, span); a.branch(5, 9, 0, closed)
 
 
+def emit_command_veto(a, tag='command'):
+    """A tap or lock-off (s1 kind 1 or 2) produced while this fighter's Blast or Ultimate is being commanded is not a
+    target request: s1 and the lock-off row's KIND (s3) become 0 and CONTROL+command_vetoes counts it.
+
+    The default switch and lock-off button is L3, the left stick's click, and the stick is pushed for the command's
+    direction (Down for an Ultimate), so a firm push clicks L3. Its release then came out as a tap that switched to the
+    next enemy as the move began, and the move went there (live, p89). Commanded means Charge Ki + Triangle held in
+    the routed word (s7) on this update, or any current, requested or queued action (s0 +2376, +2380, +2388..+2400)
+    in the Blast/Ultimate range 253..312 (cinematic_policy.classify, without the paired victim's 313..315), which
+    also covers a release during the move's animation, which the queue would otherwise apply after it. t0..t3."""
+    import lockoff_target as off
+    done, veto = tag+'_done', tag+'_veto'
+    a.addiu(8, 17, -1); a.i(11, 8, 8, 2); a.branch(4, 8, 0, done)
+    a.li(9, COMMAND_BUTTONS); a.r(0x24, 8, 23, 9); a.branch(4, 8, 9, veto)
+    for field in COMMAND_FIELDS:
+        a.lw(8, 16, field); a.addiu(8, 8, -COMMAND_ACTIONS[0]); a.i(11, 8, 8, COMMAND_ACTIONS[1])
+        a.branch(5, 8, 0, veto)
+    a.jump(done)
+    a.label(veto); a.move(17, 0); a.sw(0, 19, off.KIND)
+    a.lw(8, 21, FIELDS['command_vetoes']); a.addiu(8, 8, 1); a.sw(8, 21, FIELDS['command_vetoes'])
+    a.label(done)
+
+
 def input_code(revive_targets=None):
     if revive_targets is None:revive_targets=modes.emitted_capacity()!=modes.LEGACY_TEAM_CAPACITY
 
@@ -604,6 +634,7 @@ def input_code(revive_targets=None):
     a.lw(9, 21, FIELDS['release_unlocks']); a.addiu(9, 9, 1); a.sw(9, 21, FIELDS['release_unlocks'])
     a.label('released'); a.sw(0, 20, HOLD2); a.sw(0, 20, AIM_LATCH)
     a.label('still_held')
+    emit_command_veto(a)
     a.lw(13, 29, 0x48); a.branch(4, 13, 0, 'no_aim'); a.addiu(8, 0, 2); a.branch(4, 17, 8, 'no_aim')
     a.addiu(17, 0, 4); a.sw(17, 19, off.KIND); a.sw(13, 20, ARG)
     a.label('no_aim')

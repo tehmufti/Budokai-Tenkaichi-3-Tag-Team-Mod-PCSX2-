@@ -368,6 +368,50 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(p.read_u32(worker.requests.RECORDS+4),5)
         self.assertIsNone(w.form_job);self.assertIsNone(w.form_phase)
 
+    def costume_waiting(self,enable=1):
+        """p88: the prepared costume row pushed from the overpowered action (260) its owner still waits in."""
+        import extra_reload_forms as forms
+        p,w=self.prepared();actor=p.read_u32(worker.runner.core.POINTERS+8)
+        model=p.read_u32(worker.runner.core.MODELS+4*p.read_u32(actor+12))
+        for at,value in ((forms.CONTROL,1),(forms.FORM_ENABLE,1),(forms.COSTUME_ENABLE,enable),(actor+0x948,260),
+                         (worker.requests.RECORDS+56,0),(worker.requests.RECORDS+60,260)):
+            p.write_u32(at,value)
+        w.forms=True;w.background=True
+        for at in (worker.runner.BG_CONTROL,worker.runner.BG_CONTROL+4,worker.runner.BG_CONTROL+8):p.write_u32(at,0)
+        p.write_u32(worker.runner.BG_CONTROL,worker.runner.BG_MAGIC)
+        return p,w,actor,model
+
+    def test_a_waiting_costume_loads_unheld_and_commits_at_the_native_ack(self):
+        p,w,actor,model=self.costume_waiting();character=p.read_u32(model+12);a,b,_=self.builders(p)
+        job=worker.candidate(p.ram)
+        self.assertEqual((job['form'],job['waiting'],job['owner_action']),(False,True,260))
+        with a,b,patch.object(worker.commit,'build_memory') as commit:
+            self.assertFalse(w.poll(p));commit.assert_not_called()
+        self.assertEqual(p.events,['quiet','extra_reload_service','apply','resume'])
+        self.assertEqual(p.read_u32(worker.requests.RECORDS+4),2);self.assertEqual(w.form_phase,'io')
+        p.events.clear()
+        with a,b:self.assertFalse(w.poll(p))
+        self.assertEqual(p.events,[])
+        self.finish_background(p)
+        with a,b,patch.object(worker.commit,'build_memory') as commit:
+            self.assertFalse(w.poll(p));commit.assert_not_called()
+        self.assertEqual(p.read_u32(worker.requests.RECORDS+4),3);self.assertEqual(w.form_phase,'commit')
+        p.write_u32(worker.requests.RECORDS+4,4)
+        p.write_u32(worker.native.CONTROL+16,1);p.write_u32(worker.native.CONTROL+20,1)
+        calls=[]
+        def build(ram,**kwargs):calls.append(kwargs);return self.commit_builder(ram,model,character)
+        with patch.object(worker.commit,'build_memory',side_effect=build):self.assertTrue(w.poll(p))
+        self.assertEqual(calls,[dict(quiet=True,retire_staged=True,form=False,waiting=True)])
+        self.assertEqual(p.read_u32(worker.requests.RECORDS+4),5);self.assertIsNone(w.form_job)
+
+    def test_without_the_handshake_a_costume_in_the_overpowered_action_waits_for_idle(self):
+        p,w,actor,model=self.costume_waiting(enable=0)
+        self.assertIsNone(worker.candidate(p.ram))
+        p.write_u32(actor+0x948,11);job=worker.candidate(p.ram)
+        self.assertEqual((job['waiting'],job['owner_action']),(False,11))
+        p,w,actor,model=self.costume_waiting();p.write_u32(actor+0x948,217)
+        self.assertIsNone(worker.candidate(p.ram))       # left the action and not idle yet: no claim
+
     def test_the_hold_a_transaction_carries_no_ordinary_runner_request(self):
         """The held runner only acknowledges at status5 or >=100, so a pending
         ordinary request would outlive the whole read and the background runner

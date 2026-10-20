@@ -3,6 +3,17 @@
 Only a captured 4/6 actor world is extended. Original actor/model IDs stay
 unchanged; callsite bridges translate the native struggle's two logical sides.
 The native timer, stick input, strength, damage and outcome animations remain.
+
+Overpowered flash (p88): the native screen effect controller 1725F8 starts the struggle's full-screen white
+flash (template 0x2ECCC0, effect callbacks 0x2C3C58) for a fighter in the overpowered action (260 with native
+flag 8), but it only walks model ids below the native fighter count (12CF48: 2) and finds each one through the
+two-row actor manager (2071A8 -> 1DC1A0). An extra that lost a struggle therefore never got the flash. While a
+captured battle runs, FADE_COUNT lets that loop walk every model row and FADE_TEST answers the same question for
+an extra's model (its actor found through the captured pointers); models 0/1 keep the native test.
+The flash stays white until the overpowered fighter's clothes state (row+0x60, 207170) says its damaged costume is
+on; the native effect checks model 0 (flag bit 2) or model 1 (bit 4, every other model id). FADE_TEST records the
+extra whose flash it started (FLASH_MODEL, model id + 1; a leader's start clears it) and FLASH_DONE, at the bit-4
+check, reads that extra's clothes state instead of model 1's, so its flash fades when its own battle damage is on.
 """
 from native_map import A, CRC, FLAG, SERIAL, elf_path
 import struct
@@ -25,6 +36,12 @@ PARTICIPANT, ACTOR, MODEL, POSITION = CODE+0x3000, CODE+0x3400, CODE+0x3800, COD
 STOP_MODEL, SCALE, ORDER, WINNER = CODE+0x4000, CODE+0x4400, CODE+0x4800, CODE+0x4C00
 NATIVE_FRAME, WIN_CALL, CLEAN_GROUP = CODE+0x5000, CODE+0x5400, CODE+0x5800
 READY0, READY1 = CODE+0x5C00, CODE+0x6000
+FADE_COUNT, FADE_TEST = CODE+0x6400, CODE+0x6800   # p88: the overpowered flash for every captured model
+MODEL_ROWS = 12                                     # native model slots (an actor's model id is below 12)
+FADE_SAVED = (31, 16, 4)
+FLASH_DONE = CODE+0x6C00                            # p88: the bit-4 'damaged costume on' check of that flash
+FLASH_MODEL = CONTROL+0xF0                          # model id + 1 of the extra whose flash runs (0: a leader's)
+FLASH_STATE = A(0x2FEA4C)                           # the flash controller object (gp-22564): +4 bit 1 = running
 # Header: identity; active(1=pending,2=running), age; accept/reject/finish/abort.
 # +40 observed native phase, +44 transition age; +48 last pending age,
 # +52 cumulative pending updates; +56/+60 observed participant actions.
@@ -41,9 +58,13 @@ CALLS = {
  SCALE: (A(0x1D8AF4),),
  WIN_CALL: (A(0x1D918C),),
  CLEAN_GROUP: (A(0x174D68),A(0x174D70),A(0x174DA4)),
+ FADE_COUNT: (A(0x17260C),),
+ FADE_TEST: (A(0x172638),),
+ FLASH_DONE: (A(0x172948),),
 }
 DESTINATIONS={READY0:A(0x1584E8),READY1:A(0x1584E8),ACTOR:A(0x1DC178), MODEL:A(0x206D68), POSITION:A(0x2058E0),
- STOP_MODEL:A(0x158560),SCALE:A(0x174F68),WIN_CALL:A(0x174CE0),CLEAN_GROUP:A(0x12CBC8)}
+ STOP_MODEL:A(0x158560),SCALE:A(0x174F68),WIN_CALL:A(0x174CE0),CLEAN_GROUP:A(0x12CBC8),
+ FADE_COUNT:A(0x12CF48),FADE_TEST:A(0x2071A8),FLASH_DONE:A(0x207170)}
 HOOKS=((A(0x1B0B90),START),(A(0x1D9900),FRAME),(core.RESOLVER,RESOLVE),
        (leader.FALLBACK,CONTACT),(camera.PARTICIPANT,PARTICIPANT),
        (A(0x174AF8),ORDER),(A(0x1D925C),WINNER))
@@ -318,12 +339,87 @@ def clean_group_code():
  b=a.finish();assert len(b)<=0x400;return b
 
 
+def fade_count_code():
+ """jal from 1725F8's loop bound (native 12CF48, the native fighter count): every model row while a captured
+ battle runs (the loop's test is FADE_TEST), the native count otherwise. Clobbers only caller-saved registers."""
+ a=Assembler(FADE_COUNT);a.addiu(29,29,-0x10);a.i(63,31,29,0)
+ a.call(A(0x12CF48));a.i(63,2,29,8)
+ a.call(GATE);a.branch(4,2,0,'native')
+ a.addiu(2,0,MODEL_ROWS);a.jump('done')
+ a.label('native');a.i(55,2,29,8)
+ a.label('done');a.i(55,31,29,0);a.addiu(29,29,0x10);a.jr()
+ b=a.finish();assert len(b)<=FADE_TEST-FADE_COUNT;return b
+
+
+def overpowered_action(native):
+ """The action 2071A8 compares (USA 0x104 = 260, the overpowered struggle loser), read from its 'addiu v1,zero'."""
+ word=struct.unpack('<I',native(A(0x2071E4),4))[0]
+ if word>>16!=0x2403:raise ValueError('Native overpowered-flash test changed')
+ return word&0xFFFF
+
+
+def fade_test_code(native):
+ """jal from 1725F8 (a0 = model id; native 2071A8): models 0/1 take the native test unchanged; an extra's model
+ is overpowered when its captured actor has native flag 8 and is in the overpowered action (2071A8's own rule)."""
+ a=Assembler(FADE_TEST)
+ # Callee-saved s0 and ra (128-bit sq/lq, 16-byte aligned frame) and the model id; never k0/k1.
+ a.addiu(29,29,-0x30)
+ for i,r in enumerate(FADE_SAVED):a.i(31,r,29,16*i)
+ a.i(11,8,4,2);a.branch(4,8,0,'extra')
+ # Models 0/1: the native test. A flash it starts (none running) is a leader's: forget an older extra's.
+ a.call(A(0x2071A8));a.branch(4,2,0,'done')
+ a.li(8,FLASH_STATE);a.lw(8,8);a.branch(4,8,0,'done');a.lw(9,8,4);a.i(12,9,9,1);a.branch(5,9,0,'done')
+ a.li(8,FLASH_MODEL);a.sw(0,8);a.jump('done')
+ a.label('extra')
+ a.call(GATE);a.branch(4,2,0,'no')
+ a.i(30,4,29,16*FADE_SAVED.index(4));a.li(8,core.MODE);a.lw(10,8,4)
+ a.li(13,core.POINTERS);a.move(14,0)
+ a.label('scan');a.lw(16,13);a.branch(4,16,0,'next')
+ a.lw(9,16,12);a.branch(4,9,4,'found')
+ a.label('next');a.addiu(13,13,4);a.addiu(14,14,1);a.branch(5,14,10,'scan');a.jump('no')
+ a.label('found');a.move(4,16);a.addiu(5,0,FLAG(8));a.call(A(0x1DAC78));a.branch(4,2,0,'no')
+ a.move(4,16);a.call(A(0x1E0358));a.addiu(9,0,overpowered_action(native));a.branch(5,2,9,'no')
+ # Remember whose flash this is when it starts (none running): FLASH_DONE reads its clothes state.
+ a.li(8,FLASH_STATE);a.lw(8,8);a.branch(4,8,0,'yes');a.lw(9,8,4);a.i(12,9,9,1);a.branch(5,9,0,'yes')
+ a.i(30,9,29,16*FADE_SAVED.index(4));a.addiu(9,9,1);a.li(8,FLASH_MODEL);a.sw(9,8)
+ a.label('yes');a.addiu(2,0,1);a.jump('done')
+ a.label('no');a.move(2,0)
+ a.label('done')
+ for i,r in enumerate(FADE_SAVED):a.i(30,r,29,16*i)
+ a.addiu(29,29,0x30);a.jr()
+ b=a.finish();assert len(b)<=0x400;return b
+
+
+def flash_done_code():
+ """jal from the flash update's bit-4 check (172948, a0 = 1; native 207170 = the model's clothes state, row+0x60):
+ while the running flash is an extra's (FLASH_MODEL) in a captured battle, that extra's clothes state."""
+ a=Assembler(FLASH_DONE)
+ a.li(8,FLASH_MODEL);a.lw(9,8);a.branch(4,9,0,'native')
+ a.addiu(29,29,-0x30)
+ for i,r in enumerate(FADE_SAVED):a.i(31,r,29,16*i)
+ a.call(GATE);a.branch(4,2,0,'restore_native')
+ a.li(8,FLASH_MODEL);a.lw(9,8);a.addiu(9,9,-1)
+ a.li(8,core.MODE);a.lw(10,8,4);a.li(13,core.POINTERS);a.move(14,0)
+ a.label('scan');a.lw(16,13);a.branch(4,16,0,'next')
+ a.lw(11,16,12);a.branch(4,11,9,'found')
+ a.label('next');a.addiu(13,13,4);a.addiu(14,14,1);a.branch(5,14,10,'scan');a.jump('restore_native')
+ a.label('found');a.move(4,16);a.call(A(0x1CE1B8));a.lw(2,2,0x20)
+ for i,r in enumerate(FADE_SAVED):a.i(30,r,29,16*i)
+ a.addiu(29,29,0x30);a.jr()
+ a.label('restore_native')
+ for i,r in enumerate(FADE_SAVED):a.i(30,r,29,16*i)
+ a.addiu(29,29,0x30)
+ a.label('native');a.jump(A(0x207170))
+ b=a.finish();assert len(b)<=CONTROL-FLASH_DONE;return b
+
+
 def pieces(native=None):
  if native is None:native=elf_reader(elf_path(ROOT))[2]
  out=[(GATE,gate_code()),(VALID,valid_code()),(START,start_code()),(FRAME,frame_code()),
  (ABORT,abort_code()),(RESOLVE,resolve_code()),(CONTACT,contact_code()),(PARTICIPANT,participant_code()),
  (ORDER,order_code()),(WINNER,winner_code()),(WIN_CALL,win_call_code()),(CLEAN_GROUP,clean_group_code()),
- (READY0,readiness_code(READY0,19)),(READY1,readiness_code(READY1,18))]
+ (READY0,readiness_code(READY0,19)),(READY1,readiness_code(READY1,18)),
+ (FADE_COUNT,fade_count_code()),(FADE_TEST,fade_test_code(native)),(FLASH_DONE,flash_done_code())]
  for base,dest in ((ACTOR,A(0x1DC178)),(MODEL,A(0x206D68)),(POSITION,A(0x2058E0)),(STOP_MODEL,A(0x158560)),(SCALE,A(0x174F68))):
   out.append((base,bridge(base,dest,base==ACTOR)))
  out.append((NATIVE_FRAME,native(A(0x1D9900),8)+struct.pack('<2I',(2<<26)|(A(0x1D9908)>>2),0)))

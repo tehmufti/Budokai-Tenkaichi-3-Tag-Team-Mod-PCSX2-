@@ -21,12 +21,15 @@ class ReleaseAdmissionTests(unittest.TestCase):
             self.assertIn('online',availability.preparation_reason({},'teams',root,adapter='bt3-usa'))
 
     def test_regional_admission_imports_no_tag_guest_modules(self):
+        # Europe and Japan are admitted offline like USA; online and free-for-all stay refused.
         script=('import sys; import tag_rush_availability as t; '
-                'assert t.preparation_reason({}, "teams", "."); '
+                'assert t.preparation_reason({}, "teams", ".")==""; '
+                'assert "online" in t.preparation_reason({}, "teams", ".", online=True); '
+                'assert t.preparation_reason({}, "ffa", "."); '
                 'assert "tag_rush_effects" not in sys.modules; '
                 'assert "tag_rush_scene" not in sys.modules')
         for adapter in ('bt3-pal','bt3-jpn'):
-            env=dict(os.environ,TAGTEAM_ADAPTER=adapter)
+            env=dict(os.environ,TAGTEAM_ADAPTER=adapter);env.pop(availability.ONLINE_PREPARATION_ENV,None)
             result=subprocess.run([sys.executable,'-c',script],cwd=Path(__file__).parent,env=env,
                                   capture_output=True,text=True,timeout=30)
             self.assertEqual(result.returncode,0,adapter+' '+result.stderr)
@@ -44,6 +47,8 @@ class ReleaseAdmissionTests(unittest.TestCase):
             self.assertNotIn('playtest',translated.lower())
             self.assertNotIn('test settings',translated.lower())
             self.assertIn('BT4',translated)
+            self.assertNotIn('Europe/Japan',translated)
+            self.assertNotIn('Europa/Japón',translated)
         self.assertNotEqual(localization.tr(note,'es'),note)
 
     def test_online_forces_tag_off_and_strips_private_test_profile(self):

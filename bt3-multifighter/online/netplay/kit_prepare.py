@@ -197,21 +197,18 @@ def patches(slot):
         # This copy runs accelerated and has no interactive player. Poll native
         # acknowledgements promptly without changing readiness/frame/idle gates.
         'game/tools/fresh_team_trainer.py': [
-            ("        report = patch(self.source, manifest, output)\n"
-             "        write_json(self.run/'playable-export.json', report)\n"
-             "        self.index += 1; self.source = output\n", HELD_EXPORT_REPLACEMENT),
-            ("            if budget.expired: break\n            time.sleep(.2)\n"
-             "        raise TimeoutError(f'{label}: the game did not finish this step within {timeout} seconds')",
-             "            if budget.expired: break\n            time.sleep(.005)\n"
-             "        raise TimeoutError(f'{label}: the game did not finish this step within {timeout} seconds')"),
-            ("            if budget.expired: break\n            time.sleep(.2)\n"
-             "        raise TimeoutError(f'No expected game-frame progress at {address:08X}')",
-             "            if budget.expired: break\n            time.sleep(.005)\n"
-             "        raise TimeoutError(f'No expected game-frame progress at {address:08X}')"),
-            ("            if budget.expired: break\n            time.sleep(.2)\n"
-             "        if actors is not None:\n            from native_preparation import launcher",
-             "            if budget.expired: break\n            time.sleep(.005)\n"
-             "        if actors is not None:\n            from native_preparation import launcher")],
+            # Oct 19 (loading speed): the rematch archive is a PlayableExport, written on a thread offline. The
+            # private copy's export is the held checkpoint itself (HELD_EXPORT_REPLACEMENT), finished before the
+            # start, so export_playable returns no export to join and the session keeps the held source.
+            ("        self.index += 1\n"
+             "        export = PlayableExport(self, self.source, manifest, output)\n"
+             "        if not getattr(self, 'background_export', False):\n"
+             "            export.run(); export.join(); return None\n"
+             "        export.start()\n"
+             "        return export\n", HELD_EXPORT_REPLACEMENT + '        return None\n'),
+            # The three guest-step waits (wait_word, wait_counter, wait_idle_leaders) share POLL since Oct 19 (0.05 s,
+            # 0.2 s before): the private copy polls them every 5 ms as before.
+            ("POLL = .05\n", "POLL = .005\n")],
     }
     changes.setdefault('game/tools/autopilot.py', []).extend([('        from controller_mailbox import Owner\n'
   '        # Off Windows a failed 3-4 player input check reaches the status the launcher shows,\n'

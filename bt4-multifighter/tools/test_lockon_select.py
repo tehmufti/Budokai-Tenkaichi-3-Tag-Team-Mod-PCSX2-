@@ -1808,3 +1808,76 @@ class HoldModeR3Tests(unittest.TestCase):
             no_synthetic_release(self, script, seen, bits=R3); no_synthetic_press(self, script, seen)
             self.assertEqual([w & R3 for w in seen], [w & R3 for w in script], button)
             self.assertEqual(counter(c, 'steps'), 1, button)
+
+TRIANGLE, CHARGE = sel.TRIANGLE, sel.L2
+
+
+def pending(c, seat=0): return c.u(q.CONTROL+q.FIELDS['pending']+4*seat)
+def act(c, i, action, field=0x948): c.w(ACTORS[i]+field, action)
+
+
+class CommandVetoTests(unittest.TestCase):
+    """p89: the stick's own click (L3, the default switch and lock-off button) while a Blast or Ultimate is commanded.
+
+    Live (BT3 USA, 3v3, Goku (Early) locked on enemy 5): Charge Ki + Down + Triangle with a firm push that also
+    clicked L3 switched the table to the next enemy (lockon_select steps +1) on the update the Spirit Bomb began, and
+    the bomb's paired hit then went to that enemy. A release later in the move used to wait for the queue's safe point
+    and switch after it."""
+    def setUp(self):
+        self.places = ring((1, 90), (3, 30), (5, 150))
+
+    def machine(self, **kwargs):
+        return follow_camera(make(positions=self.places, **kwargs))
+
+    def test_a_click_with_charge_ki_and_triangle_held_is_no_switch(self):
+        for stick in (0, 1, 2):
+            c = self.machine(stick=stick)
+            press(c, L3 | CHARGE | TRIANGLE | DOWN); press(c, CHARGE | TRIANGLE | DOWN, 3); press(c, 0, 3)
+            self.assertEqual(target(c), 1, stick); self.assertEqual(counter(c, 'command_vetoes'), 1)
+            self.assertEqual((pending(c), c.u(q.CONTROL+q.FIELDS['switches']), c.u(row(c)+off.KIND)), (0, 0, 0))
+            self.assertEqual(tap(c), expected_walk(self.places, 6, 1)[0], 'the next plain tap still switches')
+
+    def test_a_release_while_the_move_plays_is_dropped_not_deferred_to_its_end(self):
+        for field in sel.COMMAND_FIELDS:
+            for action in (253, 261, 264, 288, 303, 312):
+                c = self.machine()
+                act(c, 0, action, field); tap(c)
+                self.assertEqual((target(c), pending(c), counter(c, 'command_vetoes')), (1, 0, 1), (field, action))
+                act(c, 0, 11 if field == 0x948 else 0, field); press(c, 0, 30)
+                self.assertEqual(target(c), 1, ('still the chosen target after the move', field, action))
+                self.assertEqual(c.u(q.CONTROL+q.FIELDS['switches']), 0)
+
+    def test_the_previous_action_and_neighbouring_actions_do_not_veto(self):
+        walk = expected_walk(self.places, 6, 1)
+        for field, action in ((2384, 261), (0x948, 252), (0x948, 316), (0x948, 11)):
+            c = self.machine(); act(c, 0, action, field)
+            self.assertEqual(tap(c), walk[0], (field, action)); self.assertEqual(counter(c, 'command_vetoes'), 0)
+        for action in (313, 315):   # a paired victim's click keeps waiting for the queue's safe point, as before
+            c = self.machine(); act(c, 0, action); tap(c)
+            self.assertEqual((target(c), counter(c, 'command_vetoes')), (1, 0)); self.assertNotEqual(pending(c), 0)
+            act(c, 0, 11); press(c, 0); self.assertEqual(target(c), walk[0], action)
+
+    def test_triangle_alone_or_charge_alone_keeps_the_tap(self):
+        walk = expected_walk(self.places, 6, 1)
+        for held in (TRIANGLE, CHARGE, TRIANGLE | DOWN, CHARGE | DOWN):
+            c = self.machine()
+            press(c, L3 | held); press(c, held)
+            self.assertEqual(target(c), walk[0], hex(held)); self.assertEqual(counter(c, 'command_vetoes'), 0)
+
+    def test_holding_the_click_through_the_move_never_locks_off(self):
+        for stick in (0, 1):
+            c = self.machine(stick=stick); act(c, 0, 264)
+            press(c, L3, 40); press(c, 0, 2)
+            self.assertEqual((c.u(row(c)+off.OFF), target(c)), (0, 1), stick)
+            self.assertGreaterEqual(counter(c, 'command_vetoes'), 1)
+            act(c, 0, 11); press(c, L3, 40); press(c, 0, 2)
+            self.assertEqual(c.u(row(c)+off.OFF), 1, ('an ordinary hold still locks off', stick))
+
+    def test_aims_and_the_ko_retarget_are_not_vetoed(self):
+        c = self.machine(); act(c, 0, 264, 2380)
+        self.assertNotEqual(flick(c, RIGHT), 1, 'a deliberate hold-and-flick aim is not a stick click')
+        self.assertEqual(counter(c, 'command_vetoes'), 0)
+        c = self.machine(stick=2, after_ko=1); act(c, 0, 264)
+        c.w(ACTORS[1]+0x9E4, 0); press(c, 0, 4)
+        self.assertNotEqual(target(c), 1, 'the defeated target is still replaced')
+        self.assertEqual(counter(c, 'command_vetoes'), 0)

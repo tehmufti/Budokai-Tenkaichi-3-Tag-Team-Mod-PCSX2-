@@ -22,12 +22,13 @@ import teammate_revive as revival
 BASE, END = 0x06F90000, 0x06F93000
 GATE, LOOKUP, CONTACT, RESULT = BASE, BASE+0x200, BASE+0x600, BASE+0xC00
 REVIVE, REVIVE_NATIVE, RESULT_NATIVE, CONTROL = BASE+0x1000, BASE+0x1400, BASE+0x1800, BASE+0x2000
-MAGIC, VERSION = 0x52494E47, 1
+MAGIC, VERSION = 0x52494E47, 2
 KEY = 'tournament_ring_outs'
 F = dict(magic=0, version=4, manager=8, count=12, enabled=16, eliminated=20,
-         contacts=24, last_actor=28, pointers=64)
+         contacts=24, last_actor=28, final=32, pointers=64)
 CONTACT_HOOKS = (A(0x1CD918), A(0x1CD93C), A(0x1CD960))
 RESULT_HOOK, NATIVE_SET = A(0x20B8F0), A(0x1DA9D0)
+TEAM_DEFEATED = A(0x20B878)   # side -> the whole team is out (the team/FFA HP predicate the result rule asks)
 NATIVE = elf_reader(elf_path(ROOT))[2]
 JUMP = lambda p: struct.pack('<2I', (2 << 26) | (p >> 2), 0)
 CALL = lambda p: struct.pack('<I', (3 << 26) | (p >> 2))
@@ -99,6 +100,11 @@ def contact():
     a.lw(8, 18, F['contacts']); a.addiu(8, 8, 1); a.sw(8, 18, F['contacts'])
     a.sw(4, 18, F['last_actor'])
     a.label('zero'); a.sw(0, 17)
+    # This ring-out ended its team: remember the side, so the result rule names a ring-out (reason 4, the
+    # native "Ringout!") instead of a KO.
+    a.i(12, 4, 16, 1); a.call(TEAM_DEFEATED); a.branch(4, 2, 0, 'native')
+    a.i(12, 8, 16, 1); a.addiu(9, 0, 1); a.r(4, 9, 8, 9)
+    a.lw(10, 18, F['final']); a.r(0x25, 10, 10, 9); a.sw(10, 18, F['final'])
     # The ordinary KO dispatcher, spectator handoff and victory predicates now
     # observe zero HP. Retain the native out flag for its announcement/state.
     a.label('native'); restore(a); a.jump(NATIVE_SET)
@@ -119,7 +125,16 @@ def result(original):
     a.lw(4, 8, F['pointers']); a.call(LOOKUP); a.branch(4, 2, 0, 'next'); a.sw(0, 3)
     a.label('next'); a.addiu(17, 17, 1); a.branch(5, 17, 16, 'scan')
     a.label('done')
-    restore(a); a.move(2, 0); a.jr()
+    # Leader-only ring victory stays suppressed; a side whose last fighter was ringed out (CONTACT's final bit)
+    # and that is still all out reports the ring-out, so 0x217EF0 shows the native "Ringout!".
+    a.i(55, 4, 29, 8); a.i(11, 8, 4, 2); a.branch(4, 8, 0, 'out')
+    a.li(18, CONTROL); a.lw(8, 18, F['final']); a.addiu(9, 0, 1); a.r(4, 9, 4, 9); a.r(0x24, 8, 8, 9)
+    a.branch(4, 8, 0, 'out')
+    a.call(TEAM_DEFEATED); a.branch(5, 2, 0, 'ringout')
+    a.i(55, 4, 29, 8); a.addiu(9, 0, 1); a.r(4, 9, 4, 9); a.r(0x27, 9, 9, 0)
+    a.lw(8, 18, F['final']); a.r(0x24, 8, 8, 9); a.sw(8, 18, F['final'])   # a revived teammate: stale
+    a.label('out'); restore(a); a.move(2, 0); a.jr()
+    a.label('ringout'); restore(a); a.addiu(2, 0, 1); a.jr()
     a.label('native'); restore(a); a.jump(RESULT_NATIVE)
     payload = a.finish()
     b = Assembler(RESULT_NATIVE)

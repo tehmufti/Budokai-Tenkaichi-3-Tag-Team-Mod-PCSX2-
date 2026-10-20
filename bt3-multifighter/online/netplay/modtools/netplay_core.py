@@ -95,7 +95,7 @@ DESIGN DECISIONS (from the p22 research: frame, state and rig parts)
 
 THE NATIVE IO GATE (layout 2; spec 9)
   Why: the battle's FIFO task handlers (sub_1272B0, sub_127430, sub_127680 type 2, sub_1278B0 type 1, sub_127C40;
-  run one task at a time by the task runner sub_263508 at A(0x12BC24), the top of the battle-loop pass, BEFORE POLL)
+  run one task at a time by the task runner sub_263508 at USA 12BC24, the top of the battle-loop pass, BEFORE POLL)
   wait for the native disc pump sub_265298 (a per-call state machine on 0x31E760; 1 only when the pending list is
   empty) and then act: sub_20B350 publishes manager+612/+616 (the transformation / damage-costume / summon reload is
   ready), models are swapped, the next state starts. How many updates the IO takes depends on the whole stall history
@@ -226,7 +226,7 @@ GP_SYSTEM, LOADER_FLAGS, LOADER_ACTIVE = -20836, 20, 0x4000   # *(gp-20836)+20 |
 PUMP = 0x265298                                  # the native disc pump (USA)
 # (USA site, handler, handler state): the 8 in-fight `jal 0x265298`, read from the ELF in R-GATE (every delay slot
 # is `nop`). Their handlers are queued by sub_128170/128230/128318/1283F0/128530/128728 and run only through the
-# task runner sub_263508 (battle loop A(0x12BC24), or the blocking loader sub_2635C8 at load / restart).
+# task runner sub_263508 (battle loop, USA 12BC24, or the blocking loader sub_2635C8 at load / restart).
 GATE_SITES = ((0x1273A0, 'sub_1272B0', 2), (0x1274C0, 'sub_127430', 2), (0x127550, 'sub_127430', 5),
               (0x127760, 'sub_127680', 1), (0x127A70, 'sub_1278B0', 1), (0x127D68, 'sub_127C40', 1),
               (0x128058, 'sub_127C40', 5), (0x1280F8, 'sub_127C40', 91))

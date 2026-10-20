@@ -401,6 +401,19 @@ class SceneTests(unittest.TestCase):
                     self.assertEqual(c.idle_starts,[]);self.assertEqual(c.beams,[])
                     self.assertEqual(before,[(c.read(a,0x1600),c.read(m,0x1700)) for a,m in zip(c.actors,c.models)])
 
+    def test_ki_attacker_without_an_own_beam_pose_takes_the_melee_role(self):
+        # A pair always gets one of the three general variants; a missing own pose never refuses the tag.
+        import tag_rush_native_pose as pose
+        import tag_rush_staging as staging
+        for lead_ok,partner_ok,variant in ((False,True,3),(True,False,2),(False,False,1),(True,True,0)):
+            c=fixture();c.w(tag.CONTROL+staging.TABLE_OFFSET,0x3130000)
+            ok={c.models[0]:lead_ok,c.models[2]:partner_ok}
+            def select(m,ok=ok):
+                m.r[2]=364 if ok.get(m.r[4],True) else -1;m.r[3]=0
+            c.callbacks[pose.SELECT]=select
+            start(c);self.assertEqual(c.r[2],1,(lead_ok,partner_ok))
+            self.assertEqual(c.u(tag.CONTROL+tag.C['variant']),variant,(lead_ok,partner_ok))
+
     def test_transformed_current_character_uses_fresh_admission_flags(self):
         c=fixture();c.w(c.models[2]+12,90);c.write(0x3100000+90,b'\x01');start(c)
         self.assertEqual(c.r[2],1);self.assertEqual(c.u(tag.CONTROL+44),2)

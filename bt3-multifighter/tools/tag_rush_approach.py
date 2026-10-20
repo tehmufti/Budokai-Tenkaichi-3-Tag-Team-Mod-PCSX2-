@@ -18,7 +18,7 @@ STATE,END=0x06D86000,0x06D86800
 MAGIC=0x54415031
 S=dict(magic=0,active=4,manager=8,count=12,ticks=16,mask=20,misses=24,connected=28,
        reason=32,role=36,action=40,clip=44,pending=48,stage=52,phase_ticks=56,contact=60,
-       sound_pending=64,sound_delivered=68,sound_discarded=72)
+       sound_pending=64,sound_delivered=68,sound_discarded=72,refund=76)
 MISS_REASONS={0:'none',1:'battle ended',2:'native rush timed out',3:'participant identity changed',
  4:'participant no longer eligible',5:'participant busy or hit pending',6:'native rush interrupted',
  7:'attacker took damage',8:'native rush missed or reached a different target',9:'cinematic preflight refused',10:'stale capture'}
@@ -92,6 +92,8 @@ def begin_code():
     # Default: only the initiating fighter pays for the attempt. Keeping
     # their meter on a miss defers this cost until confirmed contact; it
     # never refunds into an actor slot that may since have changed owners.
+    # The initiator's charge before this attempt, returned if contact cannot start the cinematic.
+    a.li(8,tag.METERS);a.r(0,9,0,16,5);a.r(0x21,8,8,9);a.lw(9,8,tag.T['charge']);a.sw(9,21,S['refund'])
     a.lw(8,19,tag.C['keep_meter_on_miss']);a.branch(5,8,0,'deferred_cost')
     a.li(8,tag.METERS);a.r(0,9,0,16,5);a.r(0x21,8,8,9);a.sw(0,8,tag.T['charge'])
     a.label('deferred_cost')
@@ -165,7 +167,11 @@ def tick_code():
     for label,value in (('gate_miss',1),('timeout_miss',2),('identity_miss',3),('eligible_miss',4),('hp_miss',7),('native_miss',8)):
         a.label(label);a.li(8,value);a.jump('miss')
     a.label('miss');a.sw(8,16,S['reason']);a.li(4,1);a.call(CANCEL);a.jump('done')
-    a.label('failed_start');a.li(8,9);a.sw(8,16,S['reason']);a.lw(8,16,S['misses']);a.addiu(8,8,1);a.sw(8,16,S['misses']);a.jump('done')
+    a.label('failed_start');a.li(8,9);a.sw(8,16,S['reason']);a.lw(8,16,S['misses']);a.addiu(8,8,1);a.sw(8,16,S['misses'])
+    # The connected dash could not start the cinematic: nobody pays for it.
+    a.li(8,ROWS);a.lw(9,8,R['index']);a.lw(10,17,tag.C['count']);a.r(0x2B,10,9,10);a.branch(4,10,0,'done')
+    a.r(0,9,0,9,5);a.li(8,tag.METERS);a.r(0x21,8,8,9);a.lw(9,16,S['refund']);a.sw(9,8,tag.T['charge'])
+    a.jump('done')
     a.label('stale');a.li(8,10);a.sw(8,16,S['reason']);a.call(launch.RESTORE);a.sw(0,16,S['active']);a.sw(0,16,S['sound_pending']);a.sw(0,17,tag.C['approaching'])
     a.label('done');tag.restore(a);a.jr();data=a.finish();assert TICK+len(data)<=CANCEL;return data
 
@@ -199,8 +205,20 @@ def cancel_code():
 
 
 def emit_hold(a,actor,held,fail):
-    # The original action must run through every ordinary actor update.
-    # Native startup flags own its normal pause. No synthetic actor hold.
+    """Hold the committed helper and the victim for the dash (t0..t3 scratch).
+
+    The initiator's original rush runs through every ordinary actor update.
+    Both others already passed the final preflight at BEGIN. Left free, a CPU
+    helper kept fighting and a victim counter-attacked or queued a move, so a
+    connected dash reached a refused cinematic start (or the dasher was hit
+    and the rush dropped). The native startup already freezes them for most
+    of the dash; this keeps them as they were until contact. START idles them.
+    """
+    assert actor not in (8,9,10,11)
+    a.li(8,STATE);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,fail)
+    a.lw(9,8,S['active']);a.li(10,1);a.branch(5,9,10,fail)
+    a.lw(9,8,S['manager']);a.lw(10,28,-22364);a.branch(5,9,10,fail)
+    for role in (1,2):a.li(8,ROWS+role*STRIDE);a.lw(9,8,R['actor']);a.branch(4,9,actor,held)
     a.jump(fail)
 
 

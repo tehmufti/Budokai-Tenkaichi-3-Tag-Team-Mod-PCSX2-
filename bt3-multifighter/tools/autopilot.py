@@ -46,6 +46,7 @@ from pine import PineClient, PineError
 from fresh_team_trainer import Session, StreamingSession, PreparationBusyError, STATES, PREFIX, ROOT, ACK_ADDRESS
 import native_preparation
 import menu_return
+import tag_tournament
 import battle_mode_policy
 import story_missions
 from battle_mode_policy import ACTOR_COUNTS
@@ -226,7 +227,8 @@ class Observation:
         capture([(address,4) for address in (LOOP_FLAG,BATTLE_OBJECT,SCENE+8,
             SCENE+192,SCENE+816,MANAGER,REPLAY,MODE,HEAP1_START,HEAP1_END,
             INPUT_HOLD,native_preparation.HOOK,native_preparation.CONTROL+20,
-            native_preparation.CONTROL+56,menu_return.RESULT_FLAGS,menu_return.REASON_FLAGS)]
+            native_preparation.CONTROL+56,native_preparation.ACCEPTED_MODE,menu_return.RESULT_FLAGS,
+            menu_return.REASON_FLAGS)]
             + [(ACTOR_HOOK,8),(ACK_ADDRESS,16)] + [(a,len(b)) for a,b in guards])
         self.loop = u(LOOP_FLAG)
         obj = u(BATTLE_OBJECT)
@@ -273,6 +275,8 @@ class Observation:
         self.streaming = (read(native_preparation.HOOK,4)==native_preparation.HOOK_WORD)
         self.native_held = self.streaming and u(native_preparation.CONTROL+20)==1
         self.native_intro = self.streaming and u(native_preparation.CONTROL+56)==1
+        # The battle mode the preparation gate captures: 0 (Duel), or 4 while a Tag Team Tournament is armed.
+        self.accepted_mode = u(native_preparation.ACCEPTED_MODE) if self.streaming else 0
         self.result_flags = u(menu_return.RESULT_FLAGS)
         self.return_flags = u(menu_return.REASON_FLAGS)
         self.menu_scene = menu_return.read_scene(p) if self.loop == 0 else None
@@ -287,7 +291,7 @@ class Observation:
     def pending_reason(self):
         # Fixed sentences: the Play window shows them through say_text (Spanish in localization.ES).
         if self.loop != 1: return 'Waiting in the game menus until a match starts.'
-        if self.mode != 0: return 'This game mode is not one the mod prepares, so it plays normally.'
+        if self.mode != getattr(self, 'accepted_mode', 0): return 'This game mode is not one the mod prepares, so it plays normally.'
         if self.replay != 0: return 'Replay playback: the mod does not change replays.'
         if self.battle_state not in (2, 3): return 'Waiting for the battle to finish loading.'
         if self.count != 2 or not self.initialised or len(self.rows) != 2:
@@ -306,7 +310,7 @@ class Observation:
         return self.selected_early_teams()
 
     def selected_early_teams(self, include_single=False):
-        if (self.loop != 1 or self.mode != 0 or self.replay != 0 or not self.clean or
+        if (self.loop != 1 or self.mode != getattr(self, 'accepted_mode', 0) or self.replay != 0 or not self.clean or
                 not supported_teams(self.scene_rows, include_single=include_single)):
             return None
         if not all(len(team) == count and all(0 <= c <= 160 for c in team)
@@ -324,9 +328,11 @@ class Observation:
 
 
 # The cover messages of a fresh preparation, in the order they appear: the fresh-detection
-# cover, Session.progress stage labels (fresh_team_trainer), then the Ready frame.
+# cover, Session.progress stage labels (fresh_team_trainer), then the Ready frame; last, this match's rematch cover.
+# Each is painted ahead during native loading (prerender_cover); one missing here is painted while the match waits.
 PREPARATION_MESSAGES = ('Loading your selected fighters...', 'Getting your fighters ready...', 'Preparing team battle', 'Loading fighters',
-                        'Preparing arena', 'Getting ready', 'Starting your match...')
+                        'Preparing arena', 'Getting ready', 'Preparing tag attacks', 'Starting your match...',
+                        'Getting everyone ready for the rematch...')
 
 # Recovered or explained watcher failures (beta.33). The text is fixed, so player_errors can
 # translate it (localization.ES); the facts behind each one go to its context and the log.
@@ -428,6 +434,15 @@ SAY_HOLD_RESUMING = 'The game is paused while your fighters load; PCSX2 was aske
 SAY_HOLD_PAUSED = 'The game is paused while your fighters load. Resume it with Space (or System > Resume in PCSX2).'
 SAY_WAITING_HOLD = 'Waiting for the game to hold the fighters for loading.'
 SAY_ONE_ON_ONE = '1v1 match: the game plays it normally.'
+SAY_TOURNAMENT_DRAFT = 'Tag Team Tournament: pick every team (Team Battle select); the tournament then starts on its own.'
+SAY_TOURNAMENT_DRAFT_OFF = 'The Tag Team Tournament roster pick needs menu checkpoints; it was cancelled.'
+SAY_TOURNAMENT_CHOSEN = 'Tag Team Tournament ({setup}): Dragon World Tour opens on the bracket.'
+SAY_TOURNAMENT_NATIVE = 'This tournament match does not have its teams; the game plays it normally.'
+SAY_TOURNAMENT_RESULT = 'Tag Team Tournament: {winner} won; the tournament continues.'
+SAY_TOURNAMENT_CHAMPION = 'Tag Team Tournament: {winner} won the final and the tournament!'
+SAY_TOURNAMENT_EXIT = 'The tournament match was left without a result: back to the main menu.'
+TOURNAMENT_COVER = 'Tournament results...'
+TOURNAMENT_FAILED = 'The tournament could not continue after this match.'
 SAY_TOO_MANY = 'This {teams} match has more than {capacity} fighters on a side, so it plays as a normal tag match.'
 SAY_RETURNED = {'main': 'Back at the main menu.', 'character_select': 'Back at character selection.'}
 SAY_RETURN_WAITS = 'Returning to the menu once the previous step finishes.'
@@ -546,6 +561,8 @@ class Autopilot:
         self.battle_mode, self.humans = 'teams', 1
         self.assignment=None
         self.menu_checkpoints = None
+        self.tournament = None           # tag_tournament.Controller (the Modded Modes pager owns it)
+        self.tournament_match = None     # the Tag Team Tournament match being prepared or played
         self.menu_return_started = None
         self.mode_menu = None
         from battle_diagnostics import Recorder
@@ -586,6 +603,14 @@ class Autopilot:
             self.mode_menu = native_mode_menu.Controller(settings=mod_settings.load_settings())
             self.mode_menu.team_menu.hub=getattr(self,'controller_hub',None)
             self.mode_menu.team_menu.log=log
+            self.tournament=self.mode_menu.tournament
+            self.tournament.panel.hub=getattr(self,'controller_hub',None)
+            self.tournament.panel.log=self.tournament.log=log
+            self.tournament.state_dir=ROOT/'analysis'/'tag-tournament'
+            self.tournament.hub=getattr(self,'controller_hub',None)
+            # Fighter Gauntlet: its setup panel uses the same check-in hub; its lines go to this log.
+            self.mode_menu.gauntlet.panel.hub=getattr(self,'controller_hub',None)
+            self.mode_menu.gauntlet.log=log
 
     def checkpoints(self):
         if self.menu_checkpoints is None:
@@ -596,7 +621,8 @@ class Autopilot:
     def preparation_enabled(self):
         # The launcher always installs a menu controller. Merely opening its
         # page is not an opt-in: only a committed custom mode grants ownership.
-        return self.mode_menu is None or bool(getattr(self.mode_menu,'custom_match',False))
+        return (self.mode_menu is None or bool(getattr(self.mode_menu,'custom_match',False)) or
+                bool(getattr(getattr(self,'tournament',None),'armed',False)))
 
     def sync_preparation(self, obs):
         if not (obs.streaming and obs.clean):return
@@ -655,7 +681,7 @@ class Autopilot:
         if not in_match and getattr(selector,'seats',None)=='extras' and getattr(selector,'service',None) is not None:
             return True
         import controller_checkin
-        return controller_checkin.p12(hub.checkin.roster,in_match)[0]
+        return controller_checkin.p12(hub.checkin.roster,in_match,getattr(hub,'order',None))[0]
 
     def attach_menu_input(self, menu_input, capture, obs=None):
         """Controllers 3/4 in character select. If they cannot work here (no SDL2, no access to
@@ -742,6 +768,24 @@ class Autopilot:
     def service_menu(self, obs):
         """Make menu navigation ready before checkpoint IO; avoid nested PINE."""
         native_menu=bool(getattr(self.mode_menu,'native',False))
+        tournament=getattr(self,'tournament',None)
+        if tournament is not None:
+            # Before any checkpoint capture: a main menu reached after the tournament scenes ends it first, so no
+            # clean main-menu checkpoint ever holds an armed tournament.
+            with PineClient(timeout=5) as p:tournament.tick(p)
+            if getattr(tournament,'want_main',False):
+                # A roster pick is read: back to the clean main menu (the Modded Modes root page), where the
+                # next pick or Dragon World Tour is committed.
+                if not self.menu_checkpoint or 'main' not in self.checkpoints().records:
+                    with PineClient(timeout=5) as p:tournament.cancel(p,'no clean main menu to return to')
+                    self.report(say(SAY_TOURNAMENT_DRAFT_OFF),obs,'warning')
+                    return
+                self.restore_menu('main')
+                with PineClient(timeout=5) as p:
+                    if self.state=='MENU' and tournament.scene(p)[1]==tag_tournament.MAIN_MENU:
+                        self.mode_menu.reset(p,return_page=0)
+                        tournament.main_restored(p)
+                return
         scene=obs.menu_scene
         assigned=getattr(self,'assigned_input',None)
         online=False
@@ -803,6 +847,19 @@ class Autopilot:
                     self.menu_pager_failures=0
                 except ValueError as error:
                     selected=None;self.menu_pager_failed(p,error,obs)
+            if selected is not None and tournament is not None:
+                if selected.get('mode')=='draft':
+                    # One Tag Team Tournament roster pick on the Team Battle select: the check-in roster stays the
+                    # tournament's (no hub.select), its seats are tournament players.
+                    self.battle_mode,self.humans,self.assignment='teams',selected['humans'],None
+                    self.report(say(SAY_TOURNAMENT_DRAFT),obs)
+                    selected=None
+                elif selected.get('mode')=='tournament':
+                    tournament.select()
+                    self.report(say(SAY_TOURNAMENT_CHOSEN,setup=tournament.describe_setup()),obs)
+                    selected=None
+                elif tournament.armed or tournament.pending:
+                    with PineClient(timeout=5) as p:tournament.disarm(p,'another mode was chosen')
             if selected is not None:
                 self.battle_mode,self.humans=selected['mode'],selected['humans']
                 self.assignment=selected.get('assignment')
@@ -1094,12 +1151,28 @@ class Autopilot:
 
     def set_loading_teams(self, characters):
         if self.presentation is None or not hasattr(self.presentation, 'set_teams'): return
-        self.presentation.set_teams([dict(side=i, fighters=[dict(character_id=c,player=(self.assignment.index(2*slot+i)+1 if 2*slot+i in self.assignment else 0)) if self.assignment is not None else dict(character_id=c) for slot,c in enumerate(team)])
+        assignment,label=self.assignment,lambda n:n
+        match=getattr(self,'tournament_match',None) if getattr(getattr(self,'tournament',None),'armed',False) else None
+        order=(match or {}).get('order')
+        if order:
+            # Tag Team Tournament: the cards name each fighter's tournament player (their own controller).
+            assignment=assignment if assignment is not None else (0,)
+            label=lambda n:order[n-1] if 0<n<=len(order) else n
+        self.presentation.set_teams([dict(side=i, fighters=[dict(character_id=c,player=(label(assignment.index(2*slot+i)+1) if 2*slot+i in assignment else 0)) if assignment is not None else dict(character_id=c) for slot,c in enumerate(team)])
                                      for i,team in enumerate(characters)])
 
     def early_loading(self, obs):
         """Cover native arena/intro loading, then defer dialogue to prepared start."""
         if not self.preparation_enabled:return
+        tournament=getattr(self,'tournament',None)
+        if tournament is not None and tournament.armed and obs.mode==tag_tournament.TOURNAMENT_MODE:
+            # The tournament match's own humans/seats/controllers before the loading cards are drawn.
+            with PineClient(timeout=5) as p:match=tournament.match_for(p)
+            if match is not None:
+                if match is not self.tournament_match:
+                    match['token']=os.urandom(16)
+                self.tournament_match=match
+                self.battle_mode,self.humans,self.assignment='teams',match['humans'],match['assignment']
         teams = obs.selected_early_teams(include_single=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) or story_missions.pending_for(self.battle_mode))
         if teams is None or obs.battle_state not in (-1, 0, 1): return
         self.set_loading_teams(teams)
@@ -1111,6 +1184,14 @@ class Autopilot:
         self.prerender_cover()
         if obs.battle_state == -1: return
         self.play_intro_after_loading = True
+        if (obs.battle_state == 0 and self.tournament_match is not None and
+                not self.tournament_match.get('crowd_shown') and
+                getattr(getattr(self,'tournament',None),'armed',False)):
+            # Tag Team Tournament: the stage's own crowd / arena / gate shots (battle phase 0) play after the
+            # loading (the trainer starts the intro with them: team_intro.crowd_first); here phase 0 ends at
+            # once so the preparation starts under the cover without waiting for them.
+            self.tournament_match['crowd_shown']=True
+            self.tournament_crowd()
         self.cover('Loading your selected fighters...', 0)
         if obs.battle_state != 1: return
         # The boot hook's gate (native_preparation; sync_preparation arms it from the menus on, in this same
@@ -1121,6 +1202,19 @@ class Autopilot:
             self.watch_phase1(obs)
             return
         self.legacy_intro_deferral(obs)
+
+    def tournament_crowd(self, timeout=3.0):
+        """End battle phase 0 (the native crowd shots) of a tournament battle at once: they play after the loading."""
+        started=time.monotonic();done=False
+        try:
+            with PineClient(timeout=5) as p:
+                while time.monotonic()-started<timeout and not done:
+                    done=tag_tournament.skip_crowd_shots(p)
+                    if not done:time.sleep(0.02)
+        except (OSError,PineError) as error:
+            log(f'Tournament crowd shots: {error}')
+        log(f'Tag Team Tournament: crowd shots moved after the loading ({time.monotonic()-started:.2f} s).'
+            if done else 'Tag Team Tournament: the crowd shots did not end; they play under the loading cover.')
 
     PHASE1_STALL_SECONDS = 10.0
     PHASE1_STALL_GAP = 2.0      # a longer gap between phase-1 polls (PCSX2 paused, PINE busy) starts the count again
@@ -1205,6 +1299,7 @@ class Autopilot:
                 self.presentation.show(title, message, self.progress)
             if not self.cover_started:
                 self.cover_started = True
+                self.cover_since, self.stage_times = time.monotonic(), []   # the 'loading cover: shown' line
                 if not self.presentation.wait_visible():
                     log('Loading screen is waiting for the game window; preparation status is also in this window.')
         except (OSError, RuntimeError) as error:
@@ -1240,6 +1335,8 @@ class Autopilot:
 
     def on_progress(self, stage, completed, total):
         self.progress_message = self.stage_message(stage)   # shown again when PCSX2 resumes from a pause
+        times = getattr(self, 'stage_times', None)
+        if times is not None: times.append((str(stage), time.monotonic()))
         if stage == 'Ready':
             # Loading is over: the intro that follows is the match, never a paused-loading cover.
             self.preparation_paused = False
@@ -1249,9 +1346,20 @@ class Autopilot:
             guest=getattr(self.presentation,'guest',None)
             if guest:guest.wait_drawn(timeout=2)
             self.uncover()
+            self.log_cover_time()
             return
         progress = round(100*completed/total) if total else 0
         self.cover(self.stage_message(stage), progress)
+
+    def log_cover_time(self):
+        """watcher.log only (play_launcher.DENY_LINE): how long the loading cover was up, and each preparation stage."""
+        since, times = getattr(self, 'cover_since', None), getattr(self, 'stage_times', None)
+        if since is None or not times: return
+        now = time.monotonic()
+        steps = [f'{name} {end-start:.1f}' for (name, start), (_, end) in zip(times, times[1:]+[('', now)])
+                 if name != 'Ready']
+        log(f'loading cover: shown {now-since:.1f} s; before preparation {times[0][1]-since:.1f}; ' + ', '.join(steps))
+        self.cover_since = self.stage_times = None
 
     def fail(self, operation, error, *, stage=None, context=None, cover=True, recovered=False):
         """Report one failure through player_errors (group A); plain fallback when it is absent."""
@@ -1567,7 +1675,16 @@ class Autopilot:
                 self.workers_parked=False
                 if self.reload_worker is None or capture!=self.reload_capture or rewound:
                     try:
-                        worker=extra_reload_worker.Worker(progress=log,cell_auxiliary=True)
+                        import gauntlet_mode
+                        if gauntlet_mode.guest_active(p):
+                            # Fighter Gauntlet: the same serial worker, plus its unheld enemy-slot loads.
+                            import gauntlet_reload
+                            worker=gauntlet_reload.GauntletWorker(progress=log,cell_auxiliary=True)
+                            if getattr(self,'gauntlet_service',None) is None or capture!=self.reload_capture:
+                                self.gauntlet_service=gauntlet_mode.Service(log=log)
+                        else:
+                            worker=extra_reload_worker.Worker(progress=log,cell_auxiliary=True)
+                            self.gauntlet_service=None
                         worker.attach(p)
                         self.reload_worker=worker
                         self.body_worker=fighter_updates.attach_body(p,progress=log)
@@ -1578,6 +1695,9 @@ class Autopilot:
                     self.reload_capture=capture
                     self.fighter_updates_off=None
                 fighter_updates.poll(p,self.reload_worker,self.body_worker,self.fusion_worker)
+                if getattr(self,'gauntlet_service',None) is not None:
+                    # Fighter Gauntlet: the next waves stream into the free enemy slots while the match runs.
+                    self.gauntlet_service.tick(p,self.reload_worker)
                 trainer_bridge.service(p,extra=self.reload_worker,body=self.body_worker,fusion=self.fusion_worker)
                 if self.reload_worker.failure:
                     raise RuntimeError(self.reload_worker.failure)
@@ -1955,12 +2075,18 @@ class Autopilot:
                               play_intro=self.play_intro_after_loading,
                               battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment)
             self.preparation_session = session   # watch_start_freeze borrows its unused slot
+            # Tag Team Tournament: the session also saves the fresh native battle (tag_tournament.save_original).
+            session.tournament = getattr(self,'tournament_match',None)
             try:
                 try:session.prepare()
                 finally:
                     # The trainer loads its prepared checkpoint through the same PINE slot lease.
                     import guest_loading_screen;guest_loading_screen.invalidate_buffers()
+                # A rematch archive that could not be written after the start leaves no playable (Fight Again
+                # then reports why, below); the prepared match itself runs normally.
                 self.result = dict(ok=True, playable=session.source)
+                unavailable = getattr(session, 'rematch_unavailable', None)
+                if isinstance(unavailable, str):self.result.update(playable=None, rematch_unavailable=unavailable)
             except Exception as error:  # noqa: BLE001 - every failure keeps its message, step and traceback
                 traceback.print_exc()  # errors.log
                 stage = getattr(session, 'stage', None)
@@ -1987,6 +2113,102 @@ class Autopilot:
             player_errors.release_frames(error)
             self.result = dict(ok=False, error=player_errors.short(error), original=None, exception=error,
                                stage=getattr(session, 'stage', None))
+
+    def tournament_screen(self):
+        """The in-game cover that can draw pictures (LoadingPresentation keeps it as .guest), or None."""
+        guest=getattr(self.presentation,'guest',None) or self.presentation
+        if all(callable(getattr(guest,name,None)) for name in ('show_picture','presented','sync')):return guest
+        return None
+
+    def tournament_black(self):
+        """Plain black over the restored battle (the game's own fade to its result screen). Published now; the
+        restored state is held, so finish_native's loop re-publishes it (tournament_black_tick) until a guest frame
+        has drawn it - a state load leaves the guest drawing the packet saved in that state, and sync re-arms that
+        one first. The mod's card only when the presentation cannot draw pictures."""
+        self.black_pending=None
+        screen=self.tournament_screen()
+        if screen is None:
+            log('Tournament result transition: no in-game picture cover; showing the loading card.')
+            self.cover(TOURNAMENT_COVER);return False
+        from PIL import Image
+        try:
+            with PineClient(timeout=5) as p:
+                screen.show_picture(Image.new('RGB',(512,448),(0,0,0)),surface='battle',client=p)
+                self.cover_started=True;self.black_pending=dict(screen=screen,since=time.monotonic(),drawn=None)
+                self.tournament_black_tick(p)
+                return True
+        except (OSError,PineError,RuntimeError) as error:
+            log(f'Tournament result transition: {error}; showing the loading card.')
+        self.cover(TOURNAMENT_COVER);return False
+
+    def tournament_black_tick(self, p):
+        """One step of the black hand-back on finish_native's client: re-publish until a guest frame drew it."""
+        pending=getattr(self,'black_pending',None)
+        if not pending or pending['drawn'] is not None:return
+        screen=pending['screen']
+        if screen.presented(p):
+            pending['drawn']=time.monotonic()-pending['since'];return
+        screen.sync(force=True,client=p)
+
+    def tournament_black_report(self):
+        pending=getattr(self,'black_pending',None);self.black_pending=None
+        if pending and pending['drawn'] is None:
+            log('Tournament result transition: no guest frame drew the black; the restored cover may have shown.')
+        return pending['drawn'] if pending else None
+
+    def tournament_finish(self, obs):
+        """A Tag Team Tournament match ended (battle loop over). The prepared world cannot go back to the native
+        bracket, so load the saved fresh native battle (tag_tournament.save_original) and ask the engine to end it
+        with the team result (the native surrender request): the native tournament then reads the winner on a clean
+        state and shows its own result screen, bracket and next round. No result (Return to Main Menu) ends the
+        tournament like any modded match."""
+        match,tournament=self.tournament_match,self.tournament
+        self.tournament_match=None
+        tournament.latch(obs.result_flags)
+        winner=tournament.winner
+        if winner is None or not match.get('original'):
+            self.report(say(SAY_TOURNAMENT_EXIT),obs,'warning')
+            with PineClient(timeout=5) as p:tournament.disarm(p,'the match had no result')
+            self.return_to_menu(obs)
+            return
+        try:
+            with PineClient(timeout=5) as p:ring=tag_tournament.ringout_summary(p,1-winner)
+            if ring is not None:
+                log(f'Tag Team Tournament: ring-outs eliminated {ring[0]} of the {ring[1]} losing fighters ({ring[2]} ring-outs in the match).')
+        except (OSError,PineError):pass
+        # No cover before the load: the battle has already faded to black, and a first cover only waited ~2 s
+        # for a frame the ending battle never draws.
+        self.reset_reload_worker()
+        self.heartbeat=None;self.freeze_dumped=False;self.phase1_since=None
+        self.deferred_intro_object=None;self.play_intro_after_loading=False
+        self.playable=None;self.ack_token=None
+        started=time.monotonic()
+        try:
+            if not tag_tournament.load_original(match['original'],match['token'],lambda:PineClient(timeout=5)):
+                raise TimeoutError('the saved start of the match did not load')
+            # The loaded state brought its own cover (the card saved with it): replace it by plain black at once,
+            # as the game's own fade to the result screen. That black is also the frame the screen keeps while the
+            # game loads the result screen.
+            self.tournament_black()
+            loaded=time.monotonic()
+            with PineClient(timeout=5) as p:
+                tag_tournament.finish_native(p,tournament,match,winner,lambda:self.lifetime.require_alive() if self.lifetime is not None else None,
+                                             tick=self.tournament_black_tick)
+            drawn=self.tournament_black_report()
+            log(f'Tag Team Tournament: result handed back in {time.monotonic()-started:.1f} s (match start load {loaded-started:.1f} s, native result {time.monotonic()-loaded:.1f} s'
+                +(f', black drawn after {drawn:.2f} s' if drawn is not None else '')+').')
+        except Exception as error:  # noqa: BLE001 - one explained failure; the tournament cannot go on
+            from runtime_owner import EmulatorClosed
+            if isinstance(error,EmulatorClosed):raise
+            traceback.print_exc()
+            self.state='FAILED'
+            self.fail('menu_return',RuntimeError(f'{TOURNAMENT_FAILED} ({error})'))
+            return
+        tournament.record(winner)
+        names=tag_tournament.character_name(tournament.plan.teams[match['entrants'][winner]][0][0]) if tournament.plan else '?'
+        self.report(say(SAY_TOURNAMENT_CHAMPION if match.get('round',0)>=4 else SAY_TOURNAMENT_RESULT,winner=names),obs)
+        self.state='MENU'
+        self.uncover()
 
     def handle_preparation_resume(self, obs):
         if obs is None:
@@ -2037,6 +2259,19 @@ class Autopilot:
             self.cover(self.progress_message)
             self.report(say(SAY_LOADING_RESUMED))
 
+    def warm_preparation(self):
+        """Once per watcher, in the menus: the host work a first preparation would repeat (builder imports, walking
+        clips, the tag attacks' disc reviews: seconds per match, about 15 s on BT4) runs on a background thread, so the
+        first match finds it done (fresh_team_trainer.warm_preparation)."""
+        if getattr(self, 'preparation_warmed', False): return
+        self.preparation_warmed = True
+        try:
+            import mod_settings
+            from fresh_team_trainer import warm_preparation
+            warm_preparation(mod_settings.load_settings(), 'teams')
+        except Exception as error:  # noqa: BLE001 - a warm-up only
+            log(f'Preparation warm-up skipped: {error}')
+
     def menu_button(self):
         """The controller button that opens Modded Modes (Mod settings: menu_toggle_button)."""
         try:
@@ -2052,8 +2287,14 @@ class Autopilot:
             import fighter_updates
             # Parked workers wait for combat, and a FAILED watcher polls no worker: the ordinary
             # poll then, never 10-50 ms (match F1).
-            time.sleep(self.poll if getattr(self,'workers_parked',False) or self.state=='FAILED' else
-                       fighter_updates.poll_delay(self.reload_worker,self.body_worker,self.fusion_worker,self.poll))
+            delay=(self.poll if getattr(self,'workers_parked',False) or self.state=='FAILED' else
+                   fighter_updates.poll_delay(self.reload_worker,self.body_worker,self.fusion_worker,self.poll))
+            # The Fighter Gauntlet picker page relabels its hidden rows as it scrolls: poll it quickly.
+            if getattr(self.mode_menu,'fast',False):delay=min(delay,0.03)
+            # Under an early loading cover the next poll starts the preparation: 0.05 s instead of the ordinary poll.
+            elif self.worker is None and self.cover_started and self.state in ('MENU','BATTLE') and self.last_loop==1:
+                delay=min(delay,0.05)
+            time.sleep(delay)
             if self.lifetime is not None:
                 self.lifetime.require_alive()
             if self.presentation is not None: self.presentation.tick()
@@ -2070,6 +2311,7 @@ class Autopilot:
                 self.heartbeat, self.freeze_dumped = None, False   # the match's own watch starts afresh
                 if self.result.get('ok'):
                     self.playable = self.result['playable']
+                    self.rematch_unavailable = self.result.get('rematch_unavailable')
                     ack_error = None
                     for attempt in range(5):
                         # A transient PINE error while reading the start acknowledgement must not end the watcher.
@@ -2141,11 +2383,15 @@ class Autopilot:
                 self.reset_reload_worker(keep_menu_input=True, park=True)
                 self.play_intro_after_loading = False
                 self.deferred_intro_object = None
+                if self.state == 'ACTIVE' and getattr(self,'tournament_match',None) is not None:
+                    self.tournament_finish(obs)
+                    continue
                 if self.state == 'ACTIVE':
                     self.return_to_menu(obs)
                     continue
                 if self.state != 'MENU': self.state = 'MENU'
                 if self.cover_started: self.uncover()
+                self.warm_preparation()
                 self.report(say_text(obs.pending_reason), obs, 'waiting')
                 try:
                     self.service_menu(obs)
@@ -2170,12 +2416,19 @@ class Autopilot:
                 self.menu_return_started = self.menu_return_fallback = self.menu_return_seen = None
                 log(say(SAY_RETURN_CANCELLED))
                 self.uncover()
+            if self.state == 'ACTIVE' and getattr(self,'tournament_match',None) is not None:
+                # A Tag Team Tournament match has no Fight Again: once it has a result (or an exit request) the
+                # native teardown clears the team marker before the loop flag; wait for the loop to end.
+                self.tournament.latch(obs.result_flags)
+                if obs.result_flags & 0xB:
+                    continue
             # battle loop active
             if self.state == 'ACTIVE':
                 if obs.team_mode == 0:
                     log(say(SAY_REMATCH_LOADING))
                     self.cover('Getting everyone ready for the rematch...', 90)
-                    restore_error=None
+                    restore_error=(RuntimeError(f'The rematch checkpoint could not be written: {self.rematch_unavailable}')
+                                   if not self.playable and getattr(self,'rematch_unavailable',None) else None)
                     try:restored=bool(self.playable and self.load_file(self.playable,self.ack_token))
                     except (OSError,PineError,ValueError,RuntimeError,TimeoutError) as error:
                         from runtime_owner import EmulatorClosed
@@ -2230,6 +2483,18 @@ class Autopilot:
                     self.handled.add(obs.key)
                     self.state = 'BATTLE'
                     self.report(say(SAY_TOO_MANY, teams=f'{obs.rows[0]}v{obs.rows[1]}', capacity=TEAM_CAPACITY), obs, 'warning'); continue
+                tournament=getattr(self,'tournament',None)
+                if tournament is not None and tournament.armed and obs.mode==tag_tournament.TOURNAMENT_MODE:
+                    match=self.tournament_match if self.tournament_match and self.tournament_match.get('key')==obs.key else None
+                    if match is None:
+                        with PineClient(timeout=5) as p:match=tournament.match_for(p)
+                        if match is None:
+                            self.handled.add(obs.key);self.state='BATTLE'
+                            self.report(say(SAY_TOURNAMENT_NATIVE),obs,'warning');continue
+                        if match is not self.tournament_match or not match.get('token'):match['token']=os.urandom(16)
+                        match['key']=obs.key
+                        self.tournament_match=match
+                    self.battle_mode,self.humans,self.assignment='teams',match['humans'],match['assignment']
                 self.set_loading_teams(obs.characters)
                 self.streaming=obs.streaming
                 self.play_intro_after_loading=self.play_intro_after_loading or obs.streaming or obs.native_intro

@@ -523,6 +523,33 @@ class TagInstallTests(unittest.TestCase):
         self.assertEqual(flags[70],3,'localized names must not reuse replaced BT3 IDs')
 
 
+    def test_rush_only_fighters_are_non_ki_whatever_the_disc_calls_them(self):
+        names={158:dict(base_name='Spopovich'),125:dict(base_name='Uub (nino)'),3:dict(base_name='Goku')}
+        roster=[dict(character=i,supported=True) for i in names]
+        with patch('character_names.character_table',return_value=names):
+            (_,flags),_=install.admission_block(assets(),roster,rush_only={125,158})
+        self.assertEqual((flags[158],flags[125],flags[3]),(1,1,3))
+
+    def test_disc_admission_assesses_every_named_fighter_and_reuses_one_cache(self):
+        import tempfile
+        from pathlib import Path
+        names={0:dict(name='Goku'),69:dict(name='Nam'),156:dict(name='Arale')}
+        calls=[]
+        def admission(iso,rows):
+            calls.append(len(rows))
+            return [dict(r,supported=r['character']!=156,incompatible_bones=(),height=1.,reason='') for r in rows]
+        with tempfile.TemporaryDirectory() as folder:
+            iso=Path(folder)/'disc.iso';iso.write_bytes(b'x'*64)
+            with patch.object(install,'CACHE_ROOT',Path(folder)/'cache'),                    patch('character_names.character_table',return_value=names),                    patch.object(install.assets,'character_admission',side_effect=admission),                    patch.object(install,'_rush_only',side_effect=lambda iso,c:c==69):
+                first=install.disc_admission(iso);second=install.disc_admission(iso,{0})
+        self.assertEqual(calls,[6])
+        self.assertEqual(sorted({r['character'] for r in first}),[0,69,156])
+        self.assertEqual(sorted({r['character'] for r in second}),[69,156])
+        self.assertEqual({r['character'] for r in first if r['rush_only']},{69})
+        self.assertEqual({r['character'] for r in first if not r['supported']},{156})
+        self.assertEqual(install.disc_admission(Path(folder)/'missing.iso'),[])
+
+
 class AssetCacheTests(unittest.TestCase):
     def test_special_beam_cache_rederives_recipe_and_exact_relocation_exceptions(self):
         sbc=install.special_beam;pack=special_assets();checked=install._asset_plan(install._asset_payload(pack))

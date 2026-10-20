@@ -287,18 +287,19 @@ STOP_FORCE = 6
 # Keep source addresses inert until code emission. Translated discs
 # can import the trainer while this feature is disabled; attempting
 # to emit it still requires every address to pass the regional map.
-KIND0_INIT_CLASS = 0x2C38C8
-KIND0_UPDATE, KIND0_CTOR, KIND0_FREE = 0x155C60, 0x155A70, 0x14D798
-RECORD_OF, ALLOCATE, RETIRE = 0x14B8E0, 0x1AD7B8, 0x1ADA58
+# KIND0_UPDATE is a class method: the kind-0 family class stores it at A(0x2C38E0); no native jal reaches it.
+KIND0_INIT_CLASS = lambda: A(0x2C38C8)
+KIND0_UPDATE, KIND0_CTOR, KIND0_FREE = lambda: A(0x155C60), lambda: A(0x155A70), lambda: A(0x14D798)
+RECORD_OF, ALLOCATE, RETIRE = lambda: A(0x14B8E0), lambda: A(0x1AD7B8), lambda: A(0x1ADA58)
 # 1CF740 reads slots2..4 through the model's +0x92C blast table getters.
-CHARACTER, SPECIAL_A, SPECIAL_DURATION = 0x1DC280, 0x210F00, 0x210E28
-SPECIAL_SPEED, SPECIAL_HOMING = 0x210E60, 0x210EA8
+CHARACTER, SPECIAL_A, SPECIAL_DURATION = lambda: A(0x1DC280), lambda: A(0x210F00), lambda: A(0x210E28)
+SPECIAL_SPEED, SPECIAL_HOMING = lambda: A(0x210E60), lambda: A(0x210EA8)
 
 
 def native_route():
     """The reviewed native route, pinned by tests and the live receipt."""
-    return dict(slot=SLOT, family=0, family_class=A(0x2C38E0), init_class=A(KIND0_INIT_CLASS),
-                update=A(KIND0_UPDATE), constructor=A(KIND0_CTOR), children_free=A(KIND0_FREE),
+    return dict(slot=SLOT, family=0, family_class=A(0x2C38E0), init_class=KIND0_INIT_CLASS(),
+                update=KIND0_UPDATE(), constructor=KIND0_CTOR(), children_free=KIND0_FREE(),
                 meta_id=SBC_META_ID, events=tuple(STAGE_BITS[s] for s in (1, 3, 5, 7)),
                 fire_delay=FIRE_DELAY, aim='record cache (meta+0xC=1, record+0x30, record+0x40 bit2)',
                 head=0x60, axis=0x30, scale=0xC)
@@ -333,12 +334,12 @@ def native_spawn_code():
     a.lw(22, 19, fx.R['source']); a.lw(23, 19, fx.R['source_model'])
     a.lw(8, 23, 12); a.li(9, 22); a.branch(4, 8, 9, 'piccolo'); a.li(9, 23); a.branch(5, 8, 9, 'no')
     a.label('piccolo'); a.lw(17, 23, 16); a.i(11, 8, 17, ROW_MODELS); a.branch(4, 8, 0, 'no')
-    a.move(4, 17); a.li(5, SLOT); a.call(A(RECORD_OF)); a.move(18, 2); full.pointer(a, 18, RECORD_SIZE, 'no')
+    a.move(4, 17); a.li(5, SLOT); a.call(RECORD_OF()); a.move(18, 2); full.pointer(a, 18, RECORD_SIZE, 'no')
     a.lw(24, 18, 0x24); full.pointer(a, 24, META_SIZE, 'no')
     a.lw(8, 24, 0x3C); a.li(9, SBC_META_ID); a.branch(5, 8, 9, 'no')
     a.i(32, 8, 24, 13); a.branch(5, 8, 0, 'no')
     a.lw(30, 18, 0x28); full.pointer(a, 30, 64, 'no')
-    a.lw(8, 30, 40); a.li(9, A(KIND0_INIT_CLASS)); a.branch(5, 8, 9, 'no')
+    a.lw(8, 30, 40); a.li(9, KIND0_INIT_CLASS()); a.branch(5, 8, 9, 'no')
     a.lw(25, 30, 0x24); full.pointer(a, 25, 32, 'no'); a.lw(8, 25); a.branch(5, 8, 30, 'no')
     a.lw(9, 30, 56); full.pointer(a, 9, 0x330, 'no', temp=10, test=11)
     a.lw(10, 9, 4); a.branch(4, 10, 0, 'no')
@@ -348,9 +349,9 @@ def native_spawn_code():
     # Private copies: the shared slot record/metadata are never written.
     a.move(8, 24); a.li(9, NMETA); _copy(a, 8, 9, META_SIZE, 'copy_meta')
     a.move(8, 18); a.li(9, NRECORD); _copy(a, 8, 9, RECORD_SIZE, 'copy_record')
-    a.move(4, 22); a.call(A(CHARACTER)); full.pointer(a, 2, 0xA28, 'no'); a.lw(8, 2, 0xA24); a.sw(8, 21, 0x108)
+    a.move(4, 22); a.call(CHARACTER()); full.pointer(a, 2, 0xA28, 'no'); a.lw(8, 2, 0xA24); a.sw(8, 21, 0x108)
     for getter, off in ((SPECIAL_A, 0x10C), (SPECIAL_DURATION, 0x110), (SPECIAL_SPEED, 0x114), (SPECIAL_HOMING, 0x118)):
-        a.move(4, 22); a.li(5, SLOT); a.call(A(getter)); a.i(57, 0, 21, off)
+        a.move(4, 22); a.li(5, SLOT); a.call(getter()); a.i(57, 0, 21, off)
     fx.finite(a, 21, (0x10C, 0x110, 0x114, 0x118), 'no')
     for off, low, high in ((0x110, 0., 100.), (0x114, 0., 10000.)):
         a.i(49, 0, 21, off); fp.fconst(a, 1, low); fp.fop(a, 0x34, 0, 1, 0); a.branch(17, 8, 0, 'no')
@@ -376,7 +377,7 @@ def native_spawn_code():
     a.li(8, STAGES['charge']); a.sw(8, 21, N['stage']); a.r(0x2B, 8, 0, 20)
     a.i(14, 8, 8, 1); a.sw(8, 21, N['fire'])
     for key in ('wait', 'ticks', 'stop_calls', 'aimed', 'last_bits'): a.sw(0, 21, N[key])
-    a.move(4, 25); a.li(5, NATIVE_CLASS); a.li(6, NRECORD); a.call(A(ALLOCATE)); a.move(24, 2)
+    a.move(4, 25); a.li(5, NATIVE_CLASS); a.li(6, NRECORD); a.call(ALLOCATE()); a.move(24, 2)
     a.branch(4, 24, 0, 'refused')
     full.pointer(a, 24, 64, 'unknown'); a.lw(8, 24, 40); a.li(9, NATIVE_CLASS); a.branch(5, 8, 9, 'unknown')
     a.lw(25, 24, 56); full.pointer(a, 25, 0x5C0, 'orphan')
@@ -394,7 +395,7 @@ def native_spawn_code():
     a.li(2, 1); a.jump('done')
     # Our class retires only through its own destructor; a refused receipt
     # is retired natively. An unrecognized allocator result is never touched.
-    a.label('orphan'); a.move(4, 24); a.call(A(RETIRE))
+    a.label('orphan'); a.move(4, 24); a.call(RETIRE())
     a.label('unknown')
     a.label('refused'); a.lw(8, 21, N['refused']); a.addiu(8, 8, 1); a.sw(8, 21, N['refused'])
     a.label('no'); a.move(2, 0); a.label('done'); tag.restore(a, 2); a.jr()
@@ -454,7 +455,7 @@ def native_update_code():
     a.li(10, events.ROWS); a.branch(5, 19, 10, 'no_row')
     a.label('row_ready'); a.r(0, 9, 0, 9, 4); a.r(0x21, 19, 19, 9)
     a.lw(21, 19); a.sw(20, 19); a.sw(20, 17, N['last_bits'])
-    a.move(4, 16); a.call(A(KIND0_UPDATE)); a.sw(21, 19)
+    a.move(4, 16); a.call(KIND0_UPDATE()); a.sw(21, 19)
     # The destructor clears the receipt when the native update retired it.
     a.lw(8, 17, N['node']); a.branch(5, 8, 16, 'done')
     a.lw(9, 18); a.lw(8, 17, N['stage'])
@@ -469,8 +470,8 @@ def native_update_code():
     a.i(12, 10, 9, 0x10); a.branch(4, 10, 0, 'done'); a.li(8, STAGES['firing']); a.sw(8, 17, N['stage']); a.jump('done')
     a.label('after_fire'); a.li(10, STAGES['end']); a.branch(5, 8, 10, 'done')
     a.i(12, 10, 9, 8); a.branch(4, 10, 0, 'done'); a.li(8, STAGES['ended']); a.sw(8, 17, N['stage']); a.jump('done')
-    a.label('no_row'); a.move(4, 16); a.call(A(RETIRE)); a.jump('done')
-    a.label('orphan'); a.move(4, 16); a.call(A(RETIRE))
+    a.label('no_row'); a.move(4, 16); a.call(RETIRE()); a.jump('done')
+    a.label('orphan'); a.move(4, 16); a.call(RETIRE())
     a.label('done'); tag.restore(a); a.jr()
     data = a.finish(); assert NATIVE_UPDATE+len(data) <= NATIVE_DTOR, len(data); return data
 
@@ -484,7 +485,7 @@ def native_dtor_code():
     """
     a = Assembler(NATIVE_DTOR); tag.save(a); a.move(16, 4)
     full.pointer(a, 16, 64, 'receipt'); a.lw(18, 16, 56); full.pointer(a, 18, 0x5C0, 'receipt')
-    a.lw(4, 18, 0x5B0); full.pointer(a, 4, 0x330, 'receipt'); a.addiu(5, 18, 0x94); a.call(A(KIND0_FREE))
+    a.lw(4, 18, 0x5B0); full.pointer(a, 4, 0x330, 'receipt'); a.addiu(5, 18, 0x94); a.call(KIND0_FREE())
     a.label('receipt'); a.li(17, NSTATE); a.lw(8, 17, N['node']); a.branch(5, 8, 16, 'done')
     a.sw(0, 17, N['node']); a.sw(0, 17, N['body']); a.li(8, STAGES['ended']); a.sw(8, 17, N['stage'])
     a.label('done'); tag.restore(a); a.jr()
@@ -511,7 +512,7 @@ def native_stop_code():
     a.lw(8, 17, N['stage']); a.i(10, 9, 8, STAGES['end']); a.branch(4, 9, 0, 'requested')
     a.li(8, STAGES['end']); a.sw(8, 17, N['stage'])
     a.label('requested'); a.lw(8, 17, N['stop_calls']); a.addiu(8, 8, 1); a.sw(8, 17, N['stop_calls'])
-    a.i(10, 9, 8, STOP_FORCE); a.branch(5, 9, 0, 'live'); a.move(4, 16); a.call(A(RETIRE))
+    a.i(10, 9, 8, STOP_FORCE); a.branch(5, 9, 0, 'live'); a.move(4, 16); a.call(RETIRE())
     a.label('live'); a.li(2, 1); a.jump('done')
     a.label('stale'); a.sw(0, 17, N['node']); a.sw(0, 17, N['body'])
     a.label('none'); a.move(2, 0); a.label('done'); tag.restore(a, 2); a.jr()
@@ -522,7 +523,7 @@ def native_pieces():
     return [(NATIVE_SPAWN, native_spawn_code()), (NATIVE_UPDATE, native_update_code()),
             (NATIVE_DTOR, native_dtor_code()), (NATIVE_IGNITE, native_ignite_code()),
             (NATIVE_STOP, native_stop_code()),
-            (NATIVE_CLASS, struct.pack('<3I', NATIVE_UPDATE, A(KIND0_CTOR), NATIVE_DTOR)+bytes(4)),
+            (NATIVE_CLASS, struct.pack('<3I', NATIVE_UPDATE, KIND0_CTOR(), NATIVE_DTOR)+bytes(4)),
             (NSTATE, bytes(NSTATE_END-NSTATE))]
 
 

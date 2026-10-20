@@ -665,16 +665,25 @@ def blocks(ram, views=1):
     if u32(ram, n.scene + SCENE_SPLIT) != 0:
         raise ValueError('per-window views need the single-view fixture (scene+36 = 0); convert it first')
     manager = u32(ram, A(0x2FEBD4))
+    # template 0 (manager+0) is the full-screen view: its rectangle is the disc's frame, 448 lines on NTSC and
+    # 512 on the European disc (PAL), so it is read, never assumed
+    full = words(ram, manager + 512, 4)
+    if full not in ([0, 511, 0, 447], [0, 511, 0, 511]):
+        raise ValueError(f'the full-screen camera template is not native ({full})')
     for side in range(2):
         cam = manager + SIDE_CAMERA + SIDE_STRIDE * side
-        if u32(ram, cam + 640) != 0 or words(ram, cam + 512, 4) != [0, 511, 0, 447]:
+        if u32(ram, cam + 640) != 0 or words(ram, cam + 512, 4) != full:
             raise ValueError(f'side camera {side} is not on the full-screen template')
     if words(ram, n.select_site, 2) != [j(cinema.CODE), 0] or u32(ram, cinema.CONTROL) != cinema.MAGIC:
         raise ValueError('the camera selection hook is not cinematic_policy\'s selector')
     if u32(ram, n.render_site) != jal(n.render):
         raise ValueError('the single-view render call is not native')
-    if words(ram, n.burst_call - 8, 6) != [0x54400005, 0xC6010000, jal(n.release), 0x0220202D, 0x10000023, 0x2652FFFF]:
+    burst = words(ram, n.burst_call - 8, 6)
+    # USA: lwc1 f1 in the beql delay slot, b +0x23; Europe: lwc1 f0, b +0x1F (the same code, its own layout)
+    if (burst[0] != 0x54400005 or burst[1] not in (0xC6010000, 0xC6000000) or burst[2:4] != [jal(n.release), 0x0220202D]
+            or burst[4] >> 16 != 0x1000 or burst[5] != 0x2652FFFF):
         raise ValueError('the light-burst release site is not native')
+    burst_beql = 0x50400000 | (burst[4] & 0xFFFF)          # beql v0, zero, <the native b's own target>
     if words(ram, n.viewer_site - 4, 4) != [0x24020001, jal(n.viewed), 0, 0x8E230000]:
         raise ValueError('207FB0\'s viewed-side tie-break is not native')
     if u32(ram, follow.LEADER_CONTROL) != 1:
@@ -721,7 +730,7 @@ def blocks(ram, views=1):
             patched |= PATCH_BITS['marker']
     out = programs(cinema.CODE, camera, marker) + out
     out += [(n.select_site, struct.pack('<I', j(SEL))), (n.render_site, struct.pack('<I', jal(SWAP))),
-            (n.burst_call, struct.pack('<I', jal(BURST))), (n.burst_branch, struct.pack('<I', 0x50400023)),
+            (n.burst_call, struct.pack('<I', jal(BURST))), (n.burst_branch, struct.pack('<I', burst_beql)),
             (n.viewer_site, struct.pack('<I', jal(VIEWER)))]
     import netplay_hud
     out.extend(netplay_hud.blocks(ram))

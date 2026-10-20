@@ -109,7 +109,12 @@ def code():
     a.branch(4,26,0,'owner_index');a.r(0x2B,9,17,25);a.branch(4,9,0,'found')
     a.jump('owner_index');a.label('ffa_right');a.r(0x21,8,8,25)
     a.label('owner_index');a.r(0x2B,9,8,22);a.branch(4,9,0,'found');a.addiu(19,8,1)
-    a.label('found');a.r(0,8,0,16,2);a.r(0x21,8,8,16);a.r(0x21,8,8,17)
+    a.label('found')
+    # Tag Team Tournament roster draft: slots past the team size are not part of the team (no badge).
+    import tag_tournament
+    a.li(8,tag_tournament.DRAFT);a.lw(9,8);a.li(10,tag_tournament.DRAFT_MAGIC);a.branch(5,9,10,'badge')
+    a.i(36,9,8,16);a.r(0x2B,10,17,9);a.branch(4,10,0,'no_badge')
+    a.label('badge');a.r(0,8,0,16,2);a.r(0x21,8,8,16);a.r(0x21,8,8,17)
     a.r(0,9,0,8,2);a.r(0x21,8,8,9);a.r(0x21,8,8,19);a.r(0,8,0,8,3)
     a.li(9,DATA);a.r(0x21,8,8,9);a.lw(20,8);a.lw(21,8,4)
     # Same checked arena contract as the native menu's existing indicator.
@@ -126,7 +131,7 @@ def code():
     for off in (0,8):a.i(55,11,20,off);a.i(63,11,10,off)
     a.addiu(20,20,16);a.addiu(10,10,16);a.branch(5,20,9,'copy')
     a.move(4,10);a.call(A(0x100890))
-    a.addiu(17,17,1);a.addiu(8,0,5);a.branch(5,17,8,'slot')
+    a.label('no_badge');a.addiu(17,17,1);a.addiu(8,0,5);a.branch(5,17,8,'slot')
     a.label('next_side');a.addiu(16,16,1);a.addiu(8,0,2);a.branch(5,16,8,'side')
     a.label('inactive');a.label('done');guard.restore(a);a.jr();out=a.finish();assert CODE+len(out)<=DATA
     return out

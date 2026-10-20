@@ -158,6 +158,15 @@ def payload(c):
         a.lw(8,20,field);a.li(9,value);a.branch(5,8,9,'error130')
     a.sw(22,20,84);a.move(4,20);a.call(A(0x24DB28))
     for off in (5608,5612,5616):a.sw(0,17,off)
+    if c.get('gauntlet'):
+        # Fighter Gauntlet: a different character. Its identity is published before the refresh reads it
+        # (selected row +0 character, +4 costume, +96 damaged; the native form request words).
+        g=c['gauntlet']
+        a.li(8,c['selected_row'])
+        for off,value in ((0,row['character']),(4,row['costume']),(96,int(row['damaged']))):
+            a.li(9,value);a.sw(9,8,off)
+        for off,value in ((0x12D0,row['character']),(0x12D4,row['costume']),(0x12E0,int(row['damaged']))):
+            a.li(9,value);a.sw(9,17,off)
     a.move(4,17)
     if c.get('form') and w['owner_action'] in (241,242):
         import fusion_partner_lifecycle as fusion
@@ -230,7 +239,9 @@ def payload(c):
         a.li(4,c['new_group']);a.call(A(0x249000))
         a.li(8,c['staged_model']);a.lw(8,8,4);a.branch(5,8,0,'error160')
         a.addiu(8,0,1);a.sw(8,16,36)
-    a.addiu(8,0,1);a.sw(8,20,8);a.addiu(8,0,5);a.sw(8,16,4);a.jump('done')
+    if not c.get('gauntlet'):a.addiu(8,0,1);a.sw(8,20,8)
+    # A gauntlet slot stays hidden until the runtime admits it (team_participation keeps it consumed).
+    a.addiu(8,0,5);a.sw(8,16,4);a.jump('done')
     errors=(110,111,120,130,140,141,142,150,160)
     if c.get('form') and w['owner_action'] in (241,242):errors+=(145,)
     for error in errors:
@@ -300,7 +311,7 @@ def newer_effects(ram,w,guards,leader_record=None):
     return gen,gnd
 
 
-def capture(ram,quiet=False,form=False):
+def capture(ram,quiet=False,form=False,gauntlet=None,waiting=False):
     require(len(ram)==0x8000000,'Requires128MiB EE RAM');u=lambda p:struct.unpack_from('<I',ram,p)[0]
     ptr=lambda p,n:0x100000<=p<=len(ram)-n
     require(u(stage.CONTROL+4)==5,'Hidden replacement stage must be ready')
@@ -321,11 +332,20 @@ def capture(ram,quiet=False,form=False):
                 u(record+8)==w['actor'] and u(record+20)==character and u(w['actor']+0x12D0)==character and
                 u(w['actor']+0x12D4)==costume and u(w['actor']+0x12E0)==int(damaged),
                 'Ordinary form commit requires its acknowledged native request')
-    else:require(character==u(w['model']+12),'Costume commit requires same-character replacement')
+    elif gauntlet is None:require(character==u(w['model']+12),'Costume commit requires same-character replacement')
+    if waiting:
+        # p88: a damaged costume committed while its owner waits in the native action that pushed it.
+        import extra_reload_forms as forms
+        import extra_reload_quiet
+        record=forms.requests.RECORDS+(physical-2)*64
+        require(quiet and not form and gauntlet is None and w['owner_action'] in extra_reload_quiet.COSTUME_WAIT_ACTIONS and
+                u(record+4)==4 and u(record+56)==0 and u(record+60)==w['owner_action'] and u(record+8)==w['actor'] and
+                u(record+20)==character and u(forms.COSTUME_ENABLE)==1,
+                'Waiting costume commit requires its acknowledged native request')
     row=stage.resource_info(ram,resource,handle,character,costume,damaged)
     row.update(character=character,costume=costume,damaged=damaged)
     require(u(staged_model+20)==resource and u(staged_model+2356)==u(stage.CONTROL+76),'Staged resource/dataset changed')
-    require(resource!=w['old_resource'] and u(w['model']+8)==1,'Active model/resource changed')
+    require(resource!=w['old_resource'] and u(w['model']+8)==(0 if gauntlet is not None else 1),'Active model/resource changed')
     allocation=u(stage.CONTROL+36);require(ptr(allocation,stage.ALLOC_SIZE),'Invalid staging allocation')
     old_scratch=u(w['model']+5728);require(ptr(old_scratch,0x1A0C0),'Missing active animation scratch')
     old_geometry=u(w['model']+64);require(ptr(old_geometry,112),'Missing old geometry')
@@ -349,9 +369,15 @@ def capture(ram,quiet=False,form=False):
         held=() if quiet else ((actor+0x948,11),(actor+0x1278,0),(actor+0x127C,0),(actor+0x1280,0),(actor+0x1284,0))
         for p,value in ((stage.prior.core.POINTERS+4*i,actor),(actor,i),(actor+12,u(actor+12)))+held:
             require(u(p)==value,'Commit requires all captured actors held idle');guards.append((p,value))
-    if quiet:
+    if gauntlet is not None:
+        # Fighter Gauntlet: the hidden owner's caller-named words replace the hold ACK; its model stays hidden.
         import extra_reload_quiet
-        extra_reload_quiet.validate(ram,w,form);guards+=extra_reload_quiet.checks(w,form)
+        require(quiet and not form,'A gauntlet commit is a quiet, non-form job')
+        guards+=list(extra_reload_quiet.owner_pairs(ram,gauntlet['owner_checks']))+[(w['model']+8,0)]
+    elif quiet:
+        import extra_reload_quiet
+        extra_reload_quiet.validate(ram,w,form or waiting);guards+=extra_reload_quiet.checks(w,form or waiting)
+        if waiting:guards += [(record+4,4),(record+56,0),(record+60,w['owner_action']),(record+8,w['actor'])]
     require(u(fresh.DESCRIPTORS[physical])==w['actor'] and
             u(fresh.DESCRIPTORS[physical]+4)==fresh.SHADOWS[physical], 'Private AI owner mismatch')
     require(u(fresh.SHADOWS[physical]+0x10+(physical&1)*0x520+36)&1==0,'Private AI unexpectedly owns dataset')
@@ -393,11 +419,13 @@ def capture(ram,quiet=False,form=False):
                 new_collision=allocation+PRIVATE_COLLISION_OFF,old_scratch=old_scratch,
                 old_group=old_group,new_group=new_group,guards=guards,zero_regions=[],return_unshared_group=True,
                 allocator=allocator,arena=arena,record=record,effect_row=effect_row,
-                root=root,rootpool=rootpool,visuals=visuals,selected_row=selected,generic=gen,ground=gnd,form=form)
+                root=root,rootpool=rootpool,visuals=visuals,selected_row=selected,generic=gen,ground=gnd,form=form,
+                **({'gauntlet':dict(gauntlet)} if gauntlet is not None else {}))
 
 
-def build_memory(ram,source='<offline-held-reload>',quiet=False,retire_staged=False,form=False):
-    c=capture(ram,quiet,form);require(not any(ram[ENTRY:END]),'Reload commit reservation occupied')
+def build_memory(ram,source='<offline-held-reload>',quiet=False,retire_staged=False,form=False,gauntlet=None,
+                 waiting=False):
+    c=capture(ram,quiet,form,gauntlet,waiting);require(not any(ram[ENTRY:END]),'Reload commit reservation occupied')
     c['retire_staged']=bool(retire_staged)
     _,_,native=elf_reader(elf_path(ROOT))
     for p,n in ((A(0x1135F0),0x70),(A(0x249BD8),0x70),(A(0x249000),0x58),(A(0x1C0058),0xD0),

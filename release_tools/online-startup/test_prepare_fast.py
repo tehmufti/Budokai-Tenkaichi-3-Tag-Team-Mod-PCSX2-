@@ -192,22 +192,28 @@ class PreparationCriticalPath(unittest.TestCase):
             source = (ROOT / game / 'tools/fresh_team_trainer.py').read_text(encoding='utf-8-sig')
             modified = source
             for old, new in auto.kit_prepare.patches(29921)['game/tools/fresh_team_trainer.py']:
-                if not ('time.sleep(.005)' in new or 'time.sleep(0.005)' in new):
+                if 'POLL = .005' not in new:
                     continue
                 self.assertEqual(modified.count(old), 1)
                 modified = modified.replace(old, new)
             before, after = ast.parse(source), ast.parse(modified)
             changed = []
             for old, new in zip(ast.walk(before), ast.walk(after)):
-                if isinstance(old, ast.Constant) and old.value == .2 and isinstance(new, ast.Constant) and new.value == .005:
+                if isinstance(old, ast.Constant) and old.value == .05 and isinstance(new, ast.Constant) and new.value == .005:
                     changed.append(new.lineno)
                     new.value = old.value
-            self.assertEqual(len(changed), 3)
+            # Oct 19: one module constant, POLL, is the sleep of the three guest-step waits (0.2 s each before)
+            self.assertEqual(len(changed), 1)
             self.assertEqual(ast.dump(before), ast.dump(after))
+            poll = [node for node in after.body if isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == 'POLL' for t in node.targets)]
+            self.assertEqual([node.lineno for node in poll], changed)
+            users = [node.lineno for node in ast.walk(after) if isinstance(node, ast.Name) and node.id == 'POLL'
+                     and isinstance(node.ctx, ast.Load)]
             methods = ('wait_word', 'wait_counter', 'wait_idle_leaders')
-            self.assertTrue(all(any(node.name in methods and node.lineno <= line <= node.end_lineno
-                                    for node in ast.walk(after) if isinstance(node, ast.FunctionDef))
-                                for line in changed))
+            owners = sorted(node.name for node in ast.walk(after) if isinstance(node, ast.FunctionDef)
+                            for line in users if node.lineno <= line <= node.end_lineno)
+            self.assertEqual(owners, sorted(methods))
 
     def test_cached_map_selector_never_confirms_an_unwanted_match(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -481,7 +487,9 @@ class PrivateBuilderServiceGuards(unittest.TestCase):
         self.config.write_text(self.text, encoding='utf-8')
         self.settings = SimpleNamespace(DEFAULTS={}, load_settings=lambda: {})
         self.recorder = Mock(return_value=SimpleNamespace())
-        self.menu = SimpleNamespace(Controller=Mock(return_value=SimpleNamespace(team_menu=SimpleNamespace())))
+        self.menu = SimpleNamespace(Controller=Mock(return_value=SimpleNamespace(
+            team_menu=SimpleNamespace(), tournament=SimpleNamespace(panel=SimpleNamespace()),
+            gauntlet=SimpleNamespace(panel=SimpleNamespace()))))
 
     def source(self, filename):
         return (ROOT / 'bt3-multifighter/tools' / filename).read_text(encoding='utf-8-sig')
@@ -531,6 +539,9 @@ class PrivateBuilderServiceGuards(unittest.TestCase):
         self.assertEqual((watcher.controller_hub, watcher.controller_input, watcher.menu_input, watcher.assigned_input),
                          (None, None, None, None))
         self.assertIsNone(watcher.mode_menu.team_menu.hub)
+        self.assertIsNone(watcher.mode_menu.tournament.hub)
+        self.assertIsNone(watcher.mode_menu.tournament.panel.hub)
+        self.assertIsNone(watcher.mode_menu.gauntlet.panel.hub)
         self.assertIsNotNone(watcher.preparation_lock)
         self.assertEqual(watcher.state, 'MENU')
 
@@ -556,6 +567,8 @@ class PrivateBuilderServiceGuards(unittest.TestCase):
         namespace = dict(code_pieces=proof, assets=SimpleNamespace(addresses=assets),
                          ingame_settings=SimpleNamespace(Controller=lambda: object()),
                          team_assignment=SimpleNamespace(Controller=lambda: object()),
+                         tag_tournament=SimpleNamespace(Controller=lambda: object()),
+                         gauntlet_mode=SimpleNamespace(Controller=lambda: object()),
                          scenario_menu=SimpleNamespace(Controller=lambda settings: object()))
         with patch.dict(sys.modules, {'native_menu_texture': None}):
             exec(compile(ast.Module(body=[controller], type_ignores=[]), '<private menu>', 'exec'), namespace)
@@ -576,6 +589,23 @@ class PrivateBuilderServiceGuards(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+class PrivatePatchAnchors(unittest.TestCase):
+    """Every private-copy edit (kit_prepare.patches) applies to the CURRENT tools of both adapters: a changed
+    anchor makes Prepare.patch refuse the whole installation (TTM-NET-24) before any match can be made."""
+    def test_every_anchor_matches_once_in_both_adapter_trees(self):
+        for game in ('bt3-multifighter', 'bt4-multifighter'):
+            with patch.object(auto.kit_prepare.kit_paths, 'ADAPTER',
+                              'bt4-b14-rev2-eng' if game.startswith('bt4') else 'bt3-usa'):
+                rows = auto.kit_prepare.patches(29921)
+            for rel, edits in rows.items():
+                path = ROOT / game / rel.removeprefix('game/')
+                data = path.read_bytes()
+                nl = b'\r\n' if b'\r\n' in data else b'\n'
+                for old, new in edits:
+                    with self.subTest(game=game, file=rel, anchor=old[:60]):
+                        self.assertEqual(data.count(old.encode().replace(b'\n', nl)), 1)
+
+
 class PrivatePollingGuards(unittest.TestCase):
     """Only detection frequency changes; native/owner/archive proof stays eager."""
     def source(self, filename, game='bt3-multifighter'):
@@ -583,7 +613,7 @@ class PrivatePollingGuards(unittest.TestCase):
 
     def poll_rows(self, filename):
         return [(old, new) for old, new in auto.kit_prepare.patches(29921)['game/tools/'+filename]
-                if 'time.sleep(' in old and 'time.sleep(' in new]
+                if ('time.sleep(' in old and 'time.sleep(' in new) or old.startswith('POLL = ')]
 
     def patched(self, filename, game='bt3-multifighter'):
         source = self.source(filename, game)
@@ -598,7 +628,10 @@ class PrivatePollingGuards(unittest.TestCase):
         if class_name:
             scope = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name).body
         node = next(node for node in scope if isinstance(node, ast.FunctionDef) and node.name == name)
-        exec(compile(ast.Module(body=[node], type_ignores=[]), '<private polling>', 'exec'), namespace)
+        # the module's POLL (Oct 19: the guest-step waits' shared interval), as the patched module defines it
+        constants = [n for n in tree.body if isinstance(n, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == 'POLL' for t in n.targets)]
+        exec(compile(ast.Module(body=constants + [node], type_ignores=[]), '<private polling>', 'exec'), namespace)
         return namespace[name]
 
     def budget(self, timeout):
@@ -612,15 +645,14 @@ class PrivatePollingGuards(unittest.TestCase):
 
     def test_private_native_and_snapshot_patches_change_only_six_constants(self):
         for game in ('bt3-multifighter', 'bt4-multifighter'):
-            for filename, expected in [('fresh_team_trainer.py', {'wait_word': (.2,.005),
-                    'wait_counter': (.2,.005), 'wait_idle_leaders': (.2,.005), 'snapshot': (.1,.01)}),
+            for filename, expected in [('fresh_team_trainer.py', {'<module>': (.05,.005), 'snapshot': (.1,.01)}),
                     ('native_preparation.py', {'quiet': (.02,.005), 'apply': (.02,.005)})]:
                 before, after = ast.parse(self.source(filename, game)), ast.parse(self.patched(filename, game))
                 changes = []
                 for left, right in zip(ast.walk(before), ast.walk(after)):
                     if isinstance(left, ast.Constant) and isinstance(right, ast.Constant) and left.value != right.value:
                         owners = [node.name for node in ast.walk(before) if isinstance(node, ast.FunctionDef)
-                                  and node.lineno <= left.lineno <= node.end_lineno]
+                                  and node.lineno <= left.lineno <= node.end_lineno] or ['<module>']
                         self.assertEqual(len(owners), 1)
                         self.assertEqual((left.value,right.value), expected[owners[0]])
                         changes.append(owners[0])

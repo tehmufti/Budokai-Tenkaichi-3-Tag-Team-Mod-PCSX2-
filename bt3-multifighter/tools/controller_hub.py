@@ -103,6 +103,24 @@ def native_state(block):
     return (status == 1 and state == 2), buttons, tuple(block[0x12:0x16])
 
 
+def port_packet(buttons, raw):
+    """A pad packet (the SDL row layout quad_controller.encode_pad makes) from a PCSX2 port's raw record: PS2
+    button word (same bit order as input_binding.MASKS) and raw sticks (RX, RY, LX, LY; 128 = centre)."""
+    import math
+    import quad_controller as quad
+    rx, ry, lx, ly = raw
+    sticks = [quad.normalize_axis((v-128)*258) for v in (lx, ly, rx, ry)]
+    for start in (0, 2):
+        length = math.hypot(*sticks[start:start+2])
+        if length > 1:sticks[start:start+2] = [v/length for v in sticks[start:start+2]]
+    word = buttons & 0xFFFF
+    for start, shift in ((0, 16), (2, 20)):
+        x, y = sticks[start:start+2]
+        if abs(y) >= abs(x):word |= ((4 if y > .5 else 8 if y < -.5 else 0) << shift)
+        else:word |= ((2 if x > .5 else 1 if x < -.5 else 0) << shift)
+    return struct.pack('<I4f12x', word, *sticks)
+
+
 def _later(a, b):
     """Sequence a is at or after b (32-bit wrap)."""
     return ((a-b) & 0xFFFFFFFF) < 0x80000000
@@ -342,7 +360,7 @@ class AssignmentSink(Sink):
 
     def plan(self, hub):
         if not self.allow_arm or hub.online:return False, 3, (None, None)
-        return checkin.p12(hub.checkin.roster, self.in_match)
+        return checkin.p12(hub.checkin.roster, self.in_match, getattr(hub, 'order', None))
 
     def keys(self, hub, now):return self.plan(hub)[2]
 
@@ -438,6 +456,7 @@ class Hub:
         self.masked = {}           # key -> PS2 bits read as released until physically released
         self.previous = {}         # key -> previous PS2 word
         self.ports = None          # [(connected, buttons, sticks)] of PCSX2 ports 1-2 when readable
+        self.order = None          # Tag Team Tournament: tournament player numbers of match slots 1..n
         self.port_previous = [0, 0]
         self.pending_hub, self.pending_native = [], []
         self.labels = {}           # port -> name of a layout-less controller that pressed with it
@@ -743,6 +762,15 @@ class Hub:
     def packet(self, key, sink, slot, now, consumed):
         """The 32-byte pad packet of `key` for one sink seat: claim-masked, and new presses latched until the guest's
         consumed sequence shows a packet carrying them was taken (at most LATCH seconds)."""
+        if key in checkin.PSEUDO.values():
+            # A PCSX2 port routed to another match slot (Tag Team Tournament order): its own raw record, which the
+            # P1/P2 override never writes.
+            port = int(key.rsplit(':', 1)[-1])
+            state = self.ports[port-1] if self.ports is not None and port <= len(self.ports) else None
+            if state is None or not state[0]:
+                sink.latch[slot] = {}; sink.live[slot] = 0
+                return bytes(32)
+            return port_packet(state[1], state[2])
         device = self.devices.get(key) if key is not None else None
         row = next((r for r in self.rows.values() if r.get('key') == key), None) if device is not None else None
         packet = row.get('packet') if row is not None and device.connected else None
@@ -761,6 +789,8 @@ class Hub:
 
     def private_keys(self):
         roster = self.checkin.roster
+        if getattr(self, 'order', None):
+            return checkin.private(roster, self.devices, self.order)
         if roster is None or roster.humans < 3:
             classic = checkin.classic_keys(self.devices, roster)
             return tuple(classic+[None]*(2-len(classic)))[:2]
@@ -834,6 +864,11 @@ class Hub:
 
     def new_match(self):
         with self._locked():self.checkin.new_match(); self.heals = 0
+
+    def set_order(self, order):
+        """Tag Team Tournament: match slot j is fed by tournament player order[j-1] (None: the roster's own order)."""
+        with self._locked():
+            self.order = tuple(order) if order else None
 
     def take_messages(self):
         with self._locked():
