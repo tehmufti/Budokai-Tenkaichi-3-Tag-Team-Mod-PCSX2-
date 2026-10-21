@@ -21,7 +21,7 @@ SOURCE=ROOT/'games/Dragon Ball Z - Budokai Tenkaichi 3 (USA) (En,Ja).iso'
 OUTPUT=ROOT/'games/BT3 - Expanded Maps 2x (Experimental).iso'
 MANIFEST=ROOT/'compatibility-profiles/expanded-maps-2x.json'
 SOURCE_HASH='93f1f911e9a2bbdf92e5794fc3075ddf3f87db3df4b1cb8cfbb0448721c91172'
-BUILD_VERSION=3
+BUILD_VERSION=4
 
 
 def installed(source=SOURCE,output=OUTPUT,manifest=MANIFEST):
@@ -68,6 +68,7 @@ def build(source=SOURCE,output=OUTPUT,manifest=MANIFEST,progress=print):
                        'Undecoded animated-scenery maps remain native.',
                        'Sky dome remains native; authored intro camera positions scale with terrain.',
                        'Animated water/lava surface meshes, culling bounds and water levels scale with terrain.',
+                       'Ambient emitter origins and clash paths scale with terrain; lighting directions remain native.',
                        'Ambient effects/debris and destruction cinematics require gameplay testing.'])
     try:
         progress('Creating a separate ISO copy...');shutil.copyfile(source,temp)

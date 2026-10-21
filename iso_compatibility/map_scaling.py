@@ -133,7 +133,7 @@ def plan_stage(data,factor=2):
 
     start,end=entries[1];mapd=data[start:end]
     for count_at,pointer_at,stride,position_offsets in (
-            (8,12,64,(32,)), (24,28,32,(0,)), (40,44,32,(0,16)),
+            (8,12,64,(32,)), (32,36,16,(0,)), (40,44,32,(0,16)),
             (48,52,32,(0,16)), (56,60,32,(0,16))):
         for row in region(mapd,u32(mapd,pointer_at),u32(mapd,count_at),stride):
             for off in position_offsets:plan.vector(start+row+off,3,'mapd_positions')
@@ -143,6 +143,7 @@ def plan_stage(data,factor=2):
     for row in region(mapd,u32(mapd,20),u32(mapd,16),16):
         if u32(mapd,row+4)&2:plan.vector(start+row+8,1,'water_level')
     _surface_meshes(plan,entries)
+    _ambient_and_paths(plan,entries)
     for start,end in entries[2:5]:
         if start==end:continue
         track=data[start:end]
@@ -166,11 +167,45 @@ def plan_stage(data,factor=2):
                 if channel<3:plan.vector(start+key+8,1,'intro_camera_keys')
     # Keep unresolved systems explicit; a partial plan is useful for regression
     # tests but must never be mistaken for a playable map-scale patch.
-    plan.blockers.append('Ambient stage effects, event/prop actors and destruction debris still need matching spatial transforms')
+    plan.blockers.append('Event/prop actors and destruction debris require gameplay checks')
     if u32(root,16) or (len(entries)>8 and entries[8][1]>entries[8][0]):
         plan.blockers.append('Animated stage model and keyframe transforms require decoding')
     plan.blockers.append('Stage-transition framing and native fixed-distance arena margins require gameplay validation')
     return plan
+
+
+def _ambient_and_paths(plan, entries):
+    """Native 2420A0/242170 bind these independently of the terrain.
+
+    MEF0 sources are world positions, followed by emitter parameters. Path
+    points likewise begin with XYZ; their timing, rotation and flags stay
+    native. Moving only the terrain leaves steam in solid rock and clash
+    paths at the old arena size. MAPD light vectors are directions, not points.
+    """
+    def table(data, pointer, count, stride, minimum):
+        require(count <= 1000000 and pointer % 4 == 0 and
+                (not count or pointer >= minimum) and
+                0 <= pointer <= len(data)-count*stride,
+                'Stage effect/path table outside archive')
+        return range(pointer, pointer+count*stride, stride)
+    if len(entries) > 18:
+        start,end=entries[18]
+        if start != end:
+            data=plan.data[start:end]
+            require(len(data)>=32 and data[:4]==b'MEF0', 'Unknown stage emitter archive')
+            for offset in (8,16,24):
+                for row in table(data,u32(data,offset+4),u32(data,offset),48,32):
+                    plan.vector(start+row,3,'ambient_emitter_position')
+    if len(entries) > 23:
+        start,end=entries[23]
+        if start != end:
+            data=plan.data[start:end]
+            require(len(data)>=20 and not u32(data,16), 'Unknown/relocated stage path archive')
+            rows=table(data,u32(data,12),u32(data,8),16,20)
+            protected=max(20,rows.stop)
+            for row in rows:
+                for point in table(data,u32(data,row+4),u32(data,row),48,protected):
+                    plan.vector(start+point,3,'stage_path_position')
 
 
 def _surface_meshes(plan,entries):

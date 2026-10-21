@@ -151,9 +151,9 @@ MAX_ASSISTS = 4                 # beta.40: up to four assisters per side, one fo
 R3, FACE_SHOULDER = 0x4, 0xFF00  # raw pad bits (input_script): R3 alone, no L1/L2/R1/R2/face button held
 PRESS_WORDS = (328, 336, 340)    # the pad record's held word and both pressed words (lockon_select's mask set)
 # beta.40 formation (world units): (behind the ally, away from the enemy struggler; to its side). Slot 0/1 close
-# behind and beside the ally, slot 2/3 a step further back and wider; no two spots closer than ~14 units. The
+# behind and beside the ally, slot 2/3 a step further back and wider; no two spots closer than 12 units. The
 # first slot of a side takes the side nearer the drawn camera (sign kept for that assister).
-FORMATION = ((7.0, 12.0), (7.0, -12.0), (17.0, 24.0), (17.0, -24.0))
+FORMATION = ((3.0, 12.0), (3.0, -12.0), (8.0, 24.0), (8.0, -24.0))
 ARENA_MARGIN = 10.0
 TRANSITION_TICKS = math.ceil(0.5 * ACTOR_HZ)   # the fly-in before the pose (eased glide to the formation spot)
 TRANSITION_ACTION = 15                       # native forward dash played during it (probed live, beta.40)
@@ -781,9 +781,22 @@ def r3pre_code():
 def frame_stub(previous):
     """Spliced into team_participation's FRAME (its single `jal previous` now calls this): R3PRE, then the recorded
     predecessor with every register as FRAME left it."""
-    a = Assembler(FRAMESTUB); a.addiu(29, 29, -16); a.i(63, 31, 29, 0); a.call(R3PRE)
-    a.i(55, 31, 29, 0); a.addiu(29, 29, 16); a.jump(previous)
+    import beam_assist_effects as effects
+    a = Assembler(FRAMESTUB); a.addiu(29, 29, -48); a.i(63, 31, 29, 0)
+    a.i(31,8,29,16);a.i(31,9,29,32);a.call(R3PRE)
+    # A settings-only/legacy match may not contain the optional emitter code.
+    a.li(8,effects.CONTROL);a.lw(8,8);a.li(9,effects.MAGIC);a.branch(5,8,9,'no_effects')
+    a.i(30,8,29,16);a.i(30,9,29,32);a.call(effects.TICK);a.jump('done')
+    a.label('no_effects');a.i(30,8,29,16);a.i(30,9,29,32)
+    a.label('done');a.i(55,31,29,0);a.addiu(29,29,48);a.jump(previous)
     data = a.finish(); assert len(data) <= R3PRE-FRAMESTUB; return data
+
+
+def previous_frame_stub(previous):
+    """Exact predecessor used by already prepared matches before visible beams."""
+    a=Assembler(FRAMESTUB);a.addiu(29,29,-16);a.i(63,31,29,0);a.call(R3PRE)
+    a.i(55,31,29,0);a.addiu(29,29,16);a.jump(previous)
+    return a.finish()
 
 
 def splice_site():
@@ -985,7 +998,7 @@ def fconst(a, f, value, temp=8):
     a.li(temp, struct.unpack('<I', struct.pack('<f', value))[0]); mtc1(a, temp, f)
 
 
-def place_code():
+def place_code(formation=FORMATION, grounded=True):
     """a0 assister, a1 struggling ally, a2 enemy struggler, a3 its slot -> v0 = 1 when the assister's root moved.
     The slot's formation spot: FORMATION[k] behind the ally (away from the enemy) and to its side, the side sign kept
     in the slot (unset: the side nearer the drawn camera's eye, else +1), at the ally's height. While the slot is
@@ -1015,7 +1028,7 @@ def place_code():
     a.label('signed')
     # FORMATION[k]: f5 = behind, f6 = aside (times the sign).
     a.lw(9, 22, S['k'])
-    for k, (back, aside) in enumerate(FORMATION):
+    for k, (back, aside) in enumerate(formation):
         a.addiu(10, 0, k); a.branch(5, 9, 10, f'not{k}')
         fconst(a, 5, back); fconst(a, 6, aside); a.jump('formed'); a.label(f'not{k}')
     a.jump('done')
@@ -1053,6 +1066,7 @@ def place_code():
     fop(a, 6, 2, 0)
     a.label('above_floor'); a.i(57, 2, 29, POS+4)
     # Terrain: a spot under the floor (a hill beside the ally) stands on the floor.
+    if grounded: a.addiu(5, 19, 2416)
     a.addiu(4, 29, POS); a.call(FLOOR); a.branch(4, 2, 0, 'clamped')
     a.lw(9, 29, POS+12); a.sw(9, 29, POS+4); bump(a, TELEMETRY['lifted'])
     a.label('clamped'); a.li(8, 0x3F800000); a.sw(8, 29, POS+12)
@@ -1085,12 +1099,14 @@ FLOOR_REGS = (31, 16, 17)
 SINK, LIFT_FROM = 0.5, 40.0         # a spot more than SINK under the floor is buried; the query starts 40 above it
 
 
-def floor_code():
+def floor_code(grounded=True):
     """a0 = a root XYZW: v0 = 1 when the terrain floor at its X/Z is more than SINK above it (Y down), with that
     floor's Y in its W; else 0 (no floor found, arena bounds unreadable). The floor query (spawn_placement's) runs
     from LIFT_FROM above the point, then from the arena ceiling; the native query globals are kept."""
-    a = Assembler(FLOOR); frame(a, FLOOR_REGS, 0x40)
+    regs, stack = ((31,16,17,18),0x60) if grounded else (FLOOR_REGS,0x40)
+    a = Assembler(FLOOR); frame(a, regs, stack)
     a.move(16, 4); a.move(2, 0)
+    if grounded: a.move(18, 5)
     a.li(8, arena_bounds.STAGE); a.lw(17, 8); throws.ptr(a, 17, 68, 'done'); a.lw(17, 17, 64)
     throws.ptr(a, 17, 12, 'done')
     for i, off in enumerate(terrain.QUERY_GLOBALS): a.lw(8, 28, off); a.sw(8, 29, 0x20+4*i)
@@ -1098,11 +1114,29 @@ def floor_code():
     a.move(4, 16); a.call(QUERY); a.branch(5, 2, 0, 'hit')
     a.i(49, 12, 17, 4); a.move(4, 16); a.call(QUERY); a.branch(4, 2, 0, 'restore')
     a.label('hit'); a.move(2, 0); a.i(49, 1, 16, 4); fconst(a, 2, SINK); fop(a, 0, 2, 0, 2)
-    fop(a, 0x34, 0, 2, 1); a.branch(17, 8, 0, 'restore')                         # floor + SINK < Y: buried
+    fop(a, 0x34, 0, 2, 1)
+    if grounded:
+        a.branch(17, 8, 1, 'apply_floor')
+        # A grounded ally should have grounded helpers even on slightly lower
+        # terrain. An airborne clash keeps its altitude. Never drag a helper
+        # down a cliff: only snap to a floor within 24 units of the ally.
+        a.i(57, 0, 29, 0x40)
+        # PLACE already authenticated the ally's model and its root pointer.
+        a.branch(4, 18, 0, 'restore')
+        a.i(49, 1, 18, 4); fop(a, 1, 2, 0, 1); fop(a, 5, 2, 2)
+        fconst(a, 3, 24.0); fop(a, 0x36, 0, 2, 3); a.branch(17, 8, 0, 'restore')
+        fconst(a, 2, LIFT_FROM); fop(a, 1, 12, 1, 2)
+        a.move(4, 18); a.call(QUERY); a.branch(4, 2, 0, 'restore')
+        a.move(2, 0); a.i(49, 1, 18, 4); fop(a, 1, 1, 0, 1); fop(a, 5, 1, 1)
+        fconst(a, 3, 2.0); fop(a, 0x36, 0, 1, 3); a.branch(17, 8, 0, 'restore')
+        a.i(49, 0, 29, 0x40)
+        a.label('apply_floor')
+    else:
+        a.branch(17, 8, 0, 'restore')                                           # floor + SINK < Y: buried
     a.i(57, 0, 16, 12); a.addiu(2, 0, 1)
     a.label('restore')
     for i, off in enumerate(terrain.QUERY_GLOBALS): a.lw(8, 29, 0x20+4*i); a.sw(8, 28, off)
-    a.label('done'); unframe(a, FLOOR_REGS, 0x40); a.jr()
+    a.label('done'); unframe(a, regs, stack); a.jr()
     data = a.finish(); assert len(data) <= QUERY-FLOOR, hex(len(data)); return data
 
 
@@ -1679,10 +1713,17 @@ def _build(ram, s, source):
         if frame_prev: code = code + [(FRAMESTUB, frame_stub(frame_prev))]
         import native_hud_style
         classic = native_hud_style.classic_view(ram)   # the native HUD kit re-points the caption's text calls
+        upgrades=[]
         for p, d in code + hook_patches(mask):
-            if classic[p:p+len(d)] != d: raise ValueError(f'Changed beam struggle program {p:08X}')
+            if classic[p:p+len(d)] == d:continue
+            prior=([previous_frame_stub(frame_prev)] if p==FRAMESTUB else
+                   [place_code(grounded=False),place_code(((7.,12.),(7.,-12.),(17.,24.),(17.,-24.)),grounded=False)] if p==PLACE else
+                   [floor_code(grounded=False)] if p==FLOOR else [])
+            if not any(len(old)<=len(d) and classic[p:p+len(d)]==old+bytes(len(d)-len(old)) for old in prior):
+                raise ValueError(f'Changed beam struggle program {p:08X}')
+            upgrades.append((p,d))
         config = config_bytes(s, consts, mask)
-        patches = [(CONTROL+0x20, config), (TEXT, text_bytes(s))]
+        patches = upgrades+[(CONTROL+0x20, config), (TEXT, text_bytes(s))]
     else:
         if any(ram[BASE:END]): raise ValueError('Beam struggle reservation occupied')
         mask = groups(s)

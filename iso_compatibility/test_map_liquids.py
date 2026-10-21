@@ -60,9 +60,9 @@ class SurfaceSafetyTests(unittest.TestCase):
         with self.assertRaises(FormatError):_surface_meshes(ScalePlan(raw,2),entries)
 
     def test_old_generated_isos_require_rebuild(self):
-        self.assertGreater(BUILD_VERSION,2)
+        self.assertGreater(BUILD_VERSION,3)
         with tempfile.TemporaryDirectory()as folder:
-            manifest=Path(folder)/'maps.json';manifest.write_text(json.dumps(dict(build_version=2)))
+            manifest=Path(folder)/'maps.json';manifest.write_text(json.dumps(dict(build_version=3)))
             with patch('iso_compatibility.expanded_maps.cached_profile')as profile:
                 self.assertIsNone(installed(manifest=manifest));profile.assert_not_called()
 

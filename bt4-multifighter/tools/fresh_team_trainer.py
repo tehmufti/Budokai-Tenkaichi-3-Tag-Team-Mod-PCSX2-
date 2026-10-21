@@ -443,6 +443,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     builders.append(lambda r: beam_struggle.build_memory(r, settings=preferences, source=source))
     import beam_assist_pose
     builders.append(lambda r: beam_assist_pose.build_memory(r, source=source))
+    import beam_assist_effects
+    builders.append(lambda r: beam_assist_effects.build_memory(r, source=source))
     import buu_ultimate_fanout
     builders.append(lambda r: buu_ultimate_fanout.build_memory(r, enabled=False,krillin_enabled=False, source=source))
     import inactive_actor_guard
@@ -516,7 +518,7 @@ SLOTS_FULL = ('Need two free savestate slots between 220 and 239 in {folder}, bu
 
 # Builders final_team_manifest imports on first use (about a second of imports on a first match).
 WARM_MODULES = ('cinematic_position', 'cinematic_position_camera', 'ground_locomotion', 'extra_intros', 'vanish_pair_guard',
-                'body_swap_worker', 'modded_training', 'fusion_duration_worker', 'beam_struggle', 'beam_assist_pose',
+                'body_swap_worker', 'modded_training', 'fusion_duration_worker', 'beam_struggle', 'beam_assist_pose', 'beam_assist_effects',
                 'buu_ultimate_fanout', 'inactive_actor_guard', 'four_player_mode', 'split_borders', 'tournament_ringout',
                 'rush_cinematics', 'lockoff_target', 'lockon_select', 'lockon_threat', 'revive_targeting', 'fusion_buffs',
                 'native_hud_style')

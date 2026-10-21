@@ -148,9 +148,19 @@
       "bt4": "423e41e00e5af3e6c8ab6578d5fe9e73a3e04e294e1e87aff6738dfcc398078c",
       "shared": true
     },
+    "tools/beam_assist_effects.py": {
+      "bt3": "2499eab7858112032770df93864e5ffd49a4d1c6aee3278e0c81c10d13cb8bf9",
+      "bt4": "2499eab7858112032770df93864e5ffd49a4d1c6aee3278e0c81c10d13cb8bf9",
+      "shared": true
+    },
     "tools/beam_assist_pose.py": {
       "bt3": "4fbb0296bc51e14dace2aadb7e7d76ca630ce00d25285c376573949bc78531c2",
       "bt4": "4fbb0296bc51e14dace2aadb7e7d76ca630ce00d25285c376573949bc78531c2",
+      "shared": true
+    },
+    "tools/beam_assist_texture_cache.py": {
+      "bt3": "97f181af3065925354800b0e81429ac8bc3a178f4b4322c5b136f50f11ab6530",
+      "bt4": "97f181af3065925354800b0e81429ac8bc3a178f4b4322c5b136f50f11ab6530",
       "shared": true
     },
     "tools/beam_clash.py": {
@@ -164,8 +174,8 @@
       "shared": true
     },
     "tools/beam_struggle.py": {
-      "bt3": "45f0f310589669c413a4904dde9691a18c79b2f3a3533f9af9e6b55566caa3ce",
-      "bt4": "45f0f310589669c413a4904dde9691a18c79b2f3a3533f9af9e6b55566caa3ce",
+      "bt3": "3be2c146dfc663c9af8131427c46cb6dbf64c21fe9e7c0e5276150b23d1658fd",
+      "bt4": "3be2c146dfc663c9af8131427c46cb6dbf64c21fe9e7c0e5276150b23d1658fd",
       "shared": true
     },
     "tools/body_swap.py": {
@@ -584,8 +594,8 @@
       "shared": true
     },
     "tools/fresh_team_trainer.py": {
-      "bt3": "b387e63bd7502952a998eb7c5285bcf63c9484a333bb52fb83beea3e273b8d35",
-      "bt4": "052b8589b88a7c032d358d575339e9d3596f0779ca4d334e53864bf703c0a4bb",
+      "bt3": "e00852d4e0808793de17c71ef16011a3df584f2bbab81081af870b932d1834a3",
+      "bt4": "483095cf67a64ddf892a62538875ee713ebf06fdc1f2408b866d2bebc0726dbb",
       "shared": false
     },
     "tools/fusion_audio_restore.py": {
