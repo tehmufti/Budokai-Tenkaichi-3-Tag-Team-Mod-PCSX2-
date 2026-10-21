@@ -1,3 +1,12 @@
+## Version 14.1
+
+**Tag Team Tournament**
+- A loading screen now covers the trip from Team Select to the tournament, so the menu changes no longer show.
+- CPU fighters now fight at your COM difficulty setting (or higher as the tournament goes on) instead of standing idle, also while someone performs a special.
+- After each match the screen goes straight to black and back to the bracket, with no TEAM BATTLE card flash and no restart noise.
+
+If you already have the mod, use the Windows or Linux Updater and choose your installed mod folder. Otherwise, download the matching full installer. Everyone in an online room should use Version 14.1.
+
 ## Version 14
 
 **New modes** (Main menu > Select > Modded Modes)
