@@ -442,6 +442,11 @@ SAY_TOURNAMENT_RESULT = 'Tag Team Tournament: {winner} won; the tournament conti
 SAY_TOURNAMENT_CHAMPION = 'Tag Team Tournament: {winner} won the final and the tournament!'
 SAY_TOURNAMENT_EXIT = 'The tournament match was left without a result: back to the main menu.'
 TOURNAMENT_COVER = 'Tournament results...'
+# The cover from the last confirmed team to the tournament (or to the next pick's fighter select).
+TOURNAMENT_START_COVER = 'Starting the tournament...'
+TOURNAMENT_PASS_COVER = 'Getting the next fighter select ready...'
+COVER_SETTLED = 60          # cover animation steps after which its entrance has played (loading_lights_a.FIRST 54)
+CARRY_AHEAD = 1.1           # seconds from carrying a cover into a menu state to that state's first frame (live ~1.1)
 TOURNAMENT_FAILED = 'The tournament could not continue after this match.'
 SAY_TOO_MANY = 'This {teams} match has more than {capacity} fighters on a side, so it plays as a normal tag match.'
 SAY_RETURNED = {'main': 'Back at the main menu.', 'character_select': 'Back at character selection.'}
@@ -780,12 +785,23 @@ class Autopilot:
                     with PineClient(timeout=5) as p:tournament.cancel(p,'no clean main menu to return to')
                     self.report(say(SAY_TOURNAMENT_DRAFT_OFF),obs,'warning')
                     return
-                self.restore_menu('main')
+                veil=getattr(tournament,'veil',None)
+                if veil is not None:self.tournament_veil_show(veil)
+                self.restore_menu('main',keep_cover=bool(getattr(self,'tournament_veiled',False)))
                 with PineClient(timeout=5) as p:
                     if self.state=='MENU' and tournament.scene(p)[1]==tag_tournament.MAIN_MENU:
                         self.mode_menu.reset(p,return_page=0)
                         tournament.main_restored(p)
                 return
+            if getattr(self,'tournament_veiled',False):self.tournament_veil_tick()
+            if getattr(tournament,'drafting',False):
+                if not getattr(self,'veil_warmed',False) and self.presentation is not None:
+                    # The cover the last confirmed team brings up is painted while the teams pick: its first paint in
+                    # a session takes seconds (8.5 s cold, 0.6 s warm), the Team Select's black veil meanwhile.
+                    self.veil_warmed=True
+                    try:self.presentation.prerender([TOURNAMENT_START_COVER,TOURNAMENT_PASS_COVER])
+                    except (OSError,RuntimeError,ValueError) as error:log(f'Loading cover not painted ahead: {error}')
+            else:self.veil_warmed=False
         scene=obs.menu_scene
         assigned=getattr(self,'assigned_input',None)
         online=False
@@ -1058,14 +1074,19 @@ class Autopilot:
         state = 'not identified after the wait' if timed_out else destination or 'not identified yet'
         log(f'Menu return: {seen[0]}; destination {str(state).replace("_", " ")}.')
 
-    def restore_menu(self, destination, fallback=None, facts=None):
+    def restore_menu(self, destination, fallback=None, facts=None, keep_cover=False):
+        """keep_cover: the in-game cover up now (the Tag Team Tournament's) is carried into the loaded menu state
+        (carry_cover: its first frame draws it) and stays up afterwards."""
         from runtime_owner import EmulatorClosed
         facts = dict(facts or {}, destination=destination)
         checkpoints = self.checkpoints()
-        self.cover('Returning to character selection...' if destination == 'character_select'
-                   else 'Returning to the main menu...', 50)
+        if not keep_cover:
+            self.cover('Returning to character selection...' if destination == 'character_select'
+                       else 'Returning to the main menu...', 50)
+        self.carried_record = None
         try:
-            checkpoints.restore(destination)
+            if keep_cover:checkpoints.restore(destination, extra=self.carry_cover)
+            else:checkpoints.restore(destination)
         except EmulatorClosed:
             raise
         except PreparationBusyError:
@@ -1123,11 +1144,100 @@ class Autopilot:
         self.menu_return_started = None
         self.menu_return_fallback = self.menu_return_seen = None
         self.menu_return_boot, self.menu_return_restarted = 0, False
-        self.uncover()
+        if keep_cover and getattr(self,'carried_record',None) is not None:
+            self.presentation.adopt(self.carried_record)   # the loaded state draws it: syncs only renew it
+            self.carried_on()
+        elif keep_cover:
+            # Not carried: the loaded state has no cover; publish it again at once (the buffers are unknown).
+            import guest_loading_screen
+            guest_loading_screen.invalidate_buffers()
+            screen=self.tournament_screen()
+            if screen is not None:screen.sync(force=True)
+        elif not keep_cover:
+            self.uncover()
         if fallback is not None:
             # Uncovered first: the notice is in the Play window (menus draw no guest cover).
             self.fail('menu_return', fallback, cover=False, recovered=True, context=facts)
         self.report(say(SAY_RETURNED.get(destination, SAY_RETURNED['main'])))
+
+    def carry_cover(self, ram):
+        """Patch blocks (menu_return restore extra) that put the in-game cover shown now into the menu state about to
+        be loaded, its animation going on; remembered for adopt after the load. None shown: no blocks."""
+        import guest_loading_screen
+        record=self.presentation.record() if callable(getattr(self.presentation,'record',None)) else None
+        self.carried_record=record;self.carried_at=None
+        if record is None:return []
+        counters=(0,0,0)
+        try:
+            with PineClient(timeout=5) as p:counters=guest_loading_screen.live_counters(p)
+            self.carried_at=(time.monotonic(),counters)
+        except (OSError,PineError):pass
+        # The loaded copy goes on where the cover will be by then (CARRY_AHEAD after this read); restore_menu
+        # corrects the rest once the load is acknowledged.
+        ahead=round(CARRY_AHEAD*self.cover_steps())
+        screen=self.tournament_screen()
+        try:
+            return guest_loading_screen.cover_blocks(record,ram,tuple(c+ahead for c in counters),
+                                                     getattr(screen,'tick',guest_loading_screen.TICK))
+        except ValueError as error:
+            # (both buffers busy in that state) the cover is published again once it is loaded
+            log(f'Loading cover not carried into the menu state: {error}.')
+            self.carried_record=self.carried_at=None
+            return []
+
+    def cover_steps(self):
+        """In-game cover animation steps per second (one field of emulated time each)."""
+        import guest_loading_screen
+        return 294_912_000/guest_loading_screen.TICK
+
+    def carried_on(self):
+        """After the load: the carried cover's animation counters as if it had never stopped."""
+        import guest_loading_screen
+        carried=getattr(self,'carried_at',None)
+        if carried is None:return
+        since,(frames,menu_frames,cycle)=carried
+        steps=round((time.monotonic()-since)*self.cover_steps())
+        try:
+            with PineClient(timeout=5) as p:
+                p.write_u32(guest_loading_screen.CONTROL+guest_loading_screen.MENU_FRAMES,menu_frames+steps)
+                p.write_u32(guest_loading_screen.CONTROL+guest_loading_screen.CYCLE_WORD,
+                            (cycle+steps)%guest_loading_screen.CYCLE)
+        except (OSError,PineError):pass
+
+    def tournament_veil_show(self, veil):
+        """Tag Team Tournament: the loading cover from the last confirmed team until the tournament (or the next
+        pick's fighter select) is on screen - an owned in-game cover (drawn in every scene, every pad withheld under
+        it, the game muted by the loading helper), carried into the main-menu state the draft loads."""
+        if self.presentation is None or self.tournament_screen() is None:return
+        try:self.presentation.set_teams(self.tournament.cover_teams())
+        except (ValueError,TypeError,AttributeError):
+            try:self.presentation.set_teams([])
+            except ValueError:pass
+        self.cover(TOURNAMENT_START_COVER if veil.get('kind')=='start' else TOURNAMENT_PASS_COVER,50,owned=True)
+        self.tournament_veiled=bool(self.cover_started)
+        # The menu state is loaded under the cover once its entrance has played: what is carried across the load is
+        # then the settled storm, whose small timing differences do not show.
+        import guest_loading_screen
+        deadline=time.monotonic()+2.5
+        while self.tournament_veiled and time.monotonic()<deadline:
+            try:
+                with PineClient(timeout=5) as p:
+                    if guest_loading_screen.live_counters(p)[1]>=COVER_SETTLED:break
+            except (OSError,PineError):break
+            time.sleep(0.05)
+        if self.tournament_veiled:
+            log('Tag Team Tournament: covered until '+('the tournament opens.' if veil.get('kind')=='start'
+                                                       else 'the next fighter select is up.'))
+
+    def tournament_veil_tick(self):
+        """Each menu poll under the tournament's cover: it comes down once the tournament says so (veil_tick)."""
+        tournament=self.tournament
+        with PineClient(timeout=5) as p:done=tournament is None or tournament.veil_tick(p)
+        if done:
+            if tournament is not None:
+                veil=tournament.veil;tournament.veil=None
+                if veil is not None:log(f"Tag Team Tournament: cover down after {time.monotonic()-veil['since']:.1f} s.")
+            self.uncover()
 
     def restore_failed(self, destination, error, facts):
         """A menu checkpoint could not be loaded: character selection falls back to the clean
@@ -1278,8 +1388,9 @@ class Autopilot:
         except (OSError, RuntimeError) as error:
             log(f'Loading pictures will render when shown: {error}')
 
-    def cover(self, message='Getting your fighters ready...', progress=None, error=None):
-        """The loading cover; error=(line 1, line 2) draws the failure state (player_errors.cover_text)."""
+    def cover(self, message='Getting your fighters ready...', progress=None, error=None, owned=False):
+        """The loading cover; error=(line 1, line 2) draws the failure state (player_errors.cover_text). owned: the
+        in-game cover is drawn in every scene and withholds the pads (guest_loading_screen.OWNED)."""
         if self.presentation is None: return
         try:
             if progress is not None: self.progress = progress
@@ -1295,6 +1406,8 @@ class Autopilot:
                     from localization import tr
                     cover_title = lambda _: tr('Match setup stopped')
                 self.presentation.show(cover_title(error), message, self.progress, error=tuple(error))
+            elif owned:
+                self.presentation.show(title, message, self.progress, owned=True)
             else:
                 self.presentation.show(title, message, self.progress)
             if not self.cover_started:
@@ -1306,6 +1419,7 @@ class Autopilot:
             log(f'Loading screen unavailable: {error}. Preparation status remains in this window.')
 
     def uncover(self, refresh_surface=False):
+        self.tournament_veiled=False
         if self.presentation is not None:
             try:
                 self.presentation.hide(refresh_surface=refresh_surface)
@@ -2133,7 +2247,12 @@ class Autopilot:
         from PIL import Image
         try:
             with PineClient(timeout=5) as p:
-                screen.show_picture(Image.new('RGB',(512,448),(0,0,0)),surface='battle',client=p)
+                black=Image.new('RGB',(512,448),(0,0,0))
+                # Owned: drawn in every scene (also once the battle loop is over), pads withheld; through the
+                # presentation the loading helper mutes the game while it is up.
+                if callable(getattr(self.presentation,'show_picture',None)):
+                    self.presentation.show_picture(black,surface='owned',client=p)
+                else:screen.show_picture(black,surface='owned',client=p)
                 self.cover_started=True;self.black_pending=dict(screen=screen,since=time.monotonic(),drawn=None)
                 self.tournament_black_tick(p)
                 return True
@@ -2176,27 +2295,35 @@ class Autopilot:
             if ring is not None:
                 log(f'Tag Team Tournament: ring-outs eliminated {ring[0]} of the {ring[1]} losing fighters ({ring[2]} ring-outs in the match).')
         except (OSError,PineError):pass
-        # No cover before the load: the battle has already faded to black, and a first cover only waited ~2 s
-        # for a frame the ending battle never draws.
         self.reset_reload_worker()
         self.heartbeat=None;self.freeze_dumped=False;self.phase1_since=None
         self.deferred_intro_object=None;self.play_intro_after_loading=False
         self.playable=None;self.ack_token=None
         started=time.monotonic()
         try:
-            if not tag_tournament.load_original(match['original'],match['token'],lambda:PineClient(timeout=5)):
+            # The match has faded to black: from here the hand-back is covered by plain black (the game's own fade
+            # to its result screen), the game muted by the loading helper (the restored start plays its music, crowd
+            # and a voice) and the pads withheld. The covered copy of the match start (tag_tournament.covered_copy)
+            # draws that black from its first frame; without it, the plain start is loaded and black re-published.
+            covered=self.tournament_black()
+            carried=match.get('covered') if covered else None
+            if not tag_tournament.load_original(carried[0] if carried else match['original'],match['token'],
+                                                lambda:PineClient(timeout=5)):
                 raise TimeoutError('the saved start of the match did not load')
-            # The loaded state brought its own cover (the card saved with it): replace it by plain black at once,
-            # as the game's own fade to the result screen. That black is also the frame the screen keeps while the
-            # game loads the result screen.
-            self.tournament_black()
+            if carried:
+                self.presentation.adopt(carried[1])
+                self.black_pending=dict(screen=self.tournament_screen(),since=time.monotonic(),drawn=None)
+            else:
+                # The loaded state brought its own cover (the card saved with it): replace it by plain black at once.
+                self.tournament_black()
             loaded=time.monotonic()
             with PineClient(timeout=5) as p:
                 tag_tournament.finish_native(p,tournament,match,winner,lambda:self.lifetime.require_alive() if self.lifetime is not None else None,
                                              tick=self.tournament_black_tick)
             drawn=self.tournament_black_report()
             log(f'Tag Team Tournament: result handed back in {time.monotonic()-started:.1f} s (match start load {loaded-started:.1f} s, native result {time.monotonic()-loaded:.1f} s'
-                +(f', black drawn after {drawn:.2f} s' if drawn is not None else '')+').')
+                +(f', black drawn after {drawn:.2f} s' if drawn is not None else '')
+                +(', covered copy' if carried else ', plain copy')+').')
         except Exception as error:  # noqa: BLE001 - one explained failure; the tournament cannot go on
             from runtime_owner import EmulatorClosed
             if isinstance(error,EmulatorClosed):raise
@@ -2390,7 +2517,7 @@ class Autopilot:
                     self.return_to_menu(obs)
                     continue
                 if self.state != 'MENU': self.state = 'MENU'
-                if self.cover_started: self.uncover()
+                if self.cover_started and not getattr(self,'tournament_veiled',False): self.uncover()
                 self.warm_preparation()
                 self.report(say_text(obs.pending_reason), obs, 'waiting')
                 try:

@@ -54,6 +54,16 @@ def owned_atlases(a,fail,tag):
 def payload():
     a=Assembler(CODE);services.save(a)
     a.call(controller_assignment.CODE)
+    # Under the watcher's owned loading cover (guest_loading_screen.OWNED: the Tag Team Tournament transitions)
+    # nothing reaches the game or a modded page: both ports' raw and translated words are withheld while it lasts.
+    import guest_loading_screen as cover
+    a.li(8,cover.CONTROL);a.lw(9,8);a.li(10,cover.MAGIC);a.branch(5,9,10,'uncovered')
+    a.lw(9,8,32);a.addiu(10,0,cover.OWNED);a.branch(5,9,10,'uncovered')
+    a.lw(9,8,16);a.i(11,10,9,cover.LEASE);a.branch(4,10,0,'uncovered')
+    a.li(12,old.PAD)
+    for port in (0,0x1C0):
+        for off in (0x150,0x18C,0x190):a.sw(0,12,port+off)
+    a.label('uncovered')
     # Tag Team Tournament: its pad mask (entry check, draft stage hold) once the armed/drafting pnach is READY,
     # after the P1/P2 assignment wrote the translated words.
     # a0 = the pad routine's caller: the bracket's CPU-match helper acts on the bracket loop's own read only.

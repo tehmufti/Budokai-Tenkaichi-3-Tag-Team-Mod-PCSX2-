@@ -114,8 +114,8 @@
       "shared": true
     },
     "tools/autopilot.py": {
-      "bt3": "0e5fe2049f2f75569ae64b403c6dc59489896dfa9bf604d07d073e05cdfee40c",
-      "bt4": "289cec0e2ace62668fde902857ad5c7ac0b5e93b5328da1f438e487ad2af840d",
+      "bt3": "aeb946337bbda71a5a9e809990177e1598645c1bd735623c5360ac69c0c3c274",
+      "bt4": "c985debe98a7953301a83a1fa1e9baf93cdaad1169717090689fad14d0ef353f",
       "shared": false
     },
     "tools/aux_effect_bounds.py": {
@@ -714,8 +714,8 @@
       "shared": false
     },
     "tools/guest_loading_screen.py": {
-      "bt3": "518c9e30a1d2556d0ab88b0c7461f1684780539ab44843214797763e8d73a0b8",
-      "bt4": "c870137c99153be57f3cee4ff9e8b25ccc90a3486a9dbcae31586df88ab8b2f1",
+      "bt3": "4b8e9f26dfaf25dcd696175e0c3731db56a70a2d21e3346e438f933cba178cac",
+      "bt4": "0b3613a3b481c6a349116b7debc3c19de9dc48436c6a397be56fc1522dd1e353",
       "shared": false
     },
     "tools/heap128.py": {
@@ -829,8 +829,8 @@
       "shared": true
     },
     "tools/loading_presentation.py": {
-      "bt3": "0534bdbdcc7ce5f257e105146bcf7651a93d6ea464a5eed6d79a86cbd51e21e4",
-      "bt4": "6ede4889d7c309303f3e459d273a43068d5643b6868e2ee6a095d3b551efb903",
+      "bt3": "a461cd35ff61bd0e06c8f4a12e35a19188262c8d604f2c5a054be72ac2d240bd",
+      "bt4": "44bb17f3906d45a6cc639d01a95f487c57d20ba48ef08c533c53602b487e56a5",
       "shared": false
     },
     "tools/loading_protocol.py": {
@@ -854,8 +854,8 @@
       "shared": true
     },
     "tools/localization.py": {
-      "bt3": "b41b69e42394c9deb7fce8267403e3178752b8740f070f46416e6b8f7d3a9a03",
-      "bt4": "b41b69e42394c9deb7fce8267403e3178752b8740f070f46416e6b8f7d3a9a03",
+      "bt3": "6f7972e2079696c18563870635b78bb385d77f4c3d0f31b9990f078c942d5eb7",
+      "bt4": "6f7972e2079696c18563870635b78bb385d77f4c3d0f31b9990f078c942d5eb7",
       "shared": false
     },
     "tools/lockoff_target.py": {
@@ -894,8 +894,8 @@
       "shared": false
     },
     "tools/menu_return.py": {
-      "bt3": "ef76cd574b91cb476630bd37b324e8958f1ca8061a4c6a4e984b52240611906f",
-      "bt4": "b46986ac1cc48575d25a1cf2487c4d42227414e0e4e01e7efd432cdf7e9fc263",
+      "bt3": "985a3062ae2dfcf8940ff925a046719e7b61aeff5fbd9e9756968f597800a95e",
+      "bt4": "06c57fd609d92e27ea6bb37b9d09baa90d60338b20ede14cba1d8dbe3a1c46f5",
       "shared": false
     },
     "tools/mission100.py": {
@@ -1009,8 +1009,8 @@
       "shared": true
     },
     "tools/native_mode_menu.py": {
-      "bt3": "0f67ae26c46ad0d524255847f531e27e979723e56b00d93db46c7ccb5412e646",
-      "bt4": "0f67ae26c46ad0d524255847f531e27e979723e56b00d93db46c7ccb5412e646",
+      "bt3": "3d78f3600da91f38bb7249d11c75cd16d45db7b6193e576f737f423d961942ee",
+      "bt4": "3d78f3600da91f38bb7249d11c75cd16d45db7b6193e576f737f423d961942ee",
       "shared": true
     },
     "tools/native_preparation.py": {
@@ -1539,8 +1539,8 @@
       "shared": true
     },
     "tools/tag_tournament.py": {
-      "bt3": "7c06df094af010196ec1ee19978db686581ca2cda9b1d0aaccc3880f1b26c416",
-      "bt4": "7c06df094af010196ec1ee19978db686581ca2cda9b1d0aaccc3880f1b26c416",
+      "bt3": "c91c887c3fe3f54e5d4ff36adbef7b0d55a2c023ec819a8fb426aecaed3bbaad",
+      "bt4": "c91c887c3fe3f54e5d4ff36adbef7b0d55a2c023ec819a8fb426aecaed3bbaad",
       "shared": true
     },
     "tools/team_ai.py": {

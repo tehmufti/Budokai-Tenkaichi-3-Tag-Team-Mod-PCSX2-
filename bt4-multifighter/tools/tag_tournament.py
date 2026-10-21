@@ -27,7 +27,7 @@ ending. The mod adds:
 * Controllers: every tournament player's own controller drives their fighter in every match, and their turn at the
   native entry (controller_hub.Hub.set_order).
 """
-from native_map import A
+from native_map import A, NativeMapError
 import json
 import random
 import struct
@@ -52,7 +52,7 @@ COPY_LEADER_ITEMS = 1                # TABLE flag: members without items take th
 F = dict(magic=0, version=4, applied=8, side=12, entrant=16, count=20, epoch=24, refused=28,
          draft=0x40, ready=0x60, block=0x64, draw_len=0x70, draw_scene=0x74, draw_lease=0x78, draw_frames=0x7C,
          watch=0x90, ask=0x94, answer=0x98, wbuttons=0x9C, wprev=0xA0, wclean=0xA4, we0=0xA8, wstop=0xAC,
-         wprot=0xB0, wlease=0xB4, wframes=0xB8, swapped=0xBC)
+         wprot=0xB0, wlease=0xB4, wframes=0xB8, swapped=0xBC, level=0xC0, native_level=0xC4)
 # CPU-match watching (watch_code): watch 1 = armed; ask = row+1 the bracket waits on (CPU vs CPU, guest->host);
 # answer 1 Watch / 2 Skip (host->guest); wbuttons = raw pad presses latched while asking; wclean = watched or human
 # row+1 whose return clears we0 (side-0 entrant+1 marked human for the native result) and the wprot rows (played
@@ -70,6 +70,12 @@ CUSTOM = 0x20                        # entrant flag: the registration took a Cus
 # Locked select-screen ids (bitmap, id < 256) and the playable spares the post-pass draws from (u32 count, u16 ids).
 LOCKED, SPARES, SPARE_MAX = BASE+0x1A20, BASE+0x1A40, 250
 TYPE_STUB, ENTRY_STUB, SETUP_STUB = BASE+0x400, BASE+0x500, BASE+0xC00   # (after the cave) .. TRAMP; .. CONTROL
+# The transitions are covered (the watcher's owned cover, autopilot.tournament_veil_show). VEIL: a plain black GIF
+# packet the host publishes with the draft (DRAFT+DRAFT_VEIL = its length): the picture guest draws it over the
+# Team Select from the frame its stage selection opens, until the watcher's cover is up and the main menu is loaded
+# under it.
+VEIL, VEIL_CAPACITY, VEIL_CHECK = BASE+0x1C40, 0xC0, BASE+0x1E00
+DRAFT_VEIL = 20
 
 # ---------------------------------------------------------------- native addresses (USA; A() maps other discs)
 HOOK = A(0x12A2D8)                   # engine battle-setup row filler (side, member, character, costume, ...)
@@ -84,9 +90,31 @@ HOOK_HIGH = ((2 << 26) | (CODE >> 2)) >> 16   # high halfword of the hook word '
 SCENE_MANAGER = A(0x2FF10C)          # scene id at +0x18
 SETUP = A(0x331DC8)                  # battle setup: +0x08 mode, +0xC0 + side*0x270 member count, rows +0xC4 (0x64)
 RUNTIME = A(0x3B5918)                # overlay: the tournament runtime object while scene 35 runs
+# CPU strength. The match launch passes the row filler an AI level from Dragon World Tour's own table (difficulty x
+# round, overlay 0x36AE04: level 0 = the weakest native AI at 1 Dragon Ball's first round). Team Battle (overlay
+# 0x348B74) passes the options' COM level (OPTIONS +0xC38, Very Easy..Very Hard) through COM_LEVEL_OF (BT3 0, 6, 13,
+# 21, 29; the BT4 executable 6, 13, 21, 29, 99). A level-0 CPU mostly stands and watches - while anyone performs a
+# special move its fighters wait it out
+# (live Oct 20: idle 26% of CPU ticks, 35% during specials, against 6% in a Team Battle at Very Hard), which reads as
+# "the AI stops". Every member of an armed tournament launch gets the higher of the two levels, so a tournament team
+# fights at least as hard as the same fighters in a modded Team Battle, and the Dragon Balls still raise it.
+OPTIONS = A(0x2FF28C)                # options object pointer (fusion_audio_restore.OPTIONS_GLOBAL)
+COM_LEVEL, COM_LEVELS = 0xC38, 5    # options +0xC38: the COM level 0..4 Team Battle uses
+COM_LEVEL_OF = A(0x261738)           # native leaf: v0 = AI level of COM level a0 (v0/v1 only, no stack)
 RESULT_FLAGS, RESULT_REASON = A(0x333700), A(0x333704)
 PAD_RECORDS = A(0x333800)            # PCSX2's two port records (mode_menu.PAD); translated words +0x18C/+0x190
 TEAM_SELECT = A(0x3B38D8)            # the Team Select object (scene 40)
+# The native CRI ADX streams (extra_special_pools.native_stream_buffers): six handles in 20-byte rows (ch0 the match
+# music, ch1 a second stream such as the crowd, ch2-5 voices); handle+1 is the ADXT status (0 stopped, 3 playing,
+# 5 play end): the restored match start of a result hand-back plays its music, crowd and a voice (the noise the
+# hand-back's cover mutes; stream_playing logs it). Not stopped in game: the game's own stop (0x265970 -> ADXT_Stop)
+# called from the pad hook left the restored final crawling (live Oct 20). Scene 35's opening logo starts its jingle
+# and sets OBJ_WAIT bit LOGO_WAIT (0x365040; 0x3655C4 polls it), then runs as script step 0x34.
+try:
+    ADX_TABLE = A(0x2C7070)
+except NativeMapError:               # a disc without a reviewed stream table: no stream log
+    ADX_TABLE = None
+ADX_CHANNELS, ADX_ROW, LOGO_WAIT = 6, 20, 0x80000
 TOURNAMENT_SCENES = (33, 34, 35)
 # Bracket (scene 35) natives the watch helper calls, as the overlay's own accept / instant result / advance do.
 BRACKET_PAD_RETURN = A(0x365CB8)     # the scene-35 loop's pad read returns here (the pad hook's caller)
@@ -167,18 +195,35 @@ def cave_code():
     for off, reg in SAVED:
         a.i(63, reg, 29, off)            # sd
     a.i(57, 12, 29, 64)                  # swc1 f12,64(sp)
+    # ---- guards (before the original: the level it writes may change): armed, scene 35, tournament setup,
+    # member 0, side 0/1. s2 = 1 once they pass.
+    a.move(18, 0)
+    a.li(16, CONTROL); a.lw(8, 16, F['magic']); a.li(9, MAGIC); a.branch(5, 8, 9, 'call')
+    a.lw(8, 16, F['version']); a.addiu(9, 0, VERSION); a.branch(5, 8, 9, 'call')
+    a.branch(5, 5, 0, 'call')                                        # member argument (a1) must be 0
+    a.move(17, 4); a.i(11, 9, 17, 2); a.branch(4, 9, 0, 'call')      # side (a0) < 2
+    a.li(8, SCENE_MANAGER); a.lw(8, 8)
+    a.li(9, 0x100000); a.r(0x2B, 9, 8, 9); a.branch(5, 9, 0, 'call')
+    a.li(9, 0x1FFF000); a.r(0x2B, 9, 8, 9); a.branch(4, 9, 0, 'call')
+    a.lw(8, 8, 0x18); a.addiu(9, 0, BRACKET_SCENE); a.branch(5, 8, 9, 'call')
+    a.li(8, SETUP); a.lw(8, 8, 8); a.addiu(9, 0, TOURNAMENT_MODE); a.branch(5, 8, 9, 'call')
+    a.addiu(18, 0, 1)
+    # ---- the AI level (t1): at least the options' COM level as Team Battle maps it (COM_LEVELS); receipts
+    a.lw(9, 29, 48); a.sw(9, 16, F['native_level']); a.sw(9, 16, F['level'])
+    a.li(8, OPTIONS); a.lw(8, 8)
+    a.li(10, 0x100000); a.r(0x2B, 10, 8, 10); a.branch(5, 10, 0, 'call')
+    a.li(10, 0x1FFF000); a.r(0x2B, 10, 8, 10); a.branch(4, 10, 0, 'call')
+    a.lw(4, 8, COM_LEVEL); a.i(11, 10, 4, COM_LEVELS); a.branch(4, 10, 0, 'call')
+    a.call(COM_LEVEL_OF); a.move(10, 2)                              # (a0..t2 are reloaded below)
+    a.lw(9, 29, 48); a.r(0x2A, 11, 9, 10); a.branch(4, 11, 0, 'call')  # native level already as high: kept
+    a.i(63, 10, 29, 48); a.sw(10, 16, F['level'])                    # sd t1 slot: this call and members 1..N-1
+    a.label('call')
+    for off, reg in SAVED[1:8]:
+        a.i(55, reg, 29, off)            # ld a0..a3, t0..t2 (t1 possibly raised)
+    a.i(49, 12, 29, 64)                  # lwc1 f12
     a.call(TRAMP)
     a.i(63, 2, 29, 96)                   # sd v0 (the original's result, returned unchanged)
-    # ---- guards: armed, scene 35, tournament setup, member 0, side 0/1
-    a.li(16, CONTROL); a.lw(8, 16, F['magic']); a.li(9, MAGIC); a.branch(5, 8, 9, 'done')
-    a.lw(8, 16, F['version']); a.addiu(9, 0, VERSION); a.branch(5, 8, 9, 'done')
-    a.i(55, 8, 29, 16); a.branch(5, 8, 0, 'done')                    # member argument (a1) must be 0
-    a.i(55, 17, 29, 8); a.i(11, 9, 17, 2); a.branch(4, 9, 0, 'done')  # side (a0) < 2
-    a.li(8, SCENE_MANAGER); a.lw(8, 8)
-    a.li(9, 0x100000); a.r(0x2B, 9, 8, 9); a.branch(5, 9, 0, 'done')
-    a.li(9, 0x1FFF000); a.r(0x2B, 9, 8, 9); a.branch(4, 9, 0, 'done')
-    a.lw(8, 8, 0x18); a.addiu(9, 0, BRACKET_SCENE); a.branch(5, 8, 9, 'done')
-    a.li(8, SETUP); a.lw(8, 8, 8); a.addiu(9, 0, TOURNAMENT_MODE); a.branch(5, 8, 9, 'done')
+    a.branch(4, 18, 0, 'done')
     # ---- the launched row and the entrant on this side (0x36A720: side 0 = A when A is human, else B)
     a.li(8, RUNTIME); a.lw(18, 8)
     a.li(9, 0x100000); a.r(0x2B, 9, 18, 9); a.branch(5, 9, 0, 'refuse')
@@ -243,12 +288,13 @@ def cave_code():
 
 
 def pad_code():
-    """Called from the Modded Modes pad hook (native_mode_menu.payload) once READY. Removes the disc's accept from
-    the translated pad words (Back still works):
-    - in the tournament entry (scene 34) while CONTROL+block is set: the entry cannot go on with a wrong How many
-      people number;
-    - in a roster draft's Team Select (scene 40, DRAFT published) once stage selection opened: nobody starts a
-      battle while the host reads the picks and restores the main menu."""
+    """Called from the Modded Modes pad hook (native_mode_menu.payload) once READY.
+    It withholds pads:
+    - in the tournament entry (scene 34) while CONTROL+block is set, the disc's accept (Back still works): the entry
+      cannot go on with a wrong How many people number;
+    - in a roster draft's Team Select (scene 40, DRAFT published) once stage selection opened, every button of both
+      ports: nobody picks a stage, backs out or starts a battle while the host reads the picks and restores the
+      main menu under its cover."""
     from regional import MENU_ACCEPT
     a = Assembler(PAD_CODE)
     a.li(9, SCENE_MANAGER); a.lw(9, 9)
@@ -267,6 +313,11 @@ def pad_code():
     a.li(10, 0x100000); a.r(0x2B, 10, 8, 10); a.branch(5, 10, 0, 'out')
     a.li(10, 0x1FF0000); a.r(0x2B, 10, 8, 10); a.branch(4, 10, 0, 'out')
     a.lw(10, 8, SEL_FLAGS); a.i(12, 10, 10, 4); a.branch(4, 10, 0, 'out')
+    a.li(8, PAD_RECORDS)
+    for port in (0, 0x1C0):                                 # both ports: raw and translated words
+        for off in (0x150, 0x18C, 0x190):
+            a.sw(0, 8, port+off)
+    a.jump('out')
     a.label('mask')
     a.li(8, PAD_RECORDS)
     for off in (0x18C, 0x190, 0x1C0+0x18C, 0x1C0+0x190):    # both ports' translated words
@@ -292,7 +343,11 @@ def draw_code():
     a.addiu(29, 29, -0x20)
     for off, reg in DRAW_SAVED:
         a.i(63, reg, 29, off)
-    a.li(16, CONTROL); a.lw(21, 16, F['draw_len']); a.branch(4, 21, 0, 'done')
+    a.li(16, CONTROL)
+    a.call(VEIL_CHECK); a.branch(4, 2, 0, 'picture')       # the draft's black veil over the Team Select
+    a.move(21, 2); a.li(20, VEIL); a.jump('arena')
+    a.label('picture')
+    a.lw(21, 16, F['draw_len']); a.branch(4, 21, 0, 'done')
     a.li(9, DRAW_CAPACITY); a.r(0x2B, 9, 9, 21); a.branch(5, 9, 0, 'done')
     a.lw(9, 16, F['draw_lease']); a.branch(4, 9, 0, 'done'); a.addiu(9, 9, -1); a.sw(9, 16, F['draw_lease'])
     a.lw(9, 16, F['draw_frames']); a.addiu(9, 9, 1); a.sw(9, 16, F['draw_frames'])
@@ -304,6 +359,7 @@ def draw_code():
     a.label('any_scene'); a.addiu(9, 9, -TYPE_SCENE); a.i(11, 9, 9, 3); a.branch(4, 9, 0, 'done')
     a.label('scene_ok')
     a.li(20, DRAWBUF)
+    a.label('arena')
     a.lw(8, 28, -23004); a.i(11, 9, 8, 2); a.branch(4, 9, 0, 'done')
     a.r(0, 8, 0, 8, 2); a.r(0x2D, 8, 28, 8)
     a.lw(9, 8, GPO(-23024)); a.lw(10, 8, GPO(-23016)); a.lw(11, 28, -23008)
@@ -323,6 +379,29 @@ def draw_code():
     a.addiu(29, 29, 0x20); a.jr()
     data = a.finish()
     assert DRAW_CODE + len(data) <= SETUP_STUB
+    return data
+
+
+def veil_check_code():
+    """Leaf for draw_code: v0 = the VEIL length to draw, else 0 - Team Select (scene 40) with DRAFT and a VEIL
+    published, once its stage selection opened. t0-t3 only."""
+    a = Assembler(VEIL_CHECK)
+    a.move(2, 0)
+    a.li(9, SCENE_MANAGER); a.lw(9, 9)
+    a.li(10, 0x100000); a.r(0x2B, 10, 9, 10); a.branch(5, 10, 0, 'none')
+    a.li(10, 0x1FFF000); a.r(0x2B, 10, 9, 10); a.branch(4, 10, 0, 'none')
+    a.lw(9, 9, 0x18); a.addiu(10, 0, SELECT_SCENE); a.branch(5, 9, 10, 'none')
+    a.li(8, DRAFT); a.lw(10, 8); a.li(11, DRAFT_MAGIC); a.branch(5, 10, 11, 'none')
+    a.lw(11, 8, DRAFT_VEIL); a.branch(4, 11, 0, 'none')
+    a.addiu(9, 0, VEIL_CAPACITY); a.r(0x2B, 9, 9, 11); a.branch(5, 9, 0, 'none')
+    a.li(8, TEAM_SELECT); a.lw(8, 8); a.i(12, 10, 8, 3); a.branch(5, 10, 0, 'none')
+    a.li(10, 0x100000); a.r(0x2B, 10, 8, 10); a.branch(5, 10, 0, 'none')
+    a.li(10, 0x1FF0000); a.r(0x2B, 10, 8, 10); a.branch(4, 10, 0, 'none')
+    a.lw(10, 8, SEL_FLAGS); a.i(12, 10, 10, 4); a.branch(4, 10, 0, 'none')
+    a.move(2, 11)
+    a.label('none'); a.jr()
+    data = a.finish()
+    assert VEIL_CHECK + len(data) <= WATCH_CODE
     return data
 
 
@@ -464,7 +543,7 @@ def call_sites():
 def service_pieces():
     """(address, bytes) of the helpers resident callers run once READY: the pad mask, the picture and the
     CPU-match helper."""
-    return [(PAD_CODE, pad_code()), (DRAW_CODE, draw_code()), (WATCH_CODE, watch_code())]
+    return [(PAD_CODE, pad_code()), (VEIL_CHECK, veil_check_code()), (DRAW_CODE, draw_code()), (WATCH_CODE, watch_code())]
 
 
 WATCH_SAVED = ((0, 31), (8, 16), (16, 17), (24, 18), (32, 19))
@@ -1144,6 +1223,7 @@ def save_original(session, p, token):
     p.write(TOKEN, token)
     slot, path = session.check_slot(1)
     before = path.stat().st_mtime_ns if path.exists() else None
+    restart_cover_entrance(p)
     p.save_state(slot)
     deadline = time.monotonic() + 40
     while time.monotonic() < deadline:
@@ -1160,10 +1240,65 @@ def save_original(session, p, token):
                 target.unlink()
                 continue
             session.record_slot(1, target)
+            start_covered_copy(session, target)
             return target
         except (FileNotFoundError, PermissionError, zipfile.BadZipFile, KeyError, EOFError):
             continue
     raise TimeoutError('PCSX2 did not save the tournament match start')
+
+
+COVERED_NAME = 'tournament-original-covered.p2s'
+
+
+def covered_copy(path, out):
+    """A copy of the saved original that draws a plain black owned cover from its first frame (the in-game screen
+    adopts the returned record after the load): nothing of the restored battle is ever seen. Returns (out, record)."""
+    import zipfile
+    import guest_loading_screen as gs
+    import patch_state
+    import state128
+    from native_map import CRC, SERIAL
+    from PIL import Image
+    record = gs.cover_record(Image.new('RGB', (512, 448), (0, 0, 0)), 'owned')
+    with zipfile.ZipFile(path) as z, open(path, 'rb') as raw:
+        ram = state128.read_entry(z, raw, z.getinfo(state128.MEMORY))
+    blocks = gs.cover_blocks(record, ram)
+    manifest = Path(out).with_suffix('.json')
+    manifest.write_text(json.dumps(dict(serial=SERIAL, crc=CRC, blocks=blocks)), encoding='utf-8')
+    Path(out).unlink(missing_ok=True)
+    patch_state.patch(path, manifest, out)
+    return Path(out), record
+
+
+def start_covered_copy(session, original):
+    """In the background (the match is prepared and played meanwhile): session.tournament['covered'] =
+    covered_copy(...) once written. A failure only logs; the hand-back then loads the plain original."""
+    import threading
+    match = getattr(session, 'tournament', None)
+    if not isinstance(match, dict):
+        return
+
+    def work():
+        try:
+            match['covered'] = covered_copy(original, Path(original).with_name(COVERED_NAME))
+        except Exception as error:  # noqa: BLE001 - the plain original still works
+            print(f'Tag Team Tournament: the covered copy of the match start was not written ({error}); the result '
+                  'hand-back loads the plain copy.', flush=True)
+    threading.Thread(target=work, name='tournament-covered-copy', daemon=True).start()
+
+
+def restart_cover_entrance(p, settle=0.05):
+    """The frame in flight when a state is saved is shown once after that state is loaded (live Oct 20: the
+    loading card's entrance frame flashed in the black result hand-back). Right before the save, the in-game cover
+    starts its entrance again (a cover shown a moment ago is still entering), so that frame is its first, all but
+    black step."""
+    import time
+    import guest_loading_screen as gs
+    if p.read_u32(gs.CONTROL) != gs.MAGIC:
+        return
+    for offset in (12, gs.MENU_FRAMES, gs.CYCLE_WORD, gs.LAST_COUNT, gs.TICK_ACC):
+        p.write_u32(gs.CONTROL+offset, 0)
+    time.sleep(settle)
 
 
 def load_original(path, token, client_factory, timeout=40):
@@ -1270,6 +1405,11 @@ def publish_picture(p, packet, scene=0, lease=180):
     p.write(DRAWBUF, packet)
     p.write(CONTROL+F['draw_scene'], struct.pack('<2I', scene, lease))
     p.write_u32(CONTROL+F['draw_len'], len(packet))
+
+
+def veil_packet():
+    """The draft's plain black VEIL: one full-screen sprite."""
+    return picture_packet(lambda im, d: d.rectangle((0, 0, 511, 447), fill=(0, 0, 0)))
 
 
 # ---------------------------------------------------------------- host: the Tournament Setup panel
@@ -1855,7 +1995,9 @@ CHOICE = 22               # Modded Modes commit value (native_mode_menu.SELECTIO
 STATE_FILE = 'current.json'
 PICTURE_REFRESH = 0.5     # seconds between lease refreshes of an unchanged picture
 ROUTE_SECONDS = 30.0      # an armed route may stay at the main menu this long (the page waits for its checkpoint)
+VEIL_SECONDS, LOGO_SECONDS = 60.0, 6.0    # the transition cover at most; scene 35 without a logo before it comes down
 AUTO_GRACE = 3.0          # seconds a tournament menu may stay up while the stand-ins should have answered it
+AUTO_LIMIT = 20.0         # seconds in a tournament menu scene with the auto entry published, at most
 
 
 class Controller:
@@ -1868,10 +2010,11 @@ class Controller:
         self.routed_at = None; self.cleared = False
         self.match = None; self.winner = None; self.history = []
         self.rosters = []; self.draft = None; self.want_main = False
+        self.veil = None                 # the watcher's cover over a transition: dict(kind 'start' | 'pass', since)
         self.picture = None; self.picture_at = 0.0; self.turn = None; self.block = False
         self.hub = None; self.question = None
         self.routing = False; self.bracket_seen = False; self.pool = None; self.locked = frozenset()
-        self.auto_since = None
+        self.auto_since = self.auto_scene = None
         self.text = NativeText(); self.bracket_cache = {}; self.bracket_drawn = None; self.bracket_packet = b''
         self.log = lambda text: print(text, flush=True)
         self.state_dir = None
@@ -1965,6 +2108,9 @@ class Controller:
                 return
             if scene == SELECT_SCENE and p.read_u32(DRAFT) != DRAFT_MAGIC:
                 p.write(DRAFT+4, bytes(draft['owners'])+bytes((self.setup.size, 0, 0, 0)))   # +16: team size
+                veil = veil_packet()
+                p.write(VEIL, veil)
+                p.write_u32(DRAFT+DRAFT_VEIL, len(veil))
                 p.write_u32(DRAFT, DRAFT_MAGIC)
             state = selection_state(p)
             if state is None:
@@ -1991,6 +2137,10 @@ class Controller:
             draft['index'] += 1
             draft['stage'] = 'commit' if draft['index'] < len(draft['passes']) else 'route'
             self.want_main = True
+            # The watcher covers the rest (autopilot.tournament_veil_show): the main menu loaded under the cover, the
+            # route and the tournament's own menus, until the tournament's opening logo starts (or the next pick's
+            # Team Select is up).
+            self.veil = dict(kind='pass' if draft['stage'] == 'commit' else 'start', since=time.monotonic())
             self.save_state()
             return
 
@@ -2005,6 +2155,33 @@ class Controller:
         team, players = setup.teams[teams[0]]
         return banner([self.tr(BANNER_DRAFT_SOLO if setup.size == 1 else BANNER_DRAFT,
                                t=team+1, p=players[0], n=setup.size)], y=422)
+
+    def cover_teams(self):
+        """Up to two drafted rosters for the loading cover's cards (guest_loading_screen teams)."""
+        teams = [r for r in self.rosters if r][:2]
+        return [dict(side=i, fighters=[c for c, _, _ in roster]) for i, roster in enumerate(teams)]
+
+    def veil_tick(self, p):
+        """While the watcher's cover is up: True once it may come down - the next pick's Team Select is up, or the
+        tournament's own opening (scene 35's logo, then World Tournament Open and the bracket) starts, or the
+        tournament was left. VEIL_SECONDS at most."""
+        import time
+        veil = self.veil
+        if veil is None or (self.draft is None and not self.armed and not self.pending):
+            return True
+        if time.monotonic() - veil['since'] > VEIL_SECONDS:
+            self.log('Tag Team Tournament: the cover came down after its time limit.')
+            return True
+        _, scene = self.scene(p)
+        if veil['kind'] == 'pass':
+            return (scene == SELECT_SCENE and self.draft is not None and self.draft['stage'] == 'select'
+                    and selection_state(p) is not None)
+        if scene != BRACKET_SCENE:
+            return False
+        veil.setdefault('bracket', time.monotonic())
+        # The logo (its jingle starting: OBJ_WAIT bit LOGO_WAIT) or any later step of the opening; without either
+        # within LOGO_SECONDS of scene 35 (another overlay), the cover comes down anyway.
+        return opening_started(p) or time.monotonic() - veil['bracket'] > LOGO_SECONDS
 
     def main_restored(self, p):
         """The watcher loaded the clean main menu for the draft (want_main): the Modded Modes root page opens."""
@@ -2136,7 +2313,7 @@ class Controller:
             self.log(f'Tag Team Tournament ended{": " + why if why else ""}.')
         self.armed = False; self.pending = False; self.plan = None; self.plan_key = None; self.match = None
         self.winner = None; self.draft = None; self.turn = None; self.block = False; self.picture = None
-        self.routing = False; self.bracket_seen = False
+        self.routing = False; self.bracket_seen = False; self.veil = None
         self.set_order(None)
         self.forget_state()
 
@@ -2262,15 +2439,25 @@ class Controller:
             return
         auto = p.read_u32(AUTO) == AUTO_MAGIC
         if auto and scene in (TYPE_SCENE, ENTRY_SCENE):
-            # The stand-ins return in the frame they are called: a menu still up after AUTO_GRACE means they did not
-            # run (a changed overlay); withdraw the auto entry and guide the native entry instead.
-            self.auto_since = self.auto_since or time.monotonic()
-            if time.monotonic() - self.auto_since > AUTO_GRACE:
+            # The stand-ins return in the frame they are called: the loaded overlay still calling the native menu
+            # after AUTO_GRACE means they did not run (a changed overlay); withdraw the auto entry and guide the native
+            # entry instead. The overlay's own load is not counted (a slow disc kept scene 33 loading for seconds
+            # under the cover, live Oct 20); AUTO_LIMIT bounds a native menu that began before the swap.
+            now = time.monotonic()
+            self.auto_scene = self.auto_scene or now
+            site, menu = (TYPE_CALL, TYPE_MENU) if scene == TYPE_SCENE else (ENTRY_CALL, REGISTRATION)
+            if p.read_u32(site) == jal(menu):
+                self.auto_since = self.auto_since or now
+            else:
+                self.auto_since = None
+            if ((self.auto_since is not None and now - self.auto_since > AUTO_GRACE)
+                    or now - self.auto_scene > AUTO_LIMIT):
                 p.write_u32(AUTO, 0)
                 auto = False
+                self.veil = None     # the players answer the native menus themselves: the cover comes down
                 self.log('Tag Team Tournament: the tournament menus did not skip; register the leaders by hand.')
         else:
-            self.auto_since = None
+            self.auto_since = self.auto_scene = None
         if scene == ENTRY_SCENE:
             if auto:
                 self.show(p, b'')    # the stand-in registers the drafted leaders
@@ -2656,10 +2843,27 @@ def finish_native(p, tournament, match, winner, alive=None, timeout=30.0, tick=N
     tournament.protect(p, manager, clear=tournament.last_human_out(p, manager, loser) if not match.get('watched')
                        else False)
     force_result(p, side)
+    heard, polls = _finish_loop(p, side, alive, timeout, tick)
+    tournament.log(f'Tag Team Tournament: the restored match start played its own streams (music, crowd, voice) in '
+                   f'{heard} of {polls} polls, under the muted black cover.')
+    # The fresh battle was captured (CONTROL+52) and held when it was saved. A menu checkpoint would normally bring
+    # back a clean transport; here the native tournament goes on, so the next match must find it uncaptured.
+    for off in (16, 20, 24, 52, 56):
+        if p.read_u32(prep.CONTROL+off):
+            p.write_u32(prep.CONTROL+off, 0)
+    return side
+
+
+def _finish_loop(p, side, alive, timeout, tick):
+    import time
+    import native_preparation as prep
     p.write_u32(prep.CONTROL+16, 0)       # release the hold the save was made in
     asked = time.monotonic()
     budget = prep.RunningTime(p, timeout)
+    heard = polls = 0
     while p.read_u32(LOOP) != 0:
+        polls += 1
+        heard += stream_playing(p)
         if alive:
             alive()
         if tick:
@@ -2678,12 +2882,18 @@ def finish_native(p, tournament, match, winner, alive=None, timeout=30.0, tick=N
             force_result(p, side)          # a request lost to a native write is asked once more
             asked = time.monotonic()
         time.sleep(0.01)
-    # The fresh battle was captured (CONTROL+52) and held when it was saved. A menu checkpoint would normally bring
-    # back a clean transport; here the native tournament goes on, so the next match must find it uncaptured.
-    for off in (16, 20, 24, 52, 56):
-        if p.read_u32(prep.CONTROL+off):
-            p.write_u32(prep.CONTROL+off, 0)
-    return side
+    return heard, polls
+
+
+def stream_playing(p):
+    """True while any native ADX stream reports playing (status 3); False without reviewed stream addresses."""
+    if ADX_TABLE is None:
+        return False
+    for ch in range(ADX_CHANNELS):
+        handle = p.read_u32(ADX_TABLE + ADX_ROW*ch)
+        if 0x100000 <= handle < 0x2000000 and p.read(handle+1, 1)[0] == 3:
+            return True
+    return False
 
 
 PHASE, FIGHT_PHASE, LOOP = A(0x2FEB38), 3, A(0x3337C0)
@@ -2691,6 +2901,15 @@ INTRO_PHASE, INTRO_LAST, READY_PHASE = 1, 4, 2
 # Battle phase 0 (enter 0x217C40, update 0x217CF0): the stage's crowd / arena / gate camera shots, substates 0..5;
 # substate 6 is the update's own "done" case (it returns phase 1 at once, the exit 0x217DB8 stops the camera).
 CROWD_PHASE, CROWD_DONE = 0, 6
+
+
+def opening_started(p):
+    """Scene 35 has started the tournament's own opening: its logo waits for the jingle (OBJ_WAIT bit LOGO_WAIT),
+    or the opening script is past it (OBJ_SCRIPT nonzero: 0x34 logo, 0x38 World Tournament Open, then the bracket)."""
+    obj = p.read_u32(RUNTIME)
+    if not 0x100000 <= obj < 0x1FFC000:
+        return False
+    return bool(p.read_u32(obj+OBJ_WAIT) & LOGO_WAIT or p.read_u32(obj+OBJ_SCRIPT))
 
 
 def skip_crowd_shots(p):

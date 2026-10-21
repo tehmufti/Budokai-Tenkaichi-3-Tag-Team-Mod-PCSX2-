@@ -128,11 +128,15 @@ class LoadingPresentation:
         with self.lock:
             return self.guest.prerender(messages) if self.guest else False
 
-    def show(self, title='Preparing your team match', message='Getting your fighters ready...', progress=0, *, error=None):
-        """error=(line 1, line 2): the failure state of the in-game cover (never pre-rendered)."""
+    def show(self, title='Preparing your team match', message='Getting your fighters ready...', progress=0, *, error=None,
+             owned=False):
+        """error=(line 1, line 2): the failure state of the in-game cover (never pre-rendered). owned: the in-game
+        cover is drawn in every scene and withholds the pads (guest_loading_screen.OWNED)."""
         with self.lock:
             if error:
                 guest_surface = self.guest.show(message, progress, error=tuple(error)) if self.guest else False
+            elif owned:
+                guest_surface = self.guest.show(message, progress, owned=True) if self.guest else False
             else:
                 guest_surface = self.guest.show(message, progress) if self.guest else False
             self.last = dict(visible=True, title=title, message=message,
@@ -141,6 +145,30 @@ class LoadingPresentation:
                              guest_surface=guest_surface)
             if error: self.last['error'] = list(error)
             self._write()
+            self._start_helper()
+
+    def show_picture(self, canvas, surface='owned', client=None):
+        """A plain picture cover (the Tag Team Tournament's black result hand-back) drawn by the in-game screen. The
+        command still says a loading cover is up, so the helper mutes the game meanwhile; over an in-game picture
+        it draws no window of its own."""
+        with self.lock:
+            guest_surface = self.guest.show_picture(canvas, surface=surface, client=client) if self.guest else False
+            self.last = dict(visible=True, title='', message='', progress=0, teams=self.teams, mode=self.mode,
+                             humans=self.humans, guest_surface=guest_surface)
+            self._write()
+            self._start_helper()
+            return guest_surface
+
+    def record(self):
+        with self.lock:
+            return self.guest.record() if self.guest else None
+
+    def adopt(self, record):
+        """The state just loaded carries this in-game cover (guest_loading_screen.cover_blocks)."""
+        with self.lock:
+            if self.guest: self.guest.adopt(record)
+
+    def _start_helper(self):
             if self.helper and (self.process is None or self.process.poll() is not None):
                 with self.path.with_suffix('.helper.log').open('a', encoding='utf-8') as output:
                     self.process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()),

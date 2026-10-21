@@ -288,7 +288,8 @@ class MenuCheckpoints:
         validate_clean(ram, kind, record['scene'],allow_owned_main=record.get('owned_menu',False))
         return path, ram
 
-    def restore(self, kind=None):
+    def restore(self, kind=None, extra=None):
+        """extra(ram) -> more patch blocks for the loaded copy (a cover the watcher keeps up across the load)."""
         kind = kind or self.destination or 'main'
         if kind not in ('main', 'character_select'):
             raise ValueError('Unknown menu return destination')
@@ -304,6 +305,8 @@ class MenuCheckpoints:
             # saved options/progress. No memory-card file is replaced or edited.
             with self.live_reader() as p:
                 payload=saved_game_state.preserve(p,ram)
+            if extra is not None:
+                payload['blocks'].extend(extra(ram))
             if self.records[kind].get('owned_menu'):
                 # Expire this verified archived lease before rearming. The
                 # guest restores native rows/atlases; never retain a queued mode.

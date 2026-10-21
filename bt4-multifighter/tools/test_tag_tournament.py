@@ -20,7 +20,7 @@ import native_mode_menu as nmm
 import native_preparation as prep
 import tag_tournament as tt
 import team_assignment as ta
-from native_map import elf_path
+from native_map import A, elf_path
 from prototype import ROOT, elf_reader
 
 NATIVE = elf_reader(elf_path(ROOT))[2]
@@ -662,12 +662,28 @@ class WatcherController(unittest.TestCase):
     def test_a_menu_the_stand_ins_did_not_answer_falls_back_to_the_guided_entry(self):
         self.route(tt.Setup(2, {1: 0, 2: 1}), [[tt.member(14)], [tt.member(29)]])
         self.scene(33); self.c.tick(self.p)
+        self.assertIsNone(self.c.auto_since)                    # the overlay is still loading: nothing counts
+        self.p.write_u32(tt.TYPE_CALL, tt.jal(tt.TYPE_MENU))    # loaded, and still calling the native menu
+        self.c.tick(self.p)
         self.assertEqual(self.p.read_u32(tt.AUTO), tt.AUTO_MAGIC)
         self.assertEqual(self.p.read_u32(tt.CONTROL + tt.F['draw_len']), 0)
         self.c.auto_since -= tt.AUTO_GRACE + 1
         self.c.tick(self.p)
         self.assertEqual(self.p.read_u32(tt.AUTO), 0)
         self.assertGreater(self.p.read_u32(tt.CONTROL + tt.F['draw_len']), 0)   # the How-many-people banner
+
+    def test_a_slow_overlay_load_never_withdraws_the_auto_entry_until_the_limit(self):
+        self.route(tt.Setup(2, {1: 0, 2: 1}), [[tt.member(14)], [tt.member(29)]])
+        self.scene(33); self.c.tick(self.p)
+        self.c.auto_scene -= tt.AUTO_GRACE + 5                  # loading for seconds: the stand-in still waits
+        self.c.tick(self.p)
+        self.assertEqual(self.p.read_u32(tt.AUTO), tt.AUTO_MAGIC)
+        self.p.write_u32(tt.TYPE_CALL, tt.jal(tt.TYPE_STUB))   # swapped in: it answers when called
+        self.c.tick(self.p)
+        self.assertEqual(self.p.read_u32(tt.AUTO), tt.AUTO_MAGIC)
+        self.c.auto_scene -= tt.AUTO_LIMIT
+        self.c.tick(self.p)
+        self.assertEqual(self.p.read_u32(tt.AUTO), 0)           # bounded
 
     def test_a_restored_armed_state_is_cleared_at_the_main_menu(self):
         self.p.write_u32(tt.CONTROL, tt.MAGIC); self.p.write_u32(tt.AUTO, tt.AUTO_MAGIC)
@@ -1290,13 +1306,104 @@ class Panel(unittest.TestCase):
     def test_every_new_string_has_spanish(self):
         import autopilot
         names = [n for n in dir(tt) if n.isupper() and isinstance(getattr(tt, n), str) and
-                 n not in ('ORIGINAL_NAME', 'STATE_FILE')]
+                 n not in ('ORIGINAL_NAME', 'COVERED_NAME', 'STATE_FILE')]
         texts = [getattr(tt, n) for n in names] + ['Tag Team Tournament']
         texts += list(tt.TYPES) + list(tt.BT4_TYPES) + list(tt.DIFFICULTIES)
         texts += [getattr(autopilot, n) for n in dir(autopilot) if n.startswith('SAY_TOURNAMENT')]
         texts += [autopilot.TOURNAMENT_COVER, autopilot.TOURNAMENT_FAILED]
         missing = [t for t in texts if t not in loc.ES]
         self.assertEqual(missing, [])
+
+
+class CpuStrength(unittest.TestCase):
+    """The row filler hook gives every member of an armed tournament launch at least the options' COM level as
+    Team Battle maps it (the native COM_LEVEL_OF, interpreted here from the executable's own words), so tournament
+    CPUs keep fighting through specials like Team Battle's."""
+    MANAGER, OPTIONS_OBJ, OBJ = 0x00600000, 0x00700000, 0x00800000
+
+    def machine(self, com=4, native=0, scene=tt.BRACKET_SCENE, mode=tt.TOURNAMENT_MODE, armed=True, count=3,
+                options=True):
+        c = make_cpu([(tt.CODE, tt.cave_code()), (tt.COM_LEVEL_OF, NATIVE(tt.COM_LEVEL_OF, 0x54)),
+                      (0x2F32D0, NATIVE(0x2F32D0, 20))])
+        base_extra, floats = c.extra_instruction, {}
+
+        def extra(ins, pc):
+            op, rs, rt, rd = ins >> 26, (ins >> 21) & 31, (ins >> 16) & 31, (ins >> 11) & 31
+            signed = (ins & 65535) - (65536 if ins & 0x8000 else 0)
+            if op == 0 and ins & 63 == 6:                                   # srlv
+                c.r[rd] = (c.r[rt] & 0xFFFFFFFF) >> (c.r[rs] & 31)
+            elif op == 57:                                                  # swc1
+                c.write(c.r[rs] + signed, floats.get(rt, bytes(4)))
+            elif op == 49:                                                  # lwc1
+                floats[rt] = c.read(c.r[rs] + signed, 4)
+            else:
+                return base_extra(ins, pc)
+            return None
+        c.extra_instruction = extra
+        if armed:
+            c.w(tt.CONTROL, tt.MAGIC)
+        c.w(tt.CONTROL + 4, tt.VERSION)
+        c.w(tt.SCENE_MANAGER, self.MANAGER); c.w(self.MANAGER + 0x18, scene)
+        c.w(tt.SETUP + 8, mode)
+        if options:
+            c.w(tt.OPTIONS, self.OPTIONS_OBJ)
+        c.w(self.OPTIONS_OBJ + tt.COM_LEVEL, com)
+        # the launched row 0: entrants 0 (A, CPU) and 1 (B); side 0 = B
+        c.w(tt.RUNTIME, self.OBJ); c.w(self.OBJ + tt.OBJ_ROW, 0)
+        c.write(self.OBJ + tt.OBJ_ROWS, struct.pack('<4H', 0, 0, 1, 8))
+        c.write(self.OBJ + tt.OBJ_ENTRANTS, entrants_blob(FIELD))
+        record = bytearray(tt.ENTRY)
+        struct.pack_into('<2I', record, 0, count, 0)
+        for m in range(count):
+            struct.pack_into('<2I', record, 8 + tt.MEMBER * m, FIELD[1] if m == 0 else 100 + m, m)
+        c.write(tt.TABLE + 1 * tt.ENTRY, bytes(record))
+        c.calls = []
+        c.callbacks[tt.TRAMP] = lambda m: (m.calls.append((m.r[4], m.r[5], m.r[6], m.r[9])), m.r.__setitem__(2, 0))
+        c.r[4], c.r[5], c.r[6], c.r[7], c.r[8], c.r[9], c.r[10] = 0, 0, FIELD[1], 0, 0, native, 0
+        self.assertEqual(c.run(tt.CODE), 0xFEED0000)
+        return c
+
+    @staticmethod
+    def levels():
+        """COM level -> AI level as the executable maps it (BT3 0, 6, 13, 21, 29; BT4 6, 13, 21, 29, 99)."""
+        words = [(i.mnemonic, i.op_str) for i in MD.disasm(NATIVE(tt.COM_LEVEL_OF, 0x54), tt.COM_LEVEL_OF)]
+        table = struct.unpack('<5I', NATIVE(0x2F32D0, 20))
+        out = []
+        for target in table:
+            delay = NATIVE(target + 4, 4) if NATIVE(target, 4)[3] >> 2 == 4 else NATIVE(target, 4)  # 'b' + slot
+            ins = next(MD.disasm(delay, 0))
+            out.append(0 if ins.mnemonic == 'move' else int(ins.op_str.split(', ')[-1], 0))
+        return words, out
+
+    def test_the_level_map_is_the_native_leaf_team_battle_calls(self):
+        words, levels = self.levels()
+        self.assertEqual(words[0], ('sltiu', '$v0, $a0, 5'))
+        self.assertFalse([w for w in words[:words.index(('jr', '$ra')) + 2] if '$sp' in w[1]])
+        self.assertIn(levels, ([0, 6, 13, 21, 29], [6, 13, 21, 29, 99]))
+        self.assertEqual(tt.COM_LEVEL_OF, A(0x261738))
+
+    def test_every_member_takes_the_com_level_when_the_native_one_is_lower(self):
+        for com, level in enumerate(self.levels()[1]):
+            c = self.machine(com=com, native=0)
+            self.assertEqual([call[3] for call in c.calls], [level] * 3)
+            self.assertEqual([call[:2] for call in c.calls], [(0, 0), (0, 1), (0, 2)])
+            self.assertEqual((c.u(tt.CONTROL + tt.F['native_level']), c.u(tt.CONTROL + tt.F['level'])), (0, level))
+            self.assertEqual(c.u(tt.CONTROL + tt.F['applied']), 1)
+
+    def test_a_higher_native_level_is_kept(self):
+        c = self.machine(com=1, native=27)
+        self.assertEqual([call[3] for call in c.calls], [27] * 3)
+        self.assertEqual(c.u(tt.CONTROL + tt.F['level']), 27)
+
+    def test_outside_an_armed_tournament_launch_the_level_is_the_native_one(self):
+        for kw in (dict(armed=False), dict(scene=tt.ENTRY_SCENE), dict(mode=0)):
+            c = self.machine(com=4, native=5, **kw)
+            self.assertEqual(c.calls, [(0, 0, FIELD[1], 5)], kw)
+            self.assertEqual(c.u(tt.CONTROL + tt.F['level']), 0, kw)
+        # no options object or an unknown COM level: the team is still filled, at the native level
+        for kw in (dict(options=False), dict(com=5)):
+            c = self.machine(native=5, **kw)
+            self.assertEqual([call[3] for call in c.calls], [5] * 3, kw)
 
 
 class MenuAndGate(unittest.TestCase):

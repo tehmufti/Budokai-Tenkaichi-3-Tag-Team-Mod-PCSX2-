@@ -38,6 +38,12 @@ from native_map import GPO
 
 HOOK, CODE, CONTROL = A(0x102098), 0x07470000, 0x07471000
 MAGIC, LEASE = 0x4254334C, 900
+# Surface word (CONTROL+32): 0 battle (drawn while the battle loop runs), 1 menu (behind a native page's modal
+# owner), OWNED a cover the watcher keeps across scenes and savestate loads (the Tag Team Tournament transitions):
+# drawn in every scene while its lease lasts, and the Modded Modes pad hook (native_mode_menu.payload) withholds
+# every pad under it.
+OWNED = 2
+SURFACES = {'battle': 0, 'menu': 1, 'owned': OWNED}
 CHEAT = ROOT/'runtime128/cheats'/game_profile.cheat_name(SERIAL)
 SCENE_LOOP = A(0x3337C0)
 # Control words: magic+0, buffer+4, size+8, drawn+12, age+16, generation+20,
@@ -381,7 +387,9 @@ def payload(menu_surface=True,native_modals=True):
     a.call(native_preparation.CODE)
     a.li(16,CONTROL); a.lw(8,16); a.li(9,MAGIC); a.branch(5,8,9,'undrawn')
     if menu_surface:
-        a.lw(8,16,32);a.branch(4,8,0,'battle_surface');a.addiu(9,0,1);a.branch(5,8,9,'undrawn')
+        a.lw(8,16,32);a.branch(4,8,0,'battle_surface')
+        a.addiu(9,0,OWNED);a.branch(4,8,9,'surface_ready')   # an owned cover: every scene
+        a.addiu(9,0,1);a.branch(5,8,9,'undrawn')
         import mode_menu
         if native_modals:
             # Native pages deliberately leave the retired legacy overlay off.
@@ -623,6 +631,50 @@ def invalidate_buffers():
     _written.clear()
 
 
+def cover_record(canvas, surface='owned'):
+    """A picture cover no screen has published yet, for a state about to be loaded (cover_blocks) and then taken
+    over by GuestLoadingScreen.adopt. surface as show_picture."""
+    packet=protocol.referenced(gif_packet(picture_rectangles(canvas)))
+    return dict(packet=packet,foreground=0,descriptor=b'',generation=secrets.randbits(31) or 1,
+                surface=SURFACES[surface],packet_id=hashlib.sha256(packet).digest())
+
+
+def live_counters(client):
+    """(battle frames, menu frames, clash cycle) of the cover drawn now: a carried cover goes on from them."""
+    data=client.read(CONTROL,CYCLE_WORD+4)
+    return tuple(struct.unpack_from('<I',data,offset)[0] for offset in (12,MENU_FRAMES,CYCLE_WORD))
+
+
+def carry_buffer(ram):
+    """The cover buffer a RAM image about to be loaded did not last hand to its GS (CONTROL+24, consumed): a transfer
+    that image has in flight may still read that one (live, Oct 20: overwriting it hung VIF1 right after the load).
+    A published buffer its guest never took (CONTROL+4) has nothing in flight."""
+    consumed=struct.unpack('<I',bytes(ram[CONTROL+24:CONTROL+28]))[0]
+    return BUFFERS[1] if consumed==BUFFERS[0] else BUFFERS[0]
+
+
+def cover_blocks(record, ram, counters=(0,0,0), tick=TICK):
+    """patch_state blocks that put a cover record into a RAM image about to be loaded: CONTROL armed on the buffer
+    carry_buffer picks (record['buffer'] names it for adopt), which holds the packets exactly as sync publishes
+    them, so the loaded state draws the cover from its first frame. counters = live_counters() of the cover shown
+    before the load (its animation goes on). The expected bytes are the image's own. ValueError: no free buffer."""
+    buffer=carry_buffer(ram)
+    if buffer is None:raise ValueError('Both loading cover buffers are in use in that state')
+    record['buffer']=buffer
+    packet,descriptor=record['packet'],record['descriptor']
+    tail=len(packet) if descriptor else 0
+    body=struct.pack('<4I',len(packet),record['generation'],record['foreground'],tail)+packet+descriptor
+    if len(body)>CAPACITY:raise ValueError('The loading cover does not fit its buffer')
+    frames,menu_frames,cycle=counters
+    # consumed (+24) keeps the image's own value: the guest replaces it when it first takes the carried buffer.
+    consumed=struct.unpack('<I',bytes(ram[CONTROL+24:CONTROL+28]))[0]
+    control=struct.pack('<16I',MAGIC,buffer,len(packet),frames,0,record['generation'],consumed,0,record['surface'],
+                        menu_frames,0,cycle%CYCLE,0,0,0,tick)
+    return [dict(address=address,expected_hex=bytes(ram[address:address+len(data)]).hex(),data_hex=data.hex(),
+                 purpose='In-game loading cover carried into the loaded state')
+            for address,data in ((CONTROL,control),(buffer,body))]
+
+
 def tick_for(percent):
     """Cycles per animation step for a speed preference; 100% is the approved design."""
     if type(percent) not in (int,float) or not 25<=percent<=400:percent=100
@@ -683,10 +735,11 @@ class GuestLoadingScreen:
         self.visible=True
         return self.sync(force=True,client=client)
 
-    def show(self,message,progress,*,error=None):
+    def show(self,message,progress,*,error=None,owned=False):
         # error=(line 1, line 2): the failure state (red text, no gauge); its key never matches a pre-render.
+        # owned: drawn in every scene (OWNED), not only in battle.
         with self.lock:
-            self.surface=0;progress=max(0,min(100,int(progress)))
+            self.surface=OWNED if owned else 0;progress=max(0,min(100,int(progress)))
             key=(localization.language(),self.mode,self.humans,repr(self.teams),str(message))+((tuple(error),) if error else ())
             if key!=self.key or self.layers is None or (not is_v4(self.layers) and progress!=self.progress):
                 self.layers,packets=self._picture(key,progress,str(message),error=tuple(error) if error else None)
@@ -747,15 +800,31 @@ class GuestLoadingScreen:
 
     def show_picture(self,canvas,surface='menu',client=None):
         with self.lock:
-            self.surface=int(surface=='menu');self._publish((gif_packet(picture_rectangles(canvas)),b'',b''))
+            self.surface=SURFACES[surface];self._publish((gif_packet(picture_rectangles(canvas)),b'',b''))
             self.key=None;self.layers=None
             return self._show(client)
 
     def show_layers(self,layers,surface='menu',client=None):
         with self.lock:
-            self.surface=int(surface=='menu');self._publish(layer_packets(layers))
+            self.surface=SURFACES[surface];self._publish(layer_packets(layers))
             self.key=None;self.layers=None
             return self._show(client)
+
+    def record(self):
+        """The cover published now as a record for cover_blocks (None when hidden)."""
+        with self.lock:
+            if not self.visible or not self.packet:return None
+            return dict(packet=self.packet,foreground=self.foreground,descriptor=self.descriptor,
+                        generation=self.generation,surface=self.surface,packet_id=self.packet_id)
+
+    def adopt(self,record):
+        """After a state load that carries record (cover_blocks): that cover is this screen's; later syncs only
+        renew its lease. The other buffer's contents are unknown after the load."""
+        with self.lock:
+            self.packet,self.foreground,self.descriptor=record['packet'],record['foreground'],record['descriptor']
+            self.packet_id,self.generation,self.surface=record['packet_id'],record['generation'],record['surface']
+            self.key=None;self.layers=None;self.visible=True;self.reset_counters=False;self._stale_since=None
+            invalidate_buffers();_written[record.get('buffer',BUFFERS[0])]=(self.generation,self.packet_id)
 
     def sync(self,force=False,client=None):
         from pine import PineClient,PineError
@@ -861,7 +930,9 @@ class GuestLoadingScreen:
             self.sync()
             try:
                 with PineClient(timeout=3) as p:
-                    magic,ptr,size,draws,age,generation,consumed=struct.unpack('<7I',p.read(CONTROL,28))
+                    data=p.read(CONTROL,MENU_FRAMES+4)
+                magic,ptr,size,draws,age,generation,consumed=struct.unpack_from('<7I',data)
+                if self.surface:draws=struct.unpack_from('<I',data,MENU_FRAMES)[0]   # menu/owned frames count there
                 if (magic==MAGIC and ptr in BUFFERS and consumed==ptr and draws>0
                         and generation==self.generation and size==len(self.packet)):
                     return True
