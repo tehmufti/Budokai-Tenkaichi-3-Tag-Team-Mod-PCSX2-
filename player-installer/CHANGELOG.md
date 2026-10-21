@@ -1,3 +1,13 @@
+## Version 14.2
+
+Beam clash assistants now fire their own beams into the struggle, with the right pose and beam color for their character. They stand closer to the fighter they're helping, and stay grounded when the clash is on the ground.
+
+Fixed misplaced smoke and other effects on expanded maps, along with lighting and stage animation paths that weren't scaling correctly. If you already use expanded maps, run Build expanded maps again after updating to apply these fixes.
+
+Includes the Windows and Linux installers and updaters for BT3 and BT4.
+
+Everyone in an online room should use Version 14.2.
+
 ## Version 14.1
 
 **Tag Team Tournament**
