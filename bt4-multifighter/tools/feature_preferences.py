@@ -11,6 +11,9 @@ import input_binding
 # key: (default, kind, minimum/choices, maximum, UI group, label)
 # The group names match mod_settings.GROUPS, which also sets the display order.
 OPTIONS = {
+    'three_player_wide_bottom': (False,'bool',None,None,'Split-screen HUD','Three players: full-width bottom screen'),
+    'show_combo_hits': (True,'bool',None,None,'HUD','Combo hit counter'),
+    'show_combo_damage': (True,'bool',None,None,'HUD','Damage counter'),
     'lockoff_enabled': (True,'bool',None,None,'Controls','Enable manual lock-off'),
     'lockoff_button': ('l3','button',input_binding.BUTTONS,None,'Controls','Lock-off button'),
     'lockoff_hold_seconds': (0.5,'float',0,3600,'Controls','Lock-off hold time (seconds; 0 = tap)'),
@@ -133,6 +136,7 @@ OPTIONS = {
     # nothing installed while all hold them: native, 0, 100, False, False. The detail rows only matter while their
     # switch is on (ingame_settings DEPENDS).
     # beta.40: the struggle's own scripted camera (native) or every view kept on its own player (installs KEEPCAM).
+    'clash_button_sequence': (False,'bool',None,None,'Beam struggles','Button sequence for all clashes'),
     'beam_clash_camera': ('clash','choice',('clash','keep'),None,'Beam struggles','Beam clash camera'),
     'beam_struggle_length': ('native','choice',('native','long','very_long'),None,'Beam struggles','Beam struggle length'),
     'beam_struggle_push_ahead': (0,'int',0,35,'Beam struggles','Win early by leading by (inputs; 0 = off)'),

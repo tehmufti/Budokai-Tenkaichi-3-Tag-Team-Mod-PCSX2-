@@ -129,7 +129,7 @@ def build_memory(ram,mode='teams',source='<prepared>',humans=4,settings=None,ass
     import multiplayer_fusion as fusion
     import mod_settings
     settings=mod_settings.validate_settings(settings or {})
-    manifest=compose_manifests(ram,[lambda r:views.build_memory(r,subjects),
+    manifest=compose_manifests(ram,[lambda r:views.build_memory(r,subjects,wide=settings['three_player_wide_bottom']),
                                     lambda r:lifecycle.build_memory(r,subjects,mode),
                                     lambda r:controllers.build_memory(r,subjects),four_seat_variants,
                                     lambda r:fusion.build_memory(r,settings)])

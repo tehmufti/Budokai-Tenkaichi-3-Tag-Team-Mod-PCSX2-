@@ -260,6 +260,8 @@ def fade():
     import coop_character_select
     import player_slot_labels
     a.call(coop_character_select.DRAW);a.call(player_slot_labels.CODE)
+    import cpu_difficulty_select
+    a.call(cpu_difficulty_select.DRAW)
     # Tag Team Tournament guidance (entry turns, roster draft, team badges) once its pnach is READY.
     import tag_tournament
     tag_tournament.ready_call(a,tag_tournament.DRAW_CODE,'tournament_draw')

@@ -1,6 +1,6 @@
 """Optional sequential extra intros within the native held dialogue phase.
 
-Use generic native lines/animations against the existing formation. No actor ID
+Use opponent-specific native lines when available, otherwise generic lines. No actor ID
 aliasing, resource reload, second FIGHT banner, or new battle phase is required.
 """
 from native_map import A
@@ -72,7 +72,14 @@ def sequence_code():
     a.lw(8,21,32);a.addiu(9,0,1);a.r(4,9,22,9);a.r(0x24,8,8,9);a.branch(4,8,0,'skip')
     identity(a,22,'skip')
     a.sw(22,21,24);a.sw(22,16,8);a.lw(8,20,12);a.sw(8,16,0x18)
-    a.sw(0,16,0x10);a.sw(0,16,4);a.jump('native')
+    # Candidates were captured from this fighter's own dialogue table. Draw
+    # with the game's RNG when the line starts, so rematches vary and online
+    # peers never choose independent host-Python random values.
+    a.r(0,23,0,22,6);a.li(8,CONTROL+0x200);a.r(0x21,23,23,8)
+    a.lw(4,23);a.branch(4,4,0,'generic_line');a.call(A(0x254DE8))
+    a.r(0,8,0,2,2);a.r(0x21,8,23,8);a.lw(2,8,4);a.jump('line_ready')
+    a.label('generic_line');a.addiu(4,0,2);a.call(A(0x254DE8))
+    a.label('line_ready');a.sw(2,16,0x10);a.sw(0,16,4);a.jump('native')
     a.label('skip');a.addiu(22,22,1);a.jump('scan')
     a.label('finished')
     for off in range(8,32,4):a.lw(8,21,0x40+off);a.sw(8,16,off)
@@ -124,6 +131,29 @@ def pieces():
         (p,struct.pack('<I',(3<<26)|(target>>2)))for sites,target in ((MODELS,MODEL),(CAMERAS,CAMERA))for p in sites]
 
 
+def custom_intro_lines(ram,physical,count,present_mask):
+    """Dialogue belongs to the loaded model, not the fighter controller.
+
+    Ignore absent padding, allies, duplicate opponents and malformed tables.
+    Each result is an existing voice AND talk-animation index in that model.
+    """
+    u=lambda p:struct.unpack_from('<I',ram,p)[0]
+    def model(i):
+        actor=u(core.POINTERS+4*i)
+        return u(core.MODELS+4*u(actor+12))
+    own=model(physical);table=u(own+0x93C)
+    if not 0x100000<=table<=len(ram)-1024:return ()
+    mode='ffa' if (u(policy.CONTROL),u(policy.CONTROL+4),u(policy.CONTROL+12))==(policy.MAGIC,u(core.ACTORS),policy.FFA) else 'teams'
+    seen=set();lines=[]
+    for enemy in range(count):
+        if not present_mask&(1<<enemy) or not policy.enemy(mode,physical,enemy):continue
+        chara=u(model(enemy)+12)
+        if chara>=256 or chara in seen:continue
+        seen.add(chara);line=ram[table+chara*4]
+        if line!=0xFF:lines.append(line+6)
+    return tuple(lines)
+
+
 def build_memory(ram,settings=None,present_mask=None,source='<offline>'):
     import mod_settings
     enabled=mod_settings.validate_settings(settings or {})['extra_character_intros']
@@ -138,7 +168,7 @@ def build_memory(ram,settings=None,present_mask=None,source='<offline>'):
     if type(present_mask)is not int or not 0<=present_mask<(1<<count):raise ValueError('Invalid intro presence mask')
     for p,n in ((HOOK,0x110),(A(0x217520),0x188),(A(0x23DE60),0x78),(CLEANUP_HOOK,8)):
         if ram[p:p+n]!=NATIVE(p,n):raise ValueError(f'Native extra-intro dependency changed{p:08X}')
-    data=bytearray(0x200);struct.pack_into('<9I',data,0,MAGIC,manager,count,1,0,2,0,0,present_mask)
+    data=bytearray(0x200+64*count);struct.pack_into('<9I',data,0,MAGIC,manager,count,1,0,2,0,0,present_mask)
     for i in range(count):
         actor=u(core.POINTERS+4*i)
         if not 0x100000<=actor<=len(ram)-0x1600 or u(actor)!=i:raise ValueError('Intro actor identity changed')
@@ -147,8 +177,11 @@ def build_memory(ram,settings=None,present_mask=None,source='<offline>'):
         model=u(core.MODELS+4*mid)
         if not 0x100000<=model<=len(ram)-0x1670 or u(model+16)!=mid:raise ValueError('Intro model identity changed')
         struct.pack_into('<4I',data,0x100+16*i,actor,mid,model,u(model+12))
+    for i in range(2,count):
+        lines=custom_intro_lines(ram,i,count,present_mask)
+        struct.pack_into('<'+str(len(lines)+1)+'I',data,0x200+64*i,len(lines),*lines)
     return dict(source=str(source),blocks=[dict(address=p,expected_hex=bytes(ram[p:p+len(d)]).hex(),data_hex=d.hex())
-        for p,d in pieces()+[(CONTROL,bytes(data))]],behavior='Generic native extra introductions after both leaders; all combat stays held until completion.')
+        for p,d in pieces()+[(CONTROL,bytes(data))]],behavior='Opponent-specific extra introductions when available; all combat stays held until completion.')
 
 
 def preset_ready_code(previous):

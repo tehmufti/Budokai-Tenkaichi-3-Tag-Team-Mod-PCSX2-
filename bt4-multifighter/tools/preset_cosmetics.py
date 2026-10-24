@@ -179,7 +179,9 @@ def transport_memory(ram, source='<offline>'):
     if retire_legacy:pieces=pieces+[(legacy_address,bytes(len(legacy)))]
     # Pieces that overwrite ELF code start out holding the ELF's own bytes, not
     # the zeros of a mod reservation. The select-screen unlock is one of them.
-    elf_pieces = (native.HOOK, loading.HOOK, mode_menu.HOOK, select_duplicates.CONFLICT, *native_menu_services.HOOKS)
+    import cpu_difficulty_select
+    elf_pieces = (native.HOOK, loading.HOOK, mode_menu.HOOK, select_duplicates.CONFLICT,
+                  cpu_difficulty_select.ENTRY, *native_menu_services.HOOKS)
     for p in (native.HOOK,loading.HOOK):
         if ram[p+4:p+8] != original(p+4,4):
             raise ValueError(f'Prepared native transport delay slot changed:{p+4:08X}')

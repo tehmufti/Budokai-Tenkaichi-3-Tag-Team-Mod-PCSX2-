@@ -1021,7 +1021,7 @@ class Plan:
     native entry registers the leaders: human entrant k (registration order) is human team k. A leader that differs
     from the draft's slot 1 is adopted (notes says so); the drafted slots 2..N follow it."""
 
-    def __init__(self, setup, rosters=None, seed=None, pool=None):
+    def __init__(self, setup, rosters=None, seed=None, pool=None, cpu_settings=None):
         self.setup = setup
         self.size = setup.size
         self.rosters = [list(r) for r in (rosters or [])]
@@ -1031,6 +1031,8 @@ class Plan:
         self.players = None
         self.flags = None
         self.notes = []
+        self.cpu_settings = cpu_settings or []
+        self.levels = [[0]*TEAM_MAX for _ in range(ENTRANTS)]
 
     def build(self, entrants):
         # Human entrant k (registration order, entrant +0xC; the bracket seats them anywhere) is human team k.
@@ -1041,6 +1043,8 @@ class Plan:
         self.notes = []
         for e in entrants:
             k = humans.index(e) if e.human and (human_teams or self.rosters) else None
+            if k is not None and k < len(self.cpu_settings):
+                self.levels[e.index] = (list(self.cpu_settings[k])+[0]*TEAM_MAX)[:TEAM_MAX]
             leader = member(e.character, e.costume)
             members = [leader]
             if k is not None and k < len(self.rosters) and self.rosters[k]:
@@ -1079,6 +1083,12 @@ class Plan:
                 out[at+8:at+24] = items
         return bytes(out)
 
+    def level_table(self):
+        if (len(self.levels) != ENTRANTS or any(len(row) != TEAM_MAX for row in self.levels)
+                or any(type(v) is not int or not 0 <= v <= 5 for row in self.levels for v in row)):
+            raise ValueError('Invalid tournament CPU difficulty table')
+        return struct.pack('<85I', *(v for row in self.levels for v in row))
+
     def match(self, side0, side1):
         """(humans, assignment seats or None, order) of a launched match between two entrants.
 
@@ -1097,7 +1107,8 @@ class Plan:
     def to_json(self):
         return dict(setup=self.setup.to_json(), rosters=[[[c, k, i.hex()] for c, k, i in r] for r in self.rosters],
                     teams=[[[c, k, i.hex()] for c, k, i in t] for t in self.teams or []],
-                    players=[list(p) for p in self.players or []], flags=self.flags, notes=self.notes)
+                    players=[list(p) for p in self.players or []], flags=self.flags, notes=self.notes,
+                    cpu_settings=self.cpu_settings, levels=self.levels)
 
     @classmethod
     def from_json(cls, data):
@@ -1108,6 +1119,9 @@ class Plan:
             plan.players = [tuple(p) for p in data['players']]
             plan.flags = list(data['flags'])
             plan.notes = list(data.get('notes') or [])
+            plan.cpu_settings = data.get('cpu_settings') or []
+            plan.levels = data.get('levels') or [[0]*TEAM_MAX for _ in range(ENTRANTS)]
+            plan.level_table()
         return plan
 
 
@@ -2010,6 +2024,7 @@ class Controller:
         self.routed_at = None; self.cleared = False
         self.match = None; self.winner = None; self.history = []
         self.rosters = []; self.draft = None; self.want_main = False
+        self.cpu_settings = []
         self.veil = None                 # the watcher's cover over a transition: dict(kind 'start' | 'pass', since)
         self.picture = None; self.picture_at = 0.0; self.turn = None; self.block = False
         self.hub = None; self.question = None
@@ -2041,6 +2056,7 @@ class Controller:
         import time
         self.setup = setup
         self.rosters = [[] for _ in setup.teams or [None]]       # CPU only: the followed team
+        self.cpu_settings = [[] for _ in self.rosters]
         self.history = []
         passes = draft_passes(setup)
         self.draft = dict(passes=passes, index=0, stage='commit' if passes else 'route', since=time.monotonic())
@@ -2129,6 +2145,8 @@ class Controller:
                     self.log(f'Tag Team Tournament: {label} picked {len(picks)} of {self.setup.size} fighters; '
                              'the rest are random.')
                 self.rosters[k] = picks[:self.setup.size]
+                import cpu_difficulty_select as cpu_select
+                self.cpu_settings[k] = [p.read_u32(cpu_select.LEVELS+4*(2*m+side)) for m in range(self.setup.size)]
                 self.log(f"Tag Team Tournament: {label} roster: "
                          + ', '.join(f'{character_name(c)} (costume {k_+1})' for c, k_, _ in self.rosters[k]))
             # Nothing confirms a stage (pad_code withdraws the accept while DRAFT is published) until the watcher
@@ -2352,7 +2370,7 @@ class Controller:
             data = dict(setup=self.setup.to_json(), rosters=[[[c, k, i.hex()] for c, k, i in r] for r in self.rosters],
                         armed=self.armed, plan=self.plan.to_json() if self.plan else None,
                         plan_key=list(self.plan_key[:2]) + [list(self.plan_key[2])] if self.plan_key else None,
-                        history=self.history)
+                        history=self.history, cpu_settings=self.cpu_settings)
             (self.state_dir/STATE_FILE).write_text(json.dumps(data, indent=1), encoding='utf-8')
         except OSError:
             pass
@@ -2384,6 +2402,7 @@ class Controller:
         try:
             self.setup = Setup.from_json(data['setup'])
             self.rosters = [[member(c, k, bytes.fromhex(i)) for c, k, i in r] for r in data.get('rosters', [])]
+            self.cpu_settings = data.get('cpu_settings') or []
             self.history = list(data.get('history') or [])
             if data.get('plan') and data.get('plan_key'):
                 self.plan = Plan.from_json(data['plan'])
@@ -2392,6 +2411,8 @@ class Controller:
                 # the guest table must still describe that plan
                 if p.read(TABLE, ENTRANTS*ENTRY) != self.plan.table():
                     p.write(TABLE, self.plan.table())
+                import cpu_difficulty_select as cpu_select
+                p.write(cpu_select.TOUR_LEVELS,self.plan.level_table())
         except (KeyError, TypeError, ValueError) as error:
             self.log(f'Tag Team Tournament: the saved state could not be used ({error}); ending it.')
             self.clear(p)
@@ -2507,8 +2528,10 @@ class Controller:
         setup = self.setup
         # One tournament keeps its teams: the same entrants always give the same random teammates.
         seed = '|'.join(map(str, (key, setup.size, sorted(setup.humans.items()))))
-        plan = Plan(setup, self.rosters, seed=seed, pool=self.pool).build(entrants)
+        plan = Plan(setup, self.rosters, seed=seed, pool=self.pool,cpu_settings=self.cpu_settings).build(entrants)
         p.write(TABLE, plan.table())
+        import cpu_difficulty_select as cpu_select
+        p.write(cpu_select.TOUR_LEVELS,plan.level_table())
         self.plan, self.plan_key = plan, key
         kind = type_names()[key[0]] if key[0] < len(TYPES) else key[0]
         locked = sorted({m[0] for team in plan.teams for m in team} & set(self.locked))

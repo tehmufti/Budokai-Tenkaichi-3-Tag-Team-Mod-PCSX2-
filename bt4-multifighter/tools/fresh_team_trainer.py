@@ -441,6 +441,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # programs it extends. All-legacy settings add nothing.
     import beam_struggle
     builders.append(lambda r: beam_struggle.build_memory(r, settings=preferences, source=source))
+    import clash_sequence
+    builders.append(lambda r: clash_sequence.build_memory(r, settings=preferences, source=source))
     import beam_assist_pose
     builders.append(lambda r: beam_assist_pose.build_memory(r, source=source))
     import beam_assist_effects

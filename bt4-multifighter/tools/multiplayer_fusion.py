@@ -347,6 +347,7 @@ def draw(show_owner=True,show_countdown=True):
         a.label(f'seat{partner}');a.li(5,(1792+left+8)*16);a.li(6,(Y_ORIGIN+top+screen_y(layout.FUSION_Y))*16)
         if partner==2:
             a.li(8,seats.views.CONTROL);a.lw(8,8,seats.views.VIEW_COUNT);a.addiu(9,0,3);a.branch(5,8,9,f'located{partner}')
+            a.li(8,seats.views.CONTROL);a.lw(8,8,seats.views.WIDE_THIRD);a.branch(5,8,0,f'located{partner}')
             a.addiu(5,5,128*16)
         a.label(f'located{partner}');a.sw(5,29,0x300);a.sw(6,29,0x304)
         for line,offset,color in ((0,0x310,0x80D0FFFF),(1,0x314,0x8050CFFF)):

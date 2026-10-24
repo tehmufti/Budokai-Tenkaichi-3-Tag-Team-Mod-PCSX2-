@@ -163,8 +163,9 @@ def installed_pieces(ram):
     """Exact original emission plus the optional reviewed body-contact layer."""
     import dash_contact_guard
     import vanish_pair_guard
+    import clash_sequence
     return list((dict(pieces()) | dict(dash_contact_guard.overlay(ram)) |
-                 dict(vanish_pair_guard.overlay(ram))).items())
+                 dict(vanish_pair_guard.overlay(ram)) | dict(clash_sequence.overlay(ram))).items())
 
 
 def build_memory(ram, config=None, source='<offline-memory>'):

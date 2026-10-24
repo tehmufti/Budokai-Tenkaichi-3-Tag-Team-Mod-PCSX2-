@@ -28,6 +28,7 @@ OT_RESET,OT_LINK=BASE+0xA000,BASE+0xA400
 OT_ROUTINES=((A(0x102610),A(0x10263C),OT_RESET),(A(0x102688),A(0x102708),OT_LINK))
 OT_FIRST,OT_LAST=-0x59CC,-0x59C8
 VIEW_COUNT=36
+WIDE_THIRD=40
 # Private render-only copies: the native two-cache pause shortcut cannot be
 # used when four cameras share those caches. Never clear the global pause bit.
 CACHE_ROUTINES=((A(0x24AD08),A(0x24ADF8),A(0x24AD34),CACHE_VIEW),
@@ -41,7 +42,9 @@ THREE_RECTS=RECTS[:2]+((128,382,BOTTOM_FIRST,SCISSOR_Y1),)
 TWO_RECTS=((0,254,0,SCISSOR_Y1),(257,511,0,SCISSOR_Y1))
 
 
-def rectangles(humans):return {2:TWO_RECTS,3:THREE_RECTS,4:RECTS}[humans]
+def rectangles(humans,wide=False):
+    if humans==3 and wide:return RECTS[:2]+((0,511,BOTTOM_FIRST,SCISSOR_Y1),)
+    return {2:TWO_RECTS,3:THREE_RECTS,4:RECTS}[humans]
 NATIVE=elf_reader(elf_path(ROOT))[2]
 SAVED=tuple(range(2,28))+(30,31)
 
@@ -255,6 +258,8 @@ def prepare():
             a.li(8,CONTROL);a.lw(8,8,VIEW_COUNT);a.addiu(9,0,3);a.branch(5,8,9,'project')
             for off,value in ((512,128),(516,382),(576,0x45000000)):
                 a.li(8,value);a.sw(8,17,off)
+            a.li(8,CONTROL);a.lw(8,8,WIDE_THIRD);a.branch(4,8,0,'project')
+            a.sw(0,17,512);a.li(8,511);a.sw(8,17,516)
         if view<2:
             a.li(8,CONTROL);a.lw(8,8,VIEW_COUNT);a.addiu(9,0,2);a.branch(5,8,9,'project')
             for off,value in ((524,SCISSOR_Y1),(532,0x44FFE000),(580,0x45000000)):
@@ -296,13 +301,14 @@ def scissor():
     a.label('bottom');a.addiu(8,0,BOTTOM_FIRST);a.r(0x2B,9,6,8);a.branch(4,9,0,'bottom_x');a.i(63,8,29,SAVED.index(6)*8)
     a.label('bottom_x')
     a.li(8,CONTROL);a.lw(9,8,VIEW_COUNT);a.addiu(8,0,3);a.branch(5,9,8,'native')
+    a.li(8,CONTROL);a.lw(8,8,WIDE_THIRD);a.branch(5,8,0,'native')
     # Clamp the centered third view's horizontal scissor as well as its row.
     a.addiu(8,0,128);a.r(0x2B,9,4,8);a.branch(4,9,0,'right_clip');a.i(63,8,29,SAVED.index(4)*8)
     a.label('right_clip');a.addiu(8,0,382);a.r(0x2B,9,8,5);a.branch(4,9,0,'native');a.i(63,8,29,SAVED.index(5)*8)
     a.label('native');restore(a);a.jump(TAILS+0x60);return a.finish()
 
 
-def matte_rectangles(humans):
+def matte_rectangles(humans,wide=False):
     """Half-open pixel rectangles covering exactly the gaps between views.
 
     Full-frame postprocessing can write outside the per-camera scissors, so
@@ -310,6 +316,7 @@ def matte_rectangles(humans):
     """
     if humans==2:return ((255,0,257,DISPLAY_H),)
     if humans==4:return ((255,0,257,DISPLAY_H),(0,TOP_LAST+1,512,BOTTOM_FIRST))
+    if humans==3 and wide:return ((255,0,257,TOP_LAST+1),(0,TOP_LAST+1,512,BOTTOM_FIRST))
     if humans==3:return ((255,0,257,TOP_LAST+1),(0,TOP_LAST+1,512,BOTTOM_FIRST),
                          (0,BOTTOM_FIRST,128,DISPLAY_H),(383,BOTTOM_FIRST,512,DISPLAY_H))
     raise ValueError('Split matte requires two to four views')
@@ -324,7 +331,9 @@ def matte():
     a.call(A(0x101400))
     for humans in (2,3,4):
         a.li(8,humans);a.branch(5,16,8,f'not_{humans}')
-        for left,top,right,bottom in matte_rectangles(humans):
+        for index,(left,top,right,bottom) in enumerate(matte_rectangles(humans)):
+            if humans==3 and index==2:
+                a.li(8,CONTROL);a.lw(8,8,WIDE_THIRD);a.branch(5,8,0,'done')
             for reg,value in ((4,(1792+left)*16),(5,(Y_ORIGIN+top)*16),
                               (6,(1792+right)*16),(7,(Y_ORIGIN+bottom)*16),(8,0x80000000)):
                 a.li(reg,value)
@@ -418,7 +427,7 @@ def pieces(extensions=()):
 
 
 @modes.matching_install
-def build_memory(ram,subjects=(0,1,2,3),diagnostic=False):
+def build_memory(ram,subjects=(0,1,2,3),diagnostic=False,wide=False):
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     manager,count=u(core.ACTORS),u(core.MODE+4)
     if count not in modes.ACTOR_COUNTS or (u(core.MODE),u(core.MODE+8),u(core.MODE+12))!=(1,manager,count):
@@ -437,8 +446,9 @@ def build_memory(ram,subjects=(0,1,2,3),diagnostic=False):
         if p<BASE and ram[p:p+len(b)]!=NATIVE(p,len(b)):raise ValueError(f'Native quad hook changed: {p:x}')
     data.extend(((CONTROL,struct.pack('<4I',MAGIC,manager,count,1)),(CONTROL+VIEW_COUNT,struct.pack('<I',len(subjects))),
                  (SUBJECTS,struct.pack('<4I',*(tuple(subjects)+(0xFFFFFFFF,)*(4-len(subjects)))))))
+    data.append((CONTROL+WIDE_THIRD,struct.pack('<I',int(bool(wide)))))
     if u(hud.CONTROL)==hud.MAGIC:
-        rects=rectangles(len(subjects))
+        rects=rectangles(len(subjects),wide)
         views=b''.join(struct.pack('<6I',1,*rect,SUBJECTS+4*i) for i,rect in enumerate(rects))+bytes((4-len(subjects))*hud.VIEW_STRIDE)
         data.extend(((hud.VIEWS,views),(hud.CONTROL+12,struct.pack('<I',len(subjects)))))
     return dict(blocks=[dict(address=p,expected_hex=ram[p:p+len(b)].hex(),data_hex=b.hex()) for p,b in data])

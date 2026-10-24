@@ -395,6 +395,18 @@ class Setups(unittest.TestCase):
 
 
 class Plans(unittest.TestCase):
+    def test_individual_cpu_levels_follow_entrant_and_survive_restore(self):
+        plan=tt.Plan(tt.Setup(3,{1:0,2:1}),seed=2,
+                     cpu_settings=[[0,1,5],[3,4,2]]).build(self.ents((3,9),order=(9,3)))
+        self.assertEqual(plan.levels[9],[0,1,5,0,0])
+        self.assertEqual(plan.levels[3],[3,4,2,0,0])
+        restored=tt.Plan.from_json(json.loads(json.dumps(plan.to_json())))
+        self.assertEqual(restored.level_table(),plan.level_table())
+        data=plan.to_json();data['levels']=[[0]]
+        with self.assertRaisesRegex(ValueError,'CPU difficulty'):tt.Plan.from_json(data)
+        data=plan.to_json();data['levels'][0][0]=99
+        with self.assertRaisesRegex(ValueError,'CPU difficulty'):tt.Plan.from_json(data)
+
     def ents(self, humans=(14,), order=None):
         return tt.parse_entrants(entrants_blob(FIELD, humans=humans, order=order))
 

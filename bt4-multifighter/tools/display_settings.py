@@ -25,6 +25,7 @@ BAR_DRAW, FEED_DRAW, RECORD_NATIVE = CODE+0x2000, CODE+0x4000, CODE+0x5000
 HUD_DRAW_FILTER = CODE+0x6000
 HUD_DRAW_ENTRY = A(0x2188B8)
 HUD_DRAW_ORIGINAL = struct.pack("<2I", 0x27BDFF50, 0xFFB10098)
+COMBO_FILTER, COMBO_OLD, COMBO_ENTRY = CODE+0x8000, CODE+0x8400, A(0x223C40)
 CONTROL, COUNTS = CODE+0x7000, CODE+0x7100
 MAGIC = 0x44535031
 FIELDS = dict(magic=0, manager=4, friend=8, enemy=12, hud=16, feed=20, score=24)
@@ -271,6 +272,34 @@ def owned_pieces(ffa=False,legacy=False,deferred=True,solo=True):
             (RECORD_NATIVE,relocated(feed.record_code,feed.RECORD,RECORD_NATIVE))]+([] if legacy else [(HUD_DRAW_FILTER,hud_draw_filter_code(deferred))])
 
 
+def combo_filter_code():
+    """Suppress only rendering; combo accounting, animations and RNG keep ticking."""
+    import viewport_hud as view
+    a=Assembler(COMBO_FILTER);view.save(a);core.gate(a,'native')
+    a.li(8,CONTROL);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,'native')
+    a.lw(9,8,4);a.lw(10,28,-22364);a.branch(5,9,10,'native')
+    a.li(9,A(0x2FEB58));a.lw(9,9);a.branch(4,9,0,'native');a.lw(9,9,8)
+    for index,flag in ((4,32),(5,28)):
+        a.addiu(10,9,index*0x38);a.branch(5,4,10,f'next{index}')
+        a.lw(10,8,flag);a.branch(5,10,0,'hidden');a.jump('native');a.label(f'next{index}')
+    a.label('native');view.restore(a);a.jump(COMBO_OLD)
+    a.label('hidden');view.restore(a);a.jr()
+    data=a.finish();assert len(data)<=COMBO_OLD-COMBO_FILTER;return data
+
+
+def combo_pieces(ram,options):
+    native=elf_reader(__import__('native_map').elf_path(ROOT))[2](COMBO_ENTRY,8)
+    data=[(COMBO_FILTER,combo_filter_code()),(COMBO_OLD,native+jump(COMBO_ENTRY+8))]
+    hook=ram[COMBO_ENTRY:COMBO_ENTRY+8]
+    if hook==jump(COMBO_FILTER):
+        if any(ram[p:p+len(d)]!=d for p,d in data):raise ValueError('Combo display filter changed')
+        return []
+    if options['show_combo_hits'] and options['show_combo_damage']:return []
+    if hook!=native:raise ValueError('Native combo drawing program changed')
+    if any(any(ram[p:p+len(d)]) for p,d in data):raise ValueError('Combo display reservation occupied')
+    return data+[(COMBO_ENTRY,jump(COMBO_FILTER))]
+
+
 @modes.matching_install
 def build_memory(ram,settings=None,source='<prepared>'):
     if len(ram)!=0x8000000: raise ValueError('Display settings require 128 MiB captured EE RAM')
@@ -311,6 +340,7 @@ def build_memory(ram,settings=None,source='<prepared>'):
              (HUD_DRAW_ENTRY,jump(HUD_DRAW_FILTER))]
     control=bytearray(0x40)
     struct.pack_into('<7I',control,0,MAGIC,manager,*(int(options[k]) for k in KEYS))
+    struct.pack_into('<2I',control,28,int(not options['show_combo_hits']),int(not options['show_combo_damage']))
     installed=u(CONTROL)==MAGIC
     if installed:
         import four_player_mode
@@ -353,6 +383,7 @@ def build_memory(ram,settings=None,source='<prepared>'):
         for p,d in expected:
             if ram[p:p+len(d)]!=d: raise ValueError(f'Unknown display dependency:{p:08X}')
         blocks=pieces+[(CONTROL,bytes(control)),(COUNTS,bytes(modes.ENGINE_ACTORS*4))]+patches
+    blocks+=combo_pieces(ram,options)
     spans=sorted((p,p+len(d)) for p,d in blocks)
     if any(end>p for (_,end),(p,_) in zip(spans,spans[1:])): raise ValueError('Display payloads overlap')
     return dict(serial=SERIAL,crc=CRC,source=str(source),

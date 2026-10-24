@@ -85,7 +85,7 @@ RETIRED_TAG_KEYS = ('tag_attacks_enabled', 'tag_attack_button', 'tag_attack_help
                     'tag_super_enabled', 'tag_super_cost', 'tag_attack_cooldown_seconds')
 DISPLAY_KEYS = (FRIEND_BARS_KEY, ENEMY_BARS_KEY, NATIVE_HUD_KEY, KILL_FEED_KEY, KILL_SCORE_KEY)
 # Every key of the Beam struggles page (beam_struggle.py), in display order.
-BEAM_KEYS = ('beam_clash_camera', 'beam_struggle_length', 'beam_struggle_push_ahead', 'beam_struggle_cpu_power_percent',
+BEAM_KEYS = ('clash_button_sequence', 'beam_clash_camera', 'beam_struggle_length', 'beam_struggle_push_ahead', 'beam_struggle_cpu_power_percent',
              'beam_struggle_interference', 'beam_struggle_damage_penalty_percent',
              'beam_assist_enabled', 'beam_assist_multiplier_percent', 'beam_assist_cpu', 'beam_assist_range')
 # Local coordinated two-attacker cinematic (tag_team_rush.py).
@@ -131,9 +131,9 @@ GROUPS = (
                   NPC_GIANT_KEY, 'npc_transform_chance_percent')),
     ('Giants', ('canonical_giants', 'giant_size_multiplier', 'giant_attack_speed_percent', 'giant_damage_percent',
                 'giant_armor_levels', 'giant_camera_distance_percent')),
-    ('HUD', (*DISPLAY_KEYS, 'lockoff_target_hud', 'lockon_target_marker', 'lockon_target_style',
+    ('HUD', (*DISPLAY_KEYS, 'show_combo_hits', 'show_combo_damage', 'lockoff_target_hud', 'lockon_target_marker', 'lockon_target_style',
             'lockon_target_look', 'lockon_threat_marks', 'tag_team_rush_show_meter')),
-    ('Split-screen HUD', ('split_hud_style', 'split_hud_scale_percent', 'split_hud_layout', 'split_hud_filter',
+    ('Split-screen HUD', ('three_player_wide_bottom', 'split_hud_style', 'split_hud_scale_percent', 'split_hud_layout', 'split_hud_filter',
                           'coop_hud_layout', 'show_hud_portraits', 'show_hud_sparking_effects',
                           'hud_damage_trail_seconds')),
     ('Spectating', ('spectator_takeover_enabled', 'spectate_fallen_fighters', 'show_takeover_hints',

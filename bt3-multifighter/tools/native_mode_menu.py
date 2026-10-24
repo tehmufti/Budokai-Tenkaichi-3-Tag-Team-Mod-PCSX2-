@@ -16,6 +16,7 @@ import native_menu_services as services
 import input_binding
 import roster_selection_guard
 import coop_character_select
+import cpu_difficulty_select
 import ingame_settings
 import team_assignment
 import controller_assignment
@@ -73,6 +74,7 @@ def payload():
     a.lw(4,29,services.STACK+0x18);a.call(ingame_settings.CODE);a.branch(5,2,0,'return')
     a.lw(4,29,services.STACK+0x18);a.call(team_assignment.CODE);a.branch(5,2,0,'return')
     a.lw(4,29,services.STACK+0x18);a.call(coop_character_select.CODE)
+    a.lw(4,29,services.STACK+0x18);a.call(cpu_difficulty_select.INPUT)
     a.lw(4,29,services.STACK+0x18);a.call(roster_selection_guard.CODE)
     a.li(8,CONTROL);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,'return')
     a.lw(9,8,4);a.branch(4,9,0,'return');a.addiu(10,0,3);a.branch(4,9,10,'return')
@@ -289,7 +291,7 @@ def prepare(ram,settings=None):
 @lru_cache(maxsize=1)
 def code_pieces():
     """Include AFTER old.code_pieces in cold-boot/checkpoint construction."""
-    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()
+    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+cpu_difficulty_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()
 
 
 class ReadOnlyMemory:

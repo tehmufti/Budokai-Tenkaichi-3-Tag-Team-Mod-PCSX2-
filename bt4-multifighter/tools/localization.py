@@ -1967,3 +1967,10 @@ ES.update({
     'Rosters': 'Plantillas',
     'CPU only: the whole team is CPU and you watch. L1/R1 switch the fighter you follow.': 'Solo CPU: todo el equipo es CPU y tú miras. L1/R1 cambian el luchador que sigues.',
 })
+
+ES.update({
+    "Three players: full-width bottom screen": "Tres jugadores: pantalla inferior completa",
+    "Combo hit counter": "Contador de golpes",
+    "Damage counter": "Contador de daño",
+    "Button sequence for all clashes": "Secuencia de botones en todos los choques",
+})
