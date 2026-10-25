@@ -189,8 +189,8 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
             time.sleep(min(0.1, max(0.0, end - time.time())))
 
     def pine(self, timeout=3):
-        import pine
-        return pine.PineClient(port=self.slot, timeout=timeout)
+        import kit_platform
+        return kit_platform.client(self.slot, timeout=timeout, pid=self.base.pid)
 
     def sample(self):
         """scene, loop, pager words of the copy (None while PINE is busy: the watcher holds it for a moment)."""
@@ -313,7 +313,7 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         self.base.copy_installation()
         self.base.patch()
         for name in ('Mcd001.ps2', 'Mcd002.ps2'):           # the kit's blank card: the title flow is always the same
-            target = self.base.dest / 'game' / 'runtime28' / 'memcards' / name
+            target = __import__('kit_platform').data(self.base.dest) / 'memcards' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(BLANK_CARD, target)
         self.install_pad_patch()

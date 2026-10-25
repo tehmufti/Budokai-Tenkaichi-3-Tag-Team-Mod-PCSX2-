@@ -294,8 +294,8 @@
       "shared": false
     },
     "tools/clash_sequence.py": {
-      "bt3": "78383bc953b550c6a56c16cc712d203164b7d182a8dc2883e5cde56499ce7762",
-      "bt4": "78383bc953b550c6a56c16cc712d203164b7d182a8dc2883e5cde56499ce7762",
+      "bt3": "840030e54266bf7ddc704f5d9fe7fcabe6730dbf605e739bfd892b6b72bbf4ed",
+      "bt4": "840030e54266bf7ddc704f5d9fe7fcabe6730dbf605e739bfd892b6b72bbf4ed",
       "shared": true
     },
     "tools/contact_matrix.py": {
@@ -343,9 +343,14 @@
       "bt4": "bd33a19b878f5829e104214dc45fffcb1d02a40e1dadeb9eed5154d80ba82c95",
       "shared": true
     },
+    "tools/cpu_difficulty_art.py": {
+      "bt3": "fa863eb2b764692e7d885593848b6b5c624f1599941cf3727c11d6070a6d0579",
+      "bt4": "fa863eb2b764692e7d885593848b6b5c624f1599941cf3727c11d6070a6d0579",
+      "shared": true
+    },
     "tools/cpu_difficulty_select.py": {
-      "bt3": "bcb353f204194872946243d82987601bc9492c2eaaead117c7d6a3125377bca5",
-      "bt4": "bcb353f204194872946243d82987601bc9492c2eaaead117c7d6a3125377bca5",
+      "bt3": "45e11a29fc347e86948bdf7c9494030bd918cd833835ab8b80698c824e15fde7",
+      "bt4": "45e11a29fc347e86948bdf7c9494030bd918cd833835ab8b80698c824e15fde7",
       "shared": true
     },
     "tools/cpu_retaliation.py": {
@@ -1249,8 +1254,8 @@
       "shared": true
     },
     "tools/settings_thumbnails.py": {
-      "bt3": "47cd47737107375137da8bdae4af66e340fc1fde8f1f1b0600a1e50e05c34b40",
-      "bt4": "47cd47737107375137da8bdae4af66e340fc1fde8f1f1b0600a1e50e05c34b40",
+      "bt3": "04994047c1e78872e64f4daca9735c0de0635aa20227869e7b3f835d4dd4a621",
+      "bt4": "04994047c1e78872e64f4daca9735c0de0635aa20227869e7b3f835d4dd4a621",
       "shared": true
     },
     "tools/shader_pool_fix.py": {
@@ -1379,8 +1384,8 @@
       "shared": true
     },
     "tools/story_runtime.py": {
-      "bt3": "7b485d9b50d7de0ea5e61a545a16b6e1f5fe4b68db076a281404796288eb8cb2",
-      "bt4": "7b485d9b50d7de0ea5e61a545a16b6e1f5fe4b68db076a281404796288eb8cb2",
+      "bt3": "62229b9627f76036b0dfdfdd8437db3978caf9e031b50ed53e9945d4134becd5",
+      "bt4": "62229b9627f76036b0dfdfdd8437db3978caf9e031b50ed53e9945d4134becd5",
       "shared": true
     },
     "tools/story_voice.py": {

@@ -111,15 +111,17 @@ def read_installation(path):
         raise KitError('TTM-NET-24', what=f'The game disc chosen in that installation is {profile.get("adapter")}, '
                                           'not a reviewed online adapter.',
                        what_es=f'El disco elegido en esa instalación es {profile.get("adapter")}, no un adaptador revisado en línea.')
-    ini = _ini(game / 'runtime28' / 'inis' / 'PCSX2.ini')
+    import kit_platform
+    runtime = kit_platform.data(root)
+    ini = _ini(runtime / 'inis' / 'PCSX2.ini')
     bios = None
     name = ini.get('Filenames/BIOS')
     if name:
         bios_dir = Path(ini.get('Folders/Bios') or 'bios')
         if not bios_dir.is_absolute():
-            bios_dir = game / 'runtime28' / bios_dir
+            bios_dir = runtime / bios_dir
         bios = bios_dir / name
-    python = root / '.venv' / 'Scripts' / 'python.exe'
+    python = kit_platform.python(root)
     refused = (load_settings().get('install_refused') or {}).get(str(root))
     return dict(root=str(root), version=marker.get('version'), adapter=profile.get('adapter'), build=build,
                 refused=refused.get('reason') if isinstance(refused, dict) else None,

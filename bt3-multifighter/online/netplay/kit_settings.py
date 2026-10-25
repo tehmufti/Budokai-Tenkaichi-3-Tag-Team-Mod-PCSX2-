@@ -63,7 +63,7 @@ GAMEPLAY = (
     # Beam struggles
     'beam_clash_camera', 'beam_struggle_length', 'beam_struggle_push_ahead', 'beam_struggle_cpu_power_percent',
     'beam_struggle_interference', 'beam_struggle_damage_penalty_percent', 'beam_assist_enabled',
-    'beam_assist_multiplier_percent', 'beam_assist_cpu', 'beam_assist_range',
+    'beam_assist_multiplier_percent', 'beam_assist_cpu', 'beam_assist_range', 'clash_button_sequence',
 )
 # service name -> {key: value when the service is ON, value when it is OFF}
 SERVICES = {
@@ -90,7 +90,8 @@ NOT_APPLICABLE = (
     'loading_animation_speed_percent', 'coop_independent_selection', 'all_controllers_character_select',
     'show_player_slot_labels', 'controller_checkin', 'keep_controller_checkins', 'coop_fusion_controls',
     'show_fusion_control_owner', 'show_fusion_control_countdown', 'show_fusion_timer', 'split_hud_style',
-    'split_hud_scale_percent', 'split_hud_layout', 'split_hud_filter', 'coop_hud_layout', 'show_hud_portraits',
+    'split_hud_scale_percent', 'split_hud_layout', 'split_hud_filter', 'three_player_wide_bottom',
+    'coop_hud_layout', 'show_hud_portraits',
     'show_hud_sparking_effects', 'hud_damage_trail_seconds', 'training_cpu_behavior', 'training_refill_health',
     'training_health_delay_seconds', 'training_refill_ki', 'training_refill_stocks', 'fast_disc_loading',
     'emulated_cpu_speed',
@@ -142,6 +143,10 @@ LOCAL = {
     'show_native_hud': Patch(DISPLAY + 0x10, DISPLAY, DISPLAY_MAGIC, _bool),
     'show_kill_feed': Patch(DISPLAY + 0x14, DISPLAY, DISPLAY_MAGIC, _bool),
     'show_kill_score': Patch(DISPLAY + 0x18, DISPLAY, DISPLAY_MAGIC, _bool),
+    # These words store HIDDEN flags. Their filter is built even when the
+    # default is visible, so each client can choose independently.
+    'show_combo_hits': Patch(DISPLAY + 0x1C, DISPLAY, DISPLAY_MAGIC, lambda v: int(not v)),
+    'show_combo_damage': Patch(DISPLAY + 0x20, DISPLAY, DISPLAY_MAGIC, lambda v: int(not v)),
     'lockoff_target_hud': Patch(LOCKOFF + 0x10, LOCKOFF, LOCKOFF_MAGIC,
                                 lambda v: {'single_enemy': 0, 'hide': 1, 'show': 2}[v]),
     # the marker can be switched off per PC (only on when the match was built with it: it always is online)
@@ -164,6 +169,7 @@ LOCAL = {
 # The values the host's copy BUILDS the match with for the local keys: the most capable build (every display feature
 # installed), so that every PC can switch each one off (or keep it) in its own copy.
 BUILD_LOCAL = {'show_friendly_healthbars': True, 'show_enemy_healthbars': True, 'show_native_hud': True,
+               'show_combo_hits': False, 'show_combo_damage': False,
                'show_kill_feed': True, 'show_kill_score': True, 'lockoff_target_hud': 'show',
                'lockon_target_marker': True, 'lockon_target_style': 'both',
                'show_takeover_hints': True, 'show_takeover_confirmation': True, 'show_revive_ring': True,

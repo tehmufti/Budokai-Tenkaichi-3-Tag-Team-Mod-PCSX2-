@@ -3,8 +3,8 @@ window (placement, key presses, front / minimise / taskbar flash), the lobby's a
 captures (PrintWindow, also on a hidden desktop), XInput controllers, the UI language and, for the kit's test mode,
 hidden desktops.
 
-Nothing here needs psutil or pywin32, so the kit runs on a plain python.org Python as well as on a Tag Team Mod
-installation's private Python.
+The Windows helpers use the standard library. Linux process cleanup uses psutil
+from the installation's private Python.
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -16,7 +16,7 @@ import subprocess
 import threading
 
 WINDOWS = os.name == 'nt'
-CREATE_NO_WINDOW = 0x08000000
+CREATE_NO_WINDOW = 0x08000000 if WINDOWS else 0
 STILL_ACTIVE = 259
 
 if WINDOWS:
@@ -100,6 +100,31 @@ def kill_tree(pid):
     """End process `pid` and its children (taskkill /T /F). Only ever called with PIDs this kit started."""
     if not pid or not pid_alive(pid):
         return False
+    if not WINDOWS:
+        import psutil
+        try:
+            parent=psutil.Process(pid)
+            processes=parent.children(recursive=True)+[parent]
+            for process in processes:
+                try:process.terminate()
+                except psutil.Error:pass
+            try:
+                _,alive=psutil.wait_procs(processes,timeout=3)
+            except OSError:
+                # Some WSL kernels reject pidfd_open for an already-exited
+                # process. Process objects still guard against PID reuse.
+                alive=[]
+                for process in processes:
+                    try:
+                        if process.is_running() and process.status()!=psutil.STATUS_ZOMBIE:
+                            alive.append(process)
+                    except psutil.Error:pass
+            for process in alive:
+                try:process.kill()
+                except psutil.Error:pass
+            return True
+        except psutil.Error:
+            return False
     subprocess.run(['taskkill', '/PID', str(int(pid)), '/T', '/F'], capture_output=True,
                    creationflags=CREATE_NO_WINDOW if WINDOWS else 0)
     return True

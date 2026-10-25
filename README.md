@@ -11,7 +11,7 @@ English/Spanish adapters.
 
 ## Play
 
-Download the **Version 14.2 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.14.2).
+Download the **Version 14.3 installer** from [Releases](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-/releases/tag/v0.1.0-beta.14.3).
 Windows and Linux x86-64 downloads are available. Existing installations can use the
 separate **Updater** download: extract it, run Update, and choose the installed mod folder.
 Settings, saves, online profiles and edited scenarios are preserved; replaced files are backed up.
@@ -23,6 +23,10 @@ The release includes English and Spanish mod interfaces.
 This is a beta. The installer checks structural compatibility; that does not
 mean every character, costume, stage and move has been playtested. Online peers
 must use the same compatible disc, mod build and agreed settings.
+
+Version 14.3 adds individual CPU difficulty, optional button-sequence clashes,
+separate hit/damage counter switches, a wider three-player layout and opponent-specific
+extra fighter intros.
 
 Version 14.2 gives beam clash assistants their own visible beams and brings them
 closer to their teammate, with better ground placement. It also fixes misplaced

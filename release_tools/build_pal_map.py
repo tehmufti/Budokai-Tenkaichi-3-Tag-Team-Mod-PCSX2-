@@ -314,6 +314,11 @@ def build(usa, pal, hexrays, tools, log, region=None):
     found = scan(tools)
     for address in json.loads((HERE/'online-native-references.json').read_text()):
         found['addr'].setdefault(int(address, 16), []).append('reviewed online native references')
+    # Runtime relocation and historical patch readers also resolve addresses
+    # indirectly. Keep these published references even when no literal A()
+    # survives in the public source; each still goes through the disc mapper.
+    for address in json.loads((HERE/'native-indirect-references.json').read_text())[region['gp_key']]:
+        found['addr'].setdefault(int(address, 16), []).append('published indirect native reference')
     if region['data_addresses']:
         data_addresses(found)
     addr, evidence, failures = {}, {}, []
@@ -391,7 +396,7 @@ def build(usa, pal, hexrays, tools, log, region=None):
 
 
 def render(doc):
-    return json.dumps(doc, indent=1, sort_keys=True) + '\n'
+    return json.dumps(doc, indent=2, sort_keys=True) + '\n'
 
 
 def main(argv=None):

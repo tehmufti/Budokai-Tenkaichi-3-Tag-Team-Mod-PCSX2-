@@ -113,7 +113,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_lean_budget(self):
         _, _, _, cpu, entry, _ = run(image(True, 10, seed=5), 'lean')
-        self.assertLess(cpu.instructions, 13000, 'under 13k EE instructions with ten fighters, counter-pair safety and fusion receipts')
+        self.assertLess(cpu.instructions, 13200, 'under 13.2k EE instructions with ten fighters, counter-pair safety, fusion receipts and clash sequences')
 
     def test_disabled_probe_only_counts(self):
         ram = bytearray(image(True, 2))

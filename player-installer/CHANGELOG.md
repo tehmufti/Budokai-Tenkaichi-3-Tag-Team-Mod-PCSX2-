@@ -1,3 +1,17 @@
+## Version 14.3
+
+- Choose each CPU fighter's difficulty after picking their costume.
+- Added an optional button-sequence mode for clashes: press the shown button to get the next one. Wrong inputs briefly slow your progress.
+- Hide the hit counter and damage counter separately in Mod Settings.
+- Added a split-screen option that gives the third player the full bottom row.
+- Extra fighter intros now use opponent-specific lines when available, picking between them when several opponents have a matching line.
+- Fixed online hosting on Linux, including finding the installed BIOS and preparing matches.
+- Fixed an updater issue that could reject an installation because its dependency list used different line endings.
+
+Includes Windows and Linux installers and updaters for BT3 USA, Europe and Japan, and BT4 B14 REV2 in English and Spanish.
+
+Everyone in an online room should use Version 14.3.
+
 ## Version 14.2
 
 Beam clash assistants now fire their own beams into the struggle, with the right pose and beam color for their character. They stand closer to the fighter they're helping, and stay grounded when the clash is on the ground.

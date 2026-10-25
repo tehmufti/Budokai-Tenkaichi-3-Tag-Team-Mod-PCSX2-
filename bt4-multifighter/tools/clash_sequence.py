@@ -12,7 +12,9 @@ import dash_clash as dash
 import fresh_team_combat as core
 import roster_selection_guard as guard
 
-BASE, END = 0x07BB0000, 0x07BC0000
+# Between fusion_partner_lifecycle and special_camera_arbitration, outside
+# the native preparation packet and the online transport reservations.
+BASE, END = 0x077E0000, 0x077F0000
 FRAME, STEP, FIND, INPUT, PROMPT, AWARD = (BASE+i*0x1000 for i in range(6))
 OLD_INPUT, OLD_PROMPT = BASE+0x6000, BASE+0x6100
 CONTROL, ROWS = BASE+0x7000, BASE+0x7100
@@ -154,14 +156,52 @@ def award_code():
     a=Assembler(AWARD);beam.save(a);a.call(FIND);a.branch(4,2,0,'old');beam.restore(a);a.jr()
     a.label('old');beam.restore(a);a.jump(A(0x1E11D0));return a.finish()
 
-def pieces():
+def pieces(guarded_input=False):
     read=elf_reader(elf_path(ROOT))[2]
     out=[(FRAME,frame_code()),(STEP,step_code()),(FIND,find_code()),(INPUT,input_code()),(PROMPT,prompt_code()),(AWARD,award_code())]
     for entry,old in ((INPUT_ENTRY,OLD_INPUT),(PROMPT_ENTRY,OLD_PROMPT)):
+        if entry==INPUT_ENTRY and guarded_input:
+            out.append((old,jump(guarded_input)));continue
         a=Assembler(old);a.words.extend(struct.unpack('<2I',read(entry,8)));a.jump(entry+8);out.append((old,a.finish()))
     out += [(A(0x1D9900),jump(FRAME)),(INPUT_ENTRY,jump(INPUT)),(PROMPT_ENTRY,jump(PROMPT))]
     out += [(p,jal(AWARD)) for p in AWARDS]
     return out
+
+def input_owner(ram,installed):
+    """Keep the existing throw/contact guard when no owned clash consumes input."""
+    import cinematic_contact_guard as contact
+    original=elf_reader(elf_path(ROOT))[2](INPUT_ENTRY,8)
+    index,(_,cave,kind,rejected)=next((i,spec) for i,spec in enumerate(contact.SPECS) if spec[0]==INPUT_ENTRY)
+    current=ram[OLD_INPUT:OLD_INPUT+8] if installed else ram[INPUT_ENTRY:INPUT_ENTRY+8]
+    if current==original:return 0
+    import teammate_revive as revive
+    if current==jump(revive.COMMAND):
+        u=lambda p:struct.unpack_from('<I',ram,p)[0]
+        version=u(revive.CONTROL+24)
+        if u(revive.CONTROL)!=revive.MAGIC or version not in revive.VERSIONS or u(revive.CONTROL+44)!=cave:
+            raise ValueError('Clash input revival continuation changed')
+        expected=revive.barrier(revive.COMMAND,cave,'command',prescan=version>=4)
+        if ram[revive.COMMAND:revive.COMMAND+len(expected)]!=expected:
+            raise ValueError('Clash input revival guard changed')
+        owner=revive.COMMAND
+    elif current==jump(cave):owner=cave
+    else:raise ValueError(f'Clash button hook changed at {INPUT_ENTRY:08X}')
+    expected=contact.wrapper(INPUT_ENTRY,cave,kind,rejected,original,index)
+    if ram[cave:cave+len(expected)]!=expected:raise ValueError('Clash input contact guard changed')
+    return owner
+
+def dependency_override(ram,address,expected):
+    """Authenticate this inner wrapper before a scenario/tag outer wrapper."""
+    if address!=INPUT_ENTRY or len(expected)!=8:return expected
+    u=lambda p:struct.unpack_from('<I',ram,p)[0]
+    if u(CONTROL)!=MAGIC:return expected
+    if u(CONTROL+4)!=u(core.ACTORS):raise ValueError('Clash input belongs to another match')
+    if bytes(ram[OLD_INPUT:OLD_INPUT+8])!=expected:return expected
+    owner=input_owner(ram,True)
+    continuation=jump(owner) if owner else elf_reader(elf_path(ROOT))[2](INPUT_ENTRY,8)+jump(INPUT_ENTRY+8)
+    for p,data in ((INPUT,input_code()),(OLD_INPUT,continuation)):
+        if bytes(ram[p:p+len(data)])!=data:raise ValueError('Clash input wrapper changed')
+    return jump(INPUT)
 
 def overlay(ram):
     if struct.unpack_from('<I',ram,CONTROL)[0]!=MAGIC:return []
@@ -174,16 +214,19 @@ def build_memory(ram,settings=None,source='<prepared>'):
     installed=u(CONTROL)==MAGIC
     if not enabled and not installed:return dict(blocks=[],status='CLASH BUTTON SEQUENCE OFF')
     if u(dash.CONTROL)!=dash.MAGIC:raise ValueError('Button clashes require actual-participant clash routing')
-    manager=u(dash.CONTROL+4);data=pieces()
+    manager=u(dash.CONTROL+4);guarded=input_owner(ram,installed);data=pieces(guarded)
     if installed:
         if u(CONTROL+4)!=manager:raise ValueError('Clash button sequence belongs to a different match')
         for p,b in data:
+            if p==INPUT_ENTRY:
+                import story_runtime
+                b=story_runtime.dependency_override(ram,p,b)
             if ram[p:p+len(b)]!=b:raise ValueError(f'Clash button program changed at {p:08X}')
         data=[]
     else:
         if any(ram[BASE:END]):raise ValueError('Clash button reservation occupied')
         original=elf_reader(elf_path(ROOT))[2]
-        for p,n in ((INPUT_ENTRY,8),(PROMPT_ENTRY,8),*((p,4) for p in AWARDS)):
+        for p,n in ((PROMPT_ENTRY,8),*((p,4) for p in AWARDS)):
             if ram[p:p+n]!=original(p,n):raise ValueError(f'Clash button hook changed at {p:08X}')
         if ram[A(0x1D9900):A(0x1D9900)+8]!=jump(dash.FRAME):raise ValueError('Unexpected clash update owner')
         data.append((CONTROL,struct.pack('<5I',MAGIC,manager,int(enabled),0,0)))

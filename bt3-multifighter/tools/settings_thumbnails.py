@@ -496,11 +496,19 @@ def _mini_screen(ctx, v, coop=False, players=2, outline=True):
     from PIL import Image, ImageDraw
     screen = Image.new('RGBA', (512, 448), (10, 14, 20, 255))
     boxes = settings_preview.panel_boxes(v, players, coop)
+    rects = list(settings_preview.viewports(players))
+    if players == 3 and v.get('three_player_wide_bottom', False):
+        left, top, right, bottom = rects[2]
+        rects[2] = (0, top, 512, bottom)
+        boxes = list(boxes)
+        boxes[2] = [None if box is None else
+                    (box[0] + (-left if role == 0 else 512-right), *box[1:])
+                    for role, box in enumerate(boxes[2])]
     native = v.get('split_hud_style', 'native') == 'native'
     sub = Ctx(ctx.art, v)
     field = background('field')
     d = ImageDraw.Draw(screen)
-    for seat, (left, top, right, bottom) in enumerate(settings_preview.viewports(players)):
+    for seat, (left, top, right, bottom) in enumerate(rects):
         w, h = right-left, bottom-top
         k = max(w/VW, h/VH)
         view = field.resize((max(w, round(VW*k)), max(h, round(VH*k))), Image.Resampling.LANCZOS).crop((0, 0, w, h))
@@ -527,15 +535,15 @@ def _mini_screen(ctx, v, coop=False, players=2, outline=True):
             if glow is not None:
                 screen.alpha_composite(glow)
             screen.alpha_composite(panel, (round(x), round(y)))
-    for left, top, right, bottom in settings_preview.viewports(players):
+    for left, top, right, bottom in rects:
         d.rectangle((left, top, right-1, bottom-1), outline=(0, 0, 0, 255), width=2)
     return screen
 
 
-def scene_layout(coop=False):
+def scene_layout(coop=False, players=2):
     def draw(ctx, v):
         from PIL import Image, ImageDraw
-        screen = _mini_screen(ctx, v, coop)
+        screen = _mini_screen(ctx, v, coop, players)
         k = (VH-16)/screen.height
         screen = screen.resize((round(screen.width*k), VH-16), Image.Resampling.LANCZOS)
         x = (VW-screen.width)//2
@@ -735,6 +743,18 @@ def lines_feed(ctx, v):
 
 def lines_kills(ctx, v):
     return [(localization.tr('KILLS', ctx.game)+' 002', (238, 238, 238), 1.35)]
+
+
+def lines_combo(ctx, v):
+    lines = []
+    if v.get('show_combo_hits', True):
+        lines.append(('12 HITS!', (255, 206, 64), 1.2))
+    if v.get('show_combo_damage', True):
+        lines.append(('15480', (255, 126, 60), 1.1))
+    return lines or [('12 HITS!', (255, 206, 64), 1.2), ('15480', (255, 126, 60), 1.1)]
+
+
+_combo_scene = scene_text(lines_combo)
 
 
 def lines_owner(ctx, v):
@@ -1019,6 +1039,12 @@ SPECS = {
                                   _off('show_enemy_healthbars'), {'show_enemy_healthbars': True}),
     'show_native_hud': Spec(('show_native_hud', 'split_hud_style', 'show_hud_portraits'), scene_panel(), 'sky',
                             _off('show_native_hud'), {'show_native_hud': True}),
+    'show_combo_hits': Spec(('show_combo_hits', 'show_combo_damage', 'show_native_hud'), _combo_scene, 'sky',
+                            _all(_hud_on, lambda v: 'Hidden' if not (v.get('show_combo_hits', True) or v.get('show_combo_damage', True)) else None),
+                            {'show_native_hud': True, 'show_combo_hits': True, 'show_combo_damage': True}),
+    'show_combo_damage': Spec(('show_combo_damage', 'show_combo_hits', 'show_native_hud'), _combo_scene, 'sky',
+                              _all(_hud_on, lambda v: 'Hidden' if not (v.get('show_combo_hits', True) or v.get('show_combo_damage', True)) else None),
+                              {'show_native_hud': True, 'show_combo_hits': True, 'show_combo_damage': True}),
     'show_kill_feed': Spec(('show_kill_feed', 'language'), scene_text(lines_feed), 'sky', _feed,
                            {'show_kill_feed': True}),
     'show_kill_score': Spec(('show_kill_score', 'language'), scene_text(lines_kills), 'sky',
@@ -1038,6 +1064,8 @@ SPECS = {
                                      _all(_tag, _off('tag_team_rush_show_meter')),
                                      {'tag_team_rush_enabled': True, 'tag_team_rush_show_meter': True}),
     # Split-screen HUD
+    'three_player_wide_bottom': Spec(('three_player_wide_bottom', 'split_hud_style', 'show_native_hud'),
+                                     scene_layout(players=3), 'sky', lambda v: None, {}),
     'split_hud_style': Spec(('split_hud_style', 'show_native_hud', 'show_hud_portraits'), scene_panel(), 'sky',
                             _hud_on, {'show_native_hud': True}),
     'split_hud_scale_percent': Spec(('split_hud_scale_percent', 'split_hud_layout', 'split_hud_style', 'show_native_hud',
@@ -1128,6 +1156,7 @@ SPECS = {
 # Adjacent options whose pictures would be identical share one picture, spanned over their rows: it shows all of
 # their values at once (and the hidden state when the switch among them is off).
 SHARED = (('lockon_target_marker', 'lockon_target_style', 'lockon_target_look'),
+          ('show_combo_hits', 'show_combo_damage'),
           ('fusion_duration_enabled', 'fusion_duration_seconds', 'show_fusion_timer'),
           ('show_revive_ring', 'revive_ring_opacity', 'revive_ring_wave_height'))
 for _members in SHARED:

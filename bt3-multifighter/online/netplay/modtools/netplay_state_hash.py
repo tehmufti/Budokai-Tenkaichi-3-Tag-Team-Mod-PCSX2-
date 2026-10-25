@@ -152,6 +152,12 @@ def descriptors(profile='lean'):
     add(DIRECT, 6, ringout.CONTROL, 0, 6, 'tournament identity, enabled flag and permanent elimination mask')
     add(DIRECT, 6, vanish.CONTROL, 0, 2, 'counter-pair guard identity and deterministic update clock')
     add(DIRECT, 6, vanish.ROWS, 0, 12 * vanish.STRIDE // 4, 'counter-pair opponent, actor/model identity and response age')
+    # Optional button-sequence clashes: configuration/coordinator plus both
+    # contestants' sequence, input edge, penalty and accumulated strength.
+    # Data-only ABI also works with the standalone kit where it is absent.
+    add(DIRECT, 6, 0x077E7000, 0, 5, 'button-sequence clash identity, manager, enabled, coordinator and serial')
+    for index in range(2):
+        add(DIRECT, 6, 0x077E7100 + index * 64, 0, 7, 'button-sequence clash contestant record (no padding)')
     rows.extend(fusion_buff_rows())
     if full:
         add(DIRECT, 6, ground.ACTORS, 0, 12 * ground.ROW // 4, 'ground movement per-fighter gait and phase state')

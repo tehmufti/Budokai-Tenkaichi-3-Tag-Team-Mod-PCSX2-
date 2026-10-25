@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import os
+import kit_platform
 from pathlib import Path
 import secrets
 import shutil
@@ -234,9 +235,10 @@ def identity(copy):
     import kit_adapter
     source = Path(copy.install['root']).resolve() / 'game'
     game = copy.base.dest / 'game'
-    runtime = game / 'runtime28'
-    binaries = [path for path in runtime.rglob('*') if path.is_file()
-                and path.suffix.lower() in ('.exe', '.dll', '.pak', '.qm')]
+    program = game / 'runtime28'
+    runtime = kit_platform.data(copy.base.dest)
+    binaries = [path for path in program.rglob('*') if path.is_file()
+                and path.suffix.lower() in ('.exe', '.dll', '.pak', '.qm', '.appimage')]
     profile = kit_adapter.profile(source.parent)
     profile = {key: profile[key] for key in ('schema', 'adapter', 'iso_sha256', 'members', 'serial',
                                             'pcsx2_crc', 'runtime_variant') if key in profile}
@@ -254,7 +256,7 @@ def identity(copy):
     value = dict(schema=SCHEMA, recipe=BASE_RECIPE, adapter=copy.install['adapter'], profile=profile,
                  iso=dict(size=iso.stat().st_size, sha256=sha(iso, memo=True)),
                  bios=dict(size=bios.stat().st_size, sha256=sha(bios, memo=True)),
-                 emulator=files_digest(runtime, binaries), guest=guest_code(copy, source), pad=pad_code(),
+                 emulator=files_digest(program, binaries), guest=guest_code(copy, source), pad=pad_code(),
                  config=semantic_config(runtime / 'inis' / 'PCSX2.ini'),
                  template_language=settings.get('language', 'en'),
                  cards={path.name: sha(path, memo=True) for path in sorted((runtime / 'memcards').glob('*.ps2'))})
@@ -369,7 +371,7 @@ def _read_json(path):
 
 def _boot_path(private_root, path):
     private_root, path = Path(private_root).resolve(), Path(path).resolve()
-    states = (private_root / 'game/runtime28/sstates').resolve()
+    states = (kit_platform.data(private_root) / 'sstates').resolve()
     if (private_root.name != 'Tag Team Mod' or private_root.parent.name != 'prep' or
             not states.is_relative_to(private_root) or path.parent != states or
             not path.name.startswith('.ttm-selector-boot-') or path.suffix != '.p2s'):
@@ -466,7 +468,7 @@ def install_boot_hooks(descriptor, private_root, identity_value):
     if folder.resolve().parent != cache_root.resolve() or source.resolve().parent != folder.resolve():
         raise ValueError('Generated boot-hook cache path escapes its identity folder')
     data = _hook_bytes(source, hook['size'], hook['sha256'])
-    cheats = root / 'game/runtime28/cheats'
+    cheats = kit_platform.data(root) / 'cheats'
     target = cheats / filename
     receipt = target.with_suffix('.owned-sha256')
     if (not cheats.resolve().is_relative_to(root) or target.resolve().parent != cheats.resolve() or
@@ -512,9 +514,13 @@ def _owner(copy):
     expected = (kit_paths.PREP / 'Tag Team Mod').resolve()
     exe = dest / 'game/runtime28/pcsx2-qt.exe'
     pid = copy.base.pid
-    if (dest != expected or not copy.base.desktop or not pid or not kit_win.pid_alive(pid) or
-            kit_win.listener_pid(copy.slot) != pid or
-            Path(kit_win.process_path(pid)).resolve() != exe.resolve()):
+    if kit_win.WINDOWS:
+        owned = (copy.base.desktop and kit_win.listener_pid(copy.slot) == pid and
+                 Path(kit_win.process_path(pid)).resolve() == exe.resolve())
+    else:
+        owned = (kit_platform.owner(copy.slot) == pid and kit_platform.is_child_emulator(
+            pid,copy.base.cmd_pid,dest/'game/runtime28/pcsx2-qt.AppImage'))
+    if dest != expected or not pid or not kit_win.pid_alive(pid) or not owned:
         raise ValueError('Selector operation does not own the isolated preparation emulator')
     return pid
 
@@ -664,7 +670,7 @@ class SelectorCache:
             if not copy.at_map_select():
                 raise ValueError('Private game is not at its neutral selector')
             source = Path(source).resolve()
-            state_root = (copy.base.dest / 'game/runtime28/sstates').resolve()
+            state_root = (kit_platform.data(copy.base.dest) / 'sstates').resolve()
             if not source.is_relative_to(state_root):
                 raise ValueError('Only a locally captured private selector may be cached')
             memory, archive = archive_payload(source)
@@ -685,8 +691,8 @@ class SelectorCache:
             if not isinstance(generated, bytes) or not 0 < len(generated) <= MAX_BOOT_HOOKS:
                 raise ValueError('Generated boot hooks exceed their storage bound')
             digest = hashlib.sha256(generated).hexdigest()
-            installed = copy.base.dest / 'game/runtime28/cheats' / filename
-            if installed.resolve().parent != (copy.base.dest / 'game/runtime28/cheats').resolve() or \
+            installed = kit_platform.data(copy.base.dest) / 'cheats' / filename
+            if installed.resolve().parent != (kit_platform.data(copy.base.dest) / 'cheats').resolve() or \
                     not installed.resolve().is_relative_to(copy.base.dest.resolve()):
                 raise ValueError('Generated boot-hook source escapes its private installation')
             if _hook_bytes(installed, len(generated), digest) != generated:
@@ -798,7 +804,7 @@ class SelectorCache:
                     copy.base.pid is not None or self.folder != (root.parent / 'native-selector-cache').resolve()):
                 raise ValueError('Selector startup requires a fresh isolated preparation copy')
             source, record = self._validate(engine, identity_value)
-            target = root / 'game/runtime28/sstates' / ('.ttm-selector-boot-' + secrets.token_hex(16) + '.p2s')
+            target = kit_platform.data(root) / 'sstates' / ('.ttm-selector-boot-' + secrets.token_hex(16) + '.p2s')
             target.parent.mkdir(parents=True, exist_ok=True)
             _boot_path(root, target)
             def write(stream):
@@ -918,7 +924,7 @@ class SelectorCache:
             baseline = lease.read(copy)
             if baseline.get('state') not in ('MENU', 'ACTIVE'):
                 raise ValueError('An active preparation worker still owns the private game')
-            target = copy.base.dest / 'game/runtime28/sstates' / kit_adapter.state_name(RESTORE_SLOT)
+            target = kit_platform.data(copy.base.dest) / 'sstates' / kit_adapter.state_name(RESTORE_SLOT)
             target.parent.mkdir(parents=True, exist_ok=True)
             self._atomic(target, lambda stream: stream.write(path.read_bytes()))
             # PINE is available before the first boot-cheat application. Loading

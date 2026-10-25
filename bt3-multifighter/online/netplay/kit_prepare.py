@@ -46,6 +46,7 @@ import time
 from pathlib import Path
 
 import kit_paths
+import kit_platform
 from native_map import A, GP, GPO
 import kit_win
 from kit_codes import KitError
@@ -104,6 +105,8 @@ SKIP_DIRS = {('game', 'analysis', 'autopilot'), ('game', 'analysis', 'prepared-s
              ('game', 'runtime28', 'sstates'), ('game', 'runtime28', 'snaps'), ('game', 'runtime28', 'logs'),
              ('game', 'runtime28', 'cache'), ('game', 'runtime28', 'videos'), ('game', 'runtime28', 'covers')}
 SCENARIO_QUEUES = ('next-battle.json', 'quick-launch.json')
+SKIP_DIRS.update(('game','runtime28','PCSX2',name) for name in
+                 ('sstates','snaps','logs','cache','videos','covers'))
 
 
 def clear_private_scenario_queues(destination):
@@ -127,9 +130,10 @@ def immutable_dependency(path):
     parts = Path(path).parts
     if len(parts) >= 2 and parts[0] == '.venv':
         return (parts[1:3] == ('Lib', 'site-packages') or
+                len(parts)>=4 and parts[1]=='lib' and parts[2].startswith('python') and parts[3]=='site-packages' or
                 parts[1] == 'Scripts' and Path(path).suffix.lower() in ('.exe', '.dll'))
     return (len(parts) >= 3 and parts[:2] == ('game', 'runtime28') and
-            Path(path).suffix.lower() in ('.exe', '.dll', '.pak', '.qm'))
+            Path(path).suffix.lower() in ('.exe', '.dll', '.pak', '.qm', '.appimage'))
 
 
 def independent_write(path, data):
@@ -163,7 +167,17 @@ def patches(slot):
         'game/launcher-lifecycle.ps1': [(FOREIGN, FOREIGN + '        if (-not $own) { continue }   # TTM Online Kit '
                                                             'private copy\n')],
         'game/tools/pine.py': [('def __init__(self, port=28011,', f'def __init__(self, port={slot},')],
-        'game/tools/play_launcher.py': [('PINE_SLOT = 28011', f'PINE_SLOT = {slot}')],
+        'game/tools/play_launcher.py': [
+            ('PINE_SLOT = 28011', f'PINE_SLOT = {slot}'),
+            ('        found = other_emulators()',
+             '        found = other_emulators()\n'
+             '        if not WINDOWS:\n'
+             "            if self.root.parent.name != 'Tag Team Mod' or self.root.parent.parent.name != 'prep':\n"
+             "                raise ValueError('Online preparation requires its private installation')\n"
+             '            found = [f"{name} (process {pid})" for pid, name, exe, appimage in linux_processes()\n'
+             '                     if looks_like_pcsx2(name, exe, appimage) and\n'
+             '                     (not (appimage or exe) or\n'
+             '                      Path(appimage or exe).resolve() == self.emulator_path.resolve())]')],
         # This receipt belongs to the PRIVATE builder only. A savestate cannot
         # restore the Python watcher's authorization or its menu epoch.
         'game/tools/autopilot.py': [
@@ -280,7 +294,7 @@ class Prepare:
         self.dest = kit_paths.PREP / 'Tag Team Mod'
         self.orig = kit_paths.PREP / 'orig'
         self.pid = self.cmd_pid = None
-        self.desktop = f'ttm-kit-prep-{self.slot}' if self.args.hidden else None
+        self.desktop = f'ttm-kit-prep-{self.slot}' if self.args.hidden and kit_win.WINDOWS else None
 
     # ---- 1. the private copy --------------------------------------------------------------------------------------
     def copy_installation(self):
@@ -293,7 +307,7 @@ class Prepare:
         source = Path(install['root'])
         record = kit_paths.PREP / 'copy.json'
         stamp = dict(source=str(source), version=install['version'])
-        fresh = not (self.dest / 'Play.cmd').is_file()
+        fresh = not (self.dest / ('Play.cmd' if kit_win.WINDOWS else 'Play.sh')).is_file()
         try:
             if json.loads(record.read_text(encoding='utf-8')) != stamp:
                 fresh = True
@@ -347,6 +361,8 @@ class Prepare:
         install = getattr(getattr(self, 'run', None), 'install', None)
         source = Path(install['root']) if isinstance(install, dict) and install.get('root') else None
         for rel, edits in patches(self.slot).items():
+            if not kit_win.WINDOWS and rel.endswith('.ps1'):
+                continue
             original = self.orig / rel
             target = self.dest / rel
             # Oct 15 redesign: the installation's own file is the original (an edited development tree keeps its copy and
@@ -367,8 +383,8 @@ class Prepare:
                                                       f'(cannot change its PINE port safely).')
                 data = data.replace(old_b, new_b)
             independent_write(target, data)
-        ini = self.dest / 'game' / 'runtime28' / 'inis' / 'PCSX2.ini'
-        original = self.orig / 'game' / 'runtime28' / 'inis' / 'PCSX2.ini'
+        ini = kit_platform.data(self.dest) / 'inis/PCSX2.ini'
+        original = self.orig / ini.relative_to(self.dest)
         if not original.exists():
             original.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ini, original)
@@ -410,7 +426,7 @@ class Prepare:
             secrets_ini.write_bytes(b'')
 
     def python(self):
-        return self.dest / '.venv' / 'Scripts' / 'python.exe'
+        return kit_platform.python(self.dest)
 
     def copy_python(self, *args, timeout=300):
         env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME', 'TAGTEAM_DISC',
@@ -423,6 +439,8 @@ class Prepare:
 
     # ---- the copy's PCSX2 --------------------------------------------------------------------------------
     def launch(self):
+        if not kit_win.WINDOWS:
+            return self.launch_linux()
         owner = kit_win.listener_pid(self.slot)
         if owner is not None:
             raise KitError('TTM-NET-23', what=f'PINE port {self.slot} (for the match preparation) is used by process '
@@ -455,6 +473,30 @@ class Prepare:
         raise KitError('TTM-NET-23', what='PCSX2 of the mod\'s Play did not start within 5 minutes.',
                        fix='Close the Play window and try again.')
 
+    def launch_linux(self):
+        if kit_platform.owner(self.slot) is not None:
+            raise KitError('TTM-NET-23', what='The preparation PINE socket is already in use.')
+        console = self.run.run_dir / 'prepare-play.console.txt'
+        env = {k:v for k,v in os.environ.items() if k not in
+               ('PYTHONPATH','PYTHONHOME','TAGTEAM_PINE_SOCKET','TAGTEAM_DISC','TAGTEAM_ADAPTER')}
+        env['TAGTEAM_ONLINE_PREPARATION'] = '1'
+        with console.open('wb') as stream:
+            self.process = subprocess.Popen(['sh',str(self.dest/'Play.sh')],cwd=self.dest,env=env,
+                                            stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+        self.cmd_pid = self.process.pid
+        appimage = self.dest/'game/runtime28/pcsx2-qt.AppImage'
+        end = time.monotonic()+120
+        while time.monotonic()<end:
+            owner = kit_platform.owner(self.slot)
+            if owner and kit_platform.is_child_emulator(owner,self.cmd_pid,appimage):
+                self.pid=owner
+                return owner
+            if self.process.poll() is not None:
+                raise KitError('TTM-NET-23', what=f'The private Play launcher closed. See {console}.')
+            time.sleep(.2)
+        self.close()
+        raise KitError('TTM-NET-23', what='The private Linux emulator did not open its PINE socket.')
+
     def watcher_state(self):
         folder = self.dest / 'game' / 'analysis' / 'autopilot'
         try:
@@ -465,7 +507,7 @@ class Prepare:
 
     def sample(self):
         import pine
-        with pine.PineClient(port=self.slot, timeout=3) as p:
+        with kit_platform.client(self.slot, timeout=3, pid=self.pid) as p:
             u = lambda a: struct.unpack('<I', p.read(a, 4))[0]
             battle = u(BATTLE)
             director = u(battle) if 0x100000 <= battle < 0x7FFFE00 else None
@@ -476,12 +518,12 @@ class Prepare:
 
     def save(self):
         import pine
-        sstates = self.dest / 'game' / 'runtime28' / 'sstates'
+        sstates = kit_platform.data(self.dest) / 'sstates'
         path = sstates / __import__('kit_adapter').state_name(SAVE_SLOT)
         before = path.stat().st_mtime if path.exists() else None
         for attempt in range(20):
             try:
-                with pine.PineClient(port=self.slot, timeout=30) as p:
+                with kit_platform.client(self.slot, timeout=30, pid=self.pid) as p:
                     p.save_state(SAVE_SLOT)
                 break
             except Exception:  # noqa: BLE001 - the watcher holds PINE for a moment

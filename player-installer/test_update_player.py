@@ -200,6 +200,25 @@ class UpdateFlowTests(unittest.TestCase):
                 self.assertEqual(u.read_json(root/'installed-files.json')['version_epoch'],2)
                 self.assertFalse(u.changed_files(root,files))
 
+    def test_dependency_lock_line_endings_do_not_block_update(self):
+        with self.installation('bt3-usa') as (root,setup,files):
+            (root/'requirements-player.lock').write_bytes(b'deps\r\n')
+            for name in ('requirements-player.lock','requirements-player-linux.lock'):
+                (setup/name).write_bytes(b'deps\n')
+            manifest=u.read_json(setup/'updater-files.json')
+            for name in ('requirements-player.lock','requirements-player-linux.lock'):
+                manifest['files'][name]=u.digest(setup/name)
+            (setup/'updater-files.json').write_bytes(u.json_bytes(manifest))
+            u.update(root,setup)
+            self.assertFalse(u.changed_files(root,files))
+
+    def test_changed_dependencies_still_require_full_installer(self):
+        with self.installation('bt3-usa') as (root,setup,files):
+            (root/'requirements-player.lock').write_bytes(b'other-deps\r\n')
+            with self.assertRaisesRegex(ValueError,'changes Python dependencies'):
+                u.update(root,setup)
+            self.assertEqual((root/'game/tools/updated.py').read_bytes(),b'old runtime\n')
+
     def test_true_newer_installation_is_not_changed(self):
         with self.installation('bt3-usa','0.1.0-beta.30',2) as (root,setup,files):
             before=(root/'installed-files.json').read_bytes()

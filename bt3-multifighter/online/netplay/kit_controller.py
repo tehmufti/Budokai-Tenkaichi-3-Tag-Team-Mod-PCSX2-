@@ -1475,8 +1475,6 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         return self.lang if self.lang in ('en', 'es') else 'en'
 
     def prep_problem(self, install, iso, disc):
-        if os.name != 'nt':
-            return ('why.linux', None)
         if not install:
             return ('why.no_install', None)
         if install.get('refused'):

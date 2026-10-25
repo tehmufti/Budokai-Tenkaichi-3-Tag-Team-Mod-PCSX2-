@@ -13,7 +13,9 @@ import mode_menu
 import roster_selection_guard as guard
 import team_assignment as assignment
 
-BASE, END = 0x07B60000, 0x07BB0000
+# Retired v3 loading-picture bank; v4 uses 0x06A00000..0x06B00000.
+# Menu state must survive the 0x07800000..0x08000000 preparation packet.
+BASE, END = 0x07480000, 0x074D0000
 INPUT, DRAW, MEMBER, OLD_MEMBER = BASE, BASE+0x2000, BASE+0x3000, BASE+0x3800
 CONTROL, TABLE, DATA = BASE+0x4000, BASE+0x4100, BASE+0x5000
 MAGIC=0x43505531
@@ -108,21 +110,8 @@ def input_code():
 
 @lru_cache(maxsize=1)
 def packets():
-    from PIL import Image,ImageDraw
-    import fonts,localization,guest_loading_screen as gs
-    es=localization.language()=='es';out=[];key=(255,0,255)
-    labels=('Muy débil','Débil','Normal','Fuerte','Muy fuerte') if es else ('Very Weak','Weak','Normal','Strong','Very Strong')
-    for selected in range(5):
-        im=Image.new('RGB',(512,448),key);d=ImageDraw.Draw(im);f=fonts.truetype('sans-bold',17)
-        d.rectangle((142,105,370,325),fill=(30,20,46),outline=(240,179,73),width=2)
-        d.text((256,116),'NIVEL CPU' if es else 'COM LEVEL',anchor='mt',font=f,fill=(255,224,132),stroke_width=1,stroke_fill=(0,0,0))
-        for j,label in enumerate(labels):
-            y=151+j*32
-            if j==selected:d.polygon(((151,y),(362,y),(355,y+27),(145,y+27)),fill=(245,185,73))
-            d.text((256,y+3),label,anchor='mt',font=f,fill=(28,17,33) if j==selected else (243,238,255))
-        # Four-bit colour keeps the original menu sharp without large uploads.
-        im=im.quantize(colors=15,dither=Image.Dither.NONE).convert('RGB')
-        out.append(gs.gif_packet(gs.image_rectangles(im,key=key)))
+    import cpu_difficulty_art,guest_loading_screen as gs
+    out=tuple(gs.gif_packet(rows) for rows in cpu_difficulty_art.rectangles())
     assert DATA+sum(map(len,out))<=END
     return tuple(out)
 
@@ -130,7 +119,12 @@ def draw_code():
     a=Assembler(DRAW);guard.save(a)
     a.li(8,CONTROL);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,'done');a.lw(9,8,4);a.branch(4,9,0,'done')
     a.li(9,mode_menu.SCENE_MANAGER);a.lw(9,9);guard.pointer(a,9,0x20);a.lw(9,9,0x18);a.addiu(10,0,40);a.branch(5,9,10,'done')
-    a.lw(9,8,8);a.i(11,10,9,5);a.branch(4,10,0,'done');a.r(0,9,0,9,3);a.li(10,TABLE);a.r(0x21,10,10,9);a.lw(16,10);a.lw(17,10,4)
+    a.lw(9,8,8);a.i(11,10,9,5);a.branch(4,10,0,'done')
+    # Native-menu control owns the selected language. Both banks are immutable.
+    import native_mode_menu
+    a.li(10,native_mode_menu.CONTROL);a.lw(10,10,0xD8);a.branch(4,10,0,'language_ready')
+    a.addiu(9,9,5);a.label('language_ready')
+    a.r(0,9,0,9,3);a.li(10,TABLE);a.r(0x21,10,10,9);a.lw(16,10);a.lw(17,10,4)
     a.lw(8,28,-23004);a.i(11,9,8,2);a.branch(4,9,0,'done');a.r(0,8,0,8,2);a.r(0x21,8,28,8)
     a.lw(9,8,GPO(-23024));a.lw(10,8,GPO(-23016));a.lw(11,28,-23008);a.r(0x21,11,11,9);a.branch(5,11,10,'done')
     a.lw(11,28,-23000);a.r(0x2B,12,11,9);a.branch(5,12,0,'done');a.r(0x21,12,11,17);a.addiu(12,12,64)

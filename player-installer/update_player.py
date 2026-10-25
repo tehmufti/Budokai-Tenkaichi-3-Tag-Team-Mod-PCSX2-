@@ -282,7 +282,8 @@ def update(root,setup=HERE):
         if check_release_order(receipt,release,read_json(root/'release.json')):
             print('Updating an installation from before the version-number reset.',flush=True)
         lockname='requirements-player.lock' if os.name=='nt' else 'requirements-player-linux.lock'
-        require((root/'requirements-player.lock').read_bytes()==(setup/lockname).read_bytes(),
+        require((root/'requirements-player.lock').read_text(encoding='utf-8').splitlines()==
+                (setup/lockname).read_text(encoding='utf-8').splitlines(),
                 'This release changes Python dependencies. Use its full installer and import your previous installation.')
         require(shutil.disk_usage(root).free>512<<20,'Free at least 512 MiB before updating.')
         import install_player as installer

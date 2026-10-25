@@ -562,6 +562,8 @@ def dependency_override(ram,address,expected):
     import cinematic_contact_guard as contact
     if len(expected)!=8 or address not in (contact.PROTECTED,abi.DAMAGE_ENTRY,A(0x1D4F30)):
         return expected
+    import clash_sequence
+    expected=clash_sequence.dependency_override(ram,address,expected)
     actual=bytes(ram[address:address+8])
     expected=_protection_override(ram,address,expected,actual)
     import tag_rush_safety
