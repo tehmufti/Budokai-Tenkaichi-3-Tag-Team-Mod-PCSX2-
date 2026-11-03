@@ -224,8 +224,8 @@
       "shared": false
     },
     "tools/bt4_graphics_fixes.py": {
-      "bt3": "4263c67a366edc3f08e719dffa4258c4a508ef060fa46f385b4a9c6c2bdd7242",
-      "bt4": "4263c67a366edc3f08e719dffa4258c4a508ef060fa46f385b4a9c6c2bdd7242",
+      "bt3": "5ed6110813c8088b782c44006860d85d13c9579a644222894e92d85f78ac75ae",
+      "bt4": "5ed6110813c8088b782c44006860d85d13c9579a644222894e92d85f78ac75ae",
       "shared": false
     },
     "tools/buu_ultimate_fanout.py": {
@@ -274,8 +274,8 @@
       "shared": true
     },
     "tools/cinematic_policy.py": {
-      "bt3": "49a7feecdfe49b214b7f4aebc7c46c16143bbbc981d888e0accc15c1bca12722",
-      "bt4": "49a7feecdfe49b214b7f4aebc7c46c16143bbbc981d888e0accc15c1bca12722",
+      "bt3": "f32ac9f35dc5bc50c648283afd533ace8466fadccfecc86dad42a78b37b0196b",
+      "bt4": "f32ac9f35dc5bc50c648283afd533ace8466fadccfecc86dad42a78b37b0196b",
       "shared": true
     },
     "tools/cinematic_position.py": {
@@ -349,8 +349,8 @@
       "shared": true
     },
     "tools/cpu_difficulty_select.py": {
-      "bt3": "45e11a29fc347e86948bdf7c9494030bd918cd833835ab8b80698c824e15fde7",
-      "bt4": "45e11a29fc347e86948bdf7c9494030bd918cd833835ab8b80698c824e15fde7",
+      "bt3": "e95d95dd1a03b4d20c234d4885ebdd3080b5c600b74e8a155c0b4a4a75cd211b",
+      "bt4": "e95d95dd1a03b4d20c234d4885ebdd3080b5c600b74e8a155c0b4a4a75cd211b",
       "shared": true
     },
     "tools/cpu_retaliation.py": {

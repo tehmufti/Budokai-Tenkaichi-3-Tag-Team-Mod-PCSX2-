@@ -89,6 +89,27 @@ def plan(raw, adapter):
     return dict(state='add-alignment', ready=True, data=raw+inserted, inserted=inserted)
 
 
+def original_database(raw):
+    """Remove only the exact graphics-only suffix our installer would generate.
+
+    Online build checks still hash the entire original database, executable,
+    libraries and patch archive. A changed or incomplete alias is not exempt.
+    """
+    try:
+        if len(raw) > MAX_DATABASE or b'\0' in raw:
+            return raw
+        text = raw.decode('utf-8-sig')
+        inserted = _alias(_fixes(_entry(text, SOURCE)), '\r\n' if '\r\n' in text else '\n')
+        if not raw.endswith(inserted):
+            return raw
+        original = raw[:-len(inserted)]
+        if plan(original, ADAPTER).get('data') == raw:
+            return original
+    except (ValueError, UnicodeError):
+        pass
+    return raw
+
+
 def _database(runtime):
     """Only the resource file inside this explicit runtime, never linked resources."""
     runtime = Path(runtime).resolve()

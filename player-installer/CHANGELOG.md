@@ -1,3 +1,15 @@
+## Version 14.4
+
+- Fixed the CPU difficulty choices not appearing after selecting a costume.
+- Fixed a freeze when a transformation overlaps with another fighter's special attack or ultimate.
+- Fixed Windows and Linux online players being unable to connect when the Windows installation has BT4's graphics fixes.
+
+Includes Windows and Linux installers and updaters for BT3 USA, Europe and Japan, and BT4 B14 REV2 in English and Spanish.
+
+Everyone in an online room should use Version 14.4.
+
+Already installed? Download the Updater for your platform and choose your mod folder. Your saves and settings are kept. For a fresh installation, use the full installer.
+
 ## Version 14.3
 
 - Choose each CPU fighter's difficulty after picking their costume.

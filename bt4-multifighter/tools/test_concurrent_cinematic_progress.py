@@ -2,11 +2,12 @@
 import struct
 import unittest
 from unittest.mock import patch
+from native_map import GPO
 
 import cinematic_policy as p
 import cinematic_admission as admission
 import rush_cinematics as rush
-from test_fused_shared_cinematic import Cpu, MANAGER, BATTLE, CINE, ACTORS, MODELS
+from guest_policy_fixture import Cpu, MANAGER, BATTLE, CINE, ACTORS, MODELS
 
 
 def run(c, address):
@@ -26,7 +27,7 @@ def machine(independent=True, shared_rush=True):
     c.write(p.CONTROL,struct.pack('<6I',p.MAGIC,MANAGER,6,BATTLE,0,1))
     c.w(p.CONTROL+p.TRANSFORM_VIEW,1)
     c.write(rush.CONTROL,struct.pack('<3I',rush.MAGIC,MANAGER,int(shared_rush)))
-    c.w(c.r[28]-22180,CINE);c.w(CINE+812,1)
+    c.w(c.r[28]+GPO(-22180),CINE);c.w(CINE+812,1)
     for index,(actor,model) in enumerate(zip(ACTORS,MODELS)):
         c.w(p.core.POINTERS+4*index,actor);c.w(actor,index);c.w(actor+8,index&1);c.w(actor+12,index)
         for offset in admission.ACTION_FIELDS:c.w(actor+offset,0xFFFFFFFF)

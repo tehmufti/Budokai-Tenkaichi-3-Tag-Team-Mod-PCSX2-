@@ -251,7 +251,7 @@ def classify():
     return a.finish()
 
 
-def prepare(shared_stop=True,participants=False,form_gate=False,grace=False):
+def prepare(shared_stop=True,participants=False,form_gate=False,grace=False,concurrent=False):
     import special_camera_arbitration as arbitration
     bail='bail' if shared_stop else 'done'
     a=Assembler(PREPARE);save(a)
@@ -312,7 +312,7 @@ def prepare(shared_stop=True,participants=False,form_gate=False,grace=False):
         # (independent) treatment: nobody is stopped for a pose that waits.
         a.addiu(8,0,2);a.branch(5,2,8,'category_checked')
         a.move(4,17);a.call(FORM_GATE);a.branch(4,2,0,'protected_pair')
-        a.i(11,8,17,2);a.branch(5,8,0,'gate_leader')
+        if not concurrent:a.i(11,8,17,2);a.branch(5,8,0,'gate_leader')
         a.li(8,CONTROL);a.lw(9,8,20);a.branch(4,9,0,'gate_leader')
         a.addiu(9,0,1);a.sw(9,8,FORM_FORCE)
         a.label('gate_leader');a.addiu(2,0,2)
@@ -365,12 +365,12 @@ def prepare(shared_stop=True,participants=False,form_gate=False,grace=False):
 
 
 def store(form_gate=False):
-    """form_gate: while an extra's admitted form forced the whole native stop (FORM_FORCE), a fighter
+    """form_gate: while an admitted form forced the whole native stop (FORM_FORCE), a fighter
     in another live activation or its rush pair (pause CONTROL+52: owners and their reciprocal
     partners) is never stopped by it, nor is the transformation stopped by that fighter's activation. Each needed the other to finish: the
     form never acknowledged its staged body, every fighter stood still until the 900-update bound and
     the worker then failed the interrupted acknowledgment (TTM-MATCH-08). The shared hold still holds
-    the other performer (ultimate_stop) until the form ends."""
+    ordinary bystanders, while accepted concurrent activations can finish."""
     a=Assembler(STORE);regs=(8,9,10,11);save(a,regs,0x20)
     a.li(8,CONTROL);a.lw(9,8,24);a.branch(4,9,0,'old')
     if form_gate:
@@ -1250,12 +1250,12 @@ def protect(independent=True):
     data=a.finish();assert len(data)<FOREIGN-PROTECT;return data
 
 
-def protect_active():
+def protect_active(concurrent=False):
     """Return living forms and reciprocal rushes which must finish independently.
 
     These actors may own another native pause or reload handshake even when
     the selected camera belongs to a different move. Only current/requested
-    ordinary forms and a mutually live, opposing rush pair qualify; historical
+    ordinary forms, flagged special activations (concurrent=True), and a mutually live, opposing rush pair qualify; historical
     actions, idle stale pairs and fallen or unregistered bodies do not.
     """
     import cinematic_admission as admission
@@ -1266,6 +1266,17 @@ def protect_active():
     a.label('scan');a.move(4,18);a.jump('live',link=True);a.branch(4,2,0,'next');a.move(19,2)
     for off in admission.ACTION_FIELDS:
         a.lw(8,19,off);a.addiu(9,8,-236);a.i(11,9,9,5);a.branch(5,9,0,'protect_self')
+    if concurrent:
+        # A live special can itself assert the native global stop. Freezing
+        # it for a different form/camera prevents that stop from ever ending.
+        # Require a current special plus native presentation/activation flags;
+        # stale actions and ordinary bystanders remain held as before.
+        a.lw(8,19,2376);a.addiu(9,8,-253);a.i(11,9,9,63);a.branch(4,9,0,'not_activation')
+        a.i(36,8,19,ULTIMATE_FLAG_BYTES[0]);a.i(36,9,19,ULTIMATE_FLAG_BYTES[1]);a.r(0x25,8,8,9)
+        a.i(12,8,8,ULTIMATE_FLAG_MASK);a.branch(5,8,0,'protect_self')
+        a.i(36,8,19,PRIORITY_FLAG_BYTES[0]);a.i(36,9,19,PRIORITY_FLAG_BYTES[1]);a.r(0x25,8,8,9)
+        a.i(12,8,8,PRIORITY_FLAG_BIT);a.branch(5,8,0,'protect_self')
+        a.label('not_activation')
     a.move(4,19);a.call(PENDING);a.branch(4,2,0,'next')
     a.lw(20,19,3732);a.lw(21,19,3736)
     for reg in (20,21):a.r(0x2B,8,reg,16);a.branch(4,8,0,'next')
@@ -1505,7 +1516,7 @@ def result_bridge(base,native,kind):
 
 
 def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activation_cameras=True,shared_stop=True,script_stop_fix=True,rush_support=True,
-            participants=False,independent=True,form_gate=False,view_grace=False):
+            participants=False,independent=True,form_gate=False,view_grace=False,concurrent=False):
     """participants=False is exactly the beta.36 emission (old receipts and installs); build_memory always
     asks for participants=True, which adds PROTECT/FOREIGN and their call sites, and form_gate=True,
     which adds FORM_GATE/FORM_TRACK and their call sites (form_gate=False is the 13.3 emission);
@@ -1520,7 +1531,7 @@ def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activati
     form_gate=form_gate and participants and shared_stop and script_stop_fix
     view_grace=view_grace and form_gate
     parts=[(GRACE,grace_code())] if view_grace else []
-    parts+=[(CODE,selector(complete_ultimates,activation_cameras,shared_stop,rush_support=rush_support)),(PREPARE,prepare(shared_stop,participants and shared_stop,form_gate,view_grace)),(STORE,store(form_gate)),(CLASSIFY,classify()),
+    parts+=[(CODE,selector(complete_ultimates,activation_cameras,shared_stop,rush_support=rush_support)),(PREPARE,prepare(shared_stop,participants and shared_stop,form_gate,view_grace,concurrent)),(STORE,store(form_gate)),(CLASSIFY,classify()),
             (VIEW,view(enhanced)),(BIND,bind(complete_ultimates,shared_stop,rush_support)),(SUBJECT,subject(enhanced)),(PRIORITY,priority(enhanced,complete_ultimates,shared_stop,rush_support)),
             (RESULT_ACTOR,result_bridge(RESULT_ACTOR,A(0x1DC178),'actor')),
             (RESULT_MODEL,result_bridge(RESULT_MODEL,A(0x12B1D0),'model')),
@@ -1536,7 +1547,7 @@ def program(enhanced=True,*,complete_ultimates=True,native_cameras=True,activati
         if script_stop_fix:parts += [(SCRIPT_STOP,script_stop()),(BYSTANDERS,bystanders(rush_support))]
         if participants:
             parts += [(PROTECT,protect(independent)),(PENDING,pending())]
-            if independent:parts.append((PROTECT_ACTIVE,protect_active()))
+            if independent:parts.append((PROTECT_ACTIVE,protect_active(concurrent)))
             if form_gate:parts += [(FORM_GATE,form_gate_code()),(FORM_TRACK,form_track())]
         if participants and shared_stop:parts.append((FOREIGN,foreign()))
     return parts
@@ -1581,15 +1592,15 @@ def validate_memory(ram,manager=None,count=None):
     recognized=complete=None
     # participants=True is the beta.37 emission; False is every earlier one, upgraded in place by build_memory.
     # form_gate=True (FORM_GATE) is the current emission; the same options without it are 13.3's.
-    for options in [(c,n,e,a,s,f,r,q,g,v) for c in (True,False) for n in ((True,False) if c else (False,))
+    for options in [(c,n,e,a,s,f,r,q,g,v,x) for c in (True,False) for n in ((True,False) if c else (False,))
                     for e in (True,False) for a in ((True,False) if n else (False,))
                     for s in ((True,False) if a else (False,)) for f in (True,False) for r in (True,False)
                     for q in ((True,False) if c else (False,)) for g in ((True,False) if q and s and f else (False,))
-                    for v in ((True,False) if g else (False,))]:
-        complete,native_cameras,enhanced,activation,shared,stop_fix,rush_support,participants,gated,graced=options
+                    for v in ((True,False) if g else (False,)) for x in ((True,False) if v else (False,))]:
+        complete,native_cameras,enhanced,activation,shared,stop_fix,rush_support,participants,gated,graced,concurrent=options
         candidate=program(enhanced,complete_ultimates=complete,native_cameras=native_cameras,
                           activation_cameras=activation,shared_stop=shared,script_stop_fix=stop_fix,rush_support=rush_support,
-                          participants=participants,form_gate=gated,view_grace=graced)+hooks(complete,stop_fix)
+                          participants=participants,form_gate=gated,view_grace=graced,concurrent=concurrent)+hooks(complete,stop_fix)
         candidate=[(p,selector_dependency(ram,p,b)) for p,b in candidate]
         if all(ram[p:p+len(data)]==data for p,data in candidate):
             recognized=candidate;break
@@ -1648,7 +1659,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
     installed=u(CONTROL)==MAGIC
     if installed:
         installed_parts=validate_memory(ram,manager,count)
-        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True,form_gate=True,view_grace=True)+hooks()]
+        current=[(p,selector_dependency(ram,p,b,upgrade=True)) for p,b in program(participants=True,form_gate=True,view_grace=True,concurrent=True)+hooks()]
         parts=[]
         if installed_parts!=current:
             old=dict(installed_parts)
@@ -1679,7 +1690,7 @@ def build_memory(ram,config=None,source='<offline-memory>',*,ultimate=False,tran
             if ram[p:p+len(data)]!=data:raise ValueError(f'Pre-cinematic hook changed at{p:08X}')
         control=bytearray(0x100);struct.pack_into('<6I',control,0,MAGIC,manager,count,battle,int(ultimate),int(transformation))
         struct.pack_into('<I',control,TRANSFORM_VIEW,shared_form)
-        parts=program(participants=True,form_gate=True,view_grace=True)+hooks()+[(CONTROL,bytes(control))]
+        parts=program(participants=True,form_gate=True,view_grace=True,concurrent=True)+hooks()+[(CONTROL,bytes(control))]
     if installed:
         for off,value in ((16,ultimate),(20,transformation),(TRANSFORM_VIEW,shared_form)):
             data=struct.pack('<I',int(value))

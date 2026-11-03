@@ -118,7 +118,8 @@ def packets():
 def draw_code():
     a=Assembler(DRAW);guard.save(a)
     a.li(8,CONTROL);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,'done');a.lw(9,8,4);a.branch(4,9,0,'done')
-    a.li(9,mode_menu.SCENE_MANAGER);a.lw(9,9);guard.pointer(a,9,0x20);a.lw(9,9,0x18);a.addiu(10,0,40);a.branch(5,9,10,'done')
+    # pointer() uses t1 as scratch; the scene pointer must live elsewhere.
+    a.li(11,mode_menu.SCENE_MANAGER);a.lw(11,11);guard.pointer(a,11,0x20);a.lw(9,11,0x18);a.addiu(10,0,40);a.branch(5,9,10,'done')
     a.lw(9,8,8);a.i(11,10,9,5);a.branch(4,10,0,'done')
     # Native-menu control owns the selected language. Both banks are immutable.
     import native_mode_menu

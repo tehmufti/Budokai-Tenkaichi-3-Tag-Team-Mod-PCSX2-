@@ -124,14 +124,15 @@ def sha256_file(path, progress=None):
     return h.hexdigest()
 
 
-def tree_digest(root, files):
+def tree_digest(root, files, *, hashes=None):
     """SHA-256 over (relative path, file SHA-256) of `files` (sorted, '/' separators)."""
     h = hashlib.sha256()
     rows = []
     for path in sorted(files, key=lambda p: str(Path(p).relative_to(root)).replace('\\', '/').lower()):
         rel = str(Path(path).relative_to(root)).replace('\\', '/')
         rows.append(rel)
-        h.update(rel.lower().encode('utf-8') + b'\0' + bytes.fromhex(sha256_file(path)) + b'\n')
+        digest = (hashes or {}).get(rel.lower()) or sha256_file(path)
+        h.update(rel.lower().encode('utf-8') + b'\0' + bytes.fromhex(digest) + b'\n')
     return h.hexdigest(), rows
 
 
@@ -172,9 +173,22 @@ def pcsx2_identity(root=None):
     root, files = pcsx2_files(root)
     exe = sha256_file(root / 'pcsx2-qt.exe')
     digest, rows = tree_digest(root, files)
+    actual_digest = digest
+    # The installer adds BT4's graphics alignment to the official database.
+    # Recognize only that exact generated suffix; all original bytes still
+    # have to match a reviewed release, including every DLL and CPU game fix.
+    from bt4_graphics_fixes import RESOURCE, original_database
+    raw = (root / RESOURCE).read_bytes()
+    original = original_database(raw)
+    if original != raw:
+        canonical, _ = tree_digest(root, files, hashes={RESOURCE.lower(): hashlib.sha256(original).hexdigest()})
+        if canonical in TESTED_PCSX2:
+            digest = canonical
     out = _build(digest, KNOWN_EXE.get(exe, 'unknown') + ' (changed copy)' if exe in KNOWN_EXE else 'unknown build',
                  'Windows', len(rows))
     out['exe_sha256'] = exe
+    if actual_digest != digest:
+        out['installed_digest'] = actual_digest
     return out
 
 

@@ -13,7 +13,7 @@ import extra_reload_forms as forms
 import extra_reload_requests as requests
 from prototype import Assembler
 from test_concurrent_cinematic_progress import machine as policy_machine, run
-from test_fused_shared_cinematic import ACTORS, MODELS, Cpu
+from guest_policy_fixture import ACTORS, MODELS, Cpu
 
 
 def row(physical):
