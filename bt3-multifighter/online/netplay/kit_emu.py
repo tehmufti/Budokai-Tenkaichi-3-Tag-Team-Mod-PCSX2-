@@ -139,7 +139,15 @@ def make_ini(template, *, pine_slot, pad1, bios_name, null_audio=False, extra=()
     keys += [('Pad1', name, value) for name, value in pad1.items()]
     keys += list(extra)
     keys += list(FORCED)
-    return ini_set('\r\n'.join(out), keys)
+    text = ini_set('\r\n'.join(out), keys)
+    import hardware_renderer
+    values = ini_values(text)
+    hardware = hardware_renderer.overrides(values.get('EmuCore/GS/Renderer', '-1'),
+                                           values.get('EmuCore/GS/Adapter', ''))
+    if hardware:
+        hardware_renderer.announce()
+        text = ini_set(text, [('EmuCore/GS', key, value) for key, value in hardware.items()])
+    return text
 
 
 def is_game_file(name):

@@ -229,6 +229,16 @@ def apply(config=CONFIG, receipt=RECEIPT):
         if extra: duplicates.append(dict(section='UI', key='StartPaused', values=extra))
     receipt.parent.mkdir(parents=True, exist_ok=True)
     extra=[]
+    import hardware_renderer
+    renderer = entries(lines, 'Renderer')
+    adapter = entries(lines, 'Adapter')
+    hardware = hardware_renderer.overrides(renderer[0][1][2] if renderer else '-1',
+                                           adapter[0][1][2] if adapter else '')
+    for key, value in hardware.items():
+        prior, copies = collapse(lines, key, value)
+        extra.append(dict(section=SECTION, key=key, prior=prior, applied=value))
+        if copies: duplicates.append(dict(section=SECTION, key=key, values=copies))
+    if hardware: hardware_renderer.announce()
     # A profile without [EmuCore] gets one for this session; restore removes it again if still empty.
     created=[section for section in [ensure_section(lines,COMPRESSION[0])] if section]
     section,key,value=COMPRESSION
@@ -273,6 +283,7 @@ def apply(config=CONFIG, receipt=RECEIPT):
 
 
 def restore(config=CONFIG, receipt=RECEIPT):
+    import hardware_renderer
     config, receipt = Path(config), Path(receipt)
     saved = read_json(receipt) if receipt.exists() else None
     if saved is not None and not receipt_matches(saved, config, receipt):
@@ -294,7 +305,7 @@ def restore(config=CONFIG, receipt=RECEIPT):
         revert(lines, key, 'false', value, copies.get(('UI', key), []), 'UI')
     for item in saved.get('extra',[]):
         if ((item['section'],item['key']) not in (('EmuCore','EnableWideScreenPatches'),COMPRESSION[:2],PAUSE_KEY[:2])
-                and (item['section'],item['key']) not in SPEED_KEYS):
+                and (item['section'],item['key']) not in SPEED_KEYS | hardware_renderer.KEYS):
             raise ValueError('Unexpected widescreen setting in receipt')
         revert(lines, item['key'], item['applied'], item['prior'],
                copies.get((item['section'], item['key']), []), item['section'])

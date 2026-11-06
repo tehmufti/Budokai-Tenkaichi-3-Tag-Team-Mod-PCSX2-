@@ -1,3 +1,12 @@
+## Version 14.5
+
+- Fixed broken terrain and distorted characters when Linux selects a CPU-based Vulkan driver. The mod now lets PCSX2 choose a suitable hardware renderer instead, in both offline and online play.
+- Your resolution and other graphics preferences are kept, and normal Vulkan GPU setups are unchanged.
+
+Already installed? Use the Windows or Linux Updater and choose your existing mod folder. Your saves and settings stay in place. For a fresh install, download the full installer for your system.
+
+Everyone in an online room should use Version 14.5.
+
 ## Version 14.4
 
 - Fixed the CPU difficulty choices not appearing after selecting a costume.

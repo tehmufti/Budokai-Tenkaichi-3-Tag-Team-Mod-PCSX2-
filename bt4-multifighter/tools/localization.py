@@ -86,6 +86,7 @@ def using(settings):
 ES = {
     'Session graphics: automatic hardware fixes; internal resolution = {multiplier}': 'Gráficos de la sesión: correcciones de hardware automáticas; resolución interna = {multiplier}',
     'Session graphics: existing hardware fix preferences; internal resolution = {multiplier}': 'Gráficos de la sesión: se mantienen las correcciones de hardware elegidas; resolución interna = {multiplier}',
+    'Vulkan selected a CPU graphics driver; using automatic hardware selection for this session.': 'Vulkan ha seleccionado un controlador gráfico de CPU; se usará la selección automática de hardware durante esta sesión.',
     'Enable manual lock-off': 'Permitir quitar el objetivo manualmente',
     'Lock-off button': 'Botón para quitar el objetivo',
     'Target HUD while unlocked': 'Interfaz del objetivo sin fijar',

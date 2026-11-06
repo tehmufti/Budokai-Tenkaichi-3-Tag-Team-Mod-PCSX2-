@@ -743,6 +743,11 @@
       "bt4": "0b3613a3b481c6a349116b7debc3c19de9dc48436c6a397be56fc1522dd1e353",
       "shared": false
     },
+    "tools/hardware_renderer.py": {
+      "bt3": "0892c0180163fe1517f610c52c87b3f9a6dde14a8afca76ae280c37b8c6d50ee",
+      "bt4": "0892c0180163fe1517f610c52c87b3f9a6dde14a8afca76ae280c37b8c6d50ee",
+      "shared": true
+    },
     "tools/heap128.py": {
       "bt3": "8278c94cb45c70e874e2a1cb89175a502809a3e8ba1bdcaa9487563d512fe559",
       "bt4": "8278c94cb45c70e874e2a1cb89175a502809a3e8ba1bdcaa9487563d512fe559",
@@ -879,8 +884,8 @@
       "shared": true
     },
     "tools/localization.py": {
-      "bt3": "fc31d5ac063201aaeee6a4b0de56bf1ff237b9ba470f33ae7a182212581fee06",
-      "bt4": "fc31d5ac063201aaeee6a4b0de56bf1ff237b9ba470f33ae7a182212581fee06",
+      "bt3": "dd983cbd0c7fb9e8749170d02d7230c6509e4d9a6dfd67ebe0fe827a58ee5cc2",
+      "bt4": "dd983cbd0c7fb9e8749170d02d7230c6509e4d9a6dfd67ebe0fe827a58ee5cc2",
       "shared": false
     },
     "tools/lockoff_target.py": {
@@ -1119,8 +1124,8 @@
       "shared": true
     },
     "tools/presentation_settings.py": {
-      "bt3": "caa58855b47f5cb4ea3ca4d68a9a11165cd9cffbada35407fdef12d23f7a8abc",
-      "bt4": "caa58855b47f5cb4ea3ca4d68a9a11165cd9cffbada35407fdef12d23f7a8abc",
+      "bt3": "57d9dd5eb55fb97504365a2cf83d012beb53f14d9d7d40c2875239e3267376b7",
+      "bt4": "57d9dd5eb55fb97504365a2cf83d012beb53f14d9d7d40c2875239e3267376b7",
       "shared": true
     },
     "tools/preset_cosmetics.py": {
