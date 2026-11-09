@@ -121,6 +121,7 @@ class RevivalTargetTests(unittest.TestCase):
         self.assertFalse(rt.build_memory(ram)['blocks'])
         put(core.ACTORS,target.MANAGER);put(core.MODE,1,6,target.MANAGER,6)
         put(revive.CONTROL,revive.MAGIC,target.MANAGER,6,0)
+        ram[rt.DEAD_CALL:rt.DEAD_CALL+4]=rt.death_call(A(0x1DA9D0))
         plan=rt.build_memory(ram)
         for row in plan['blocks']:
             p=row['address'];data=bytes.fromhex(row['data_hex'])
@@ -128,6 +129,33 @@ class RevivalTargetTests(unittest.TestCase):
         self.assertFalse(rt.build_memory(ram)['blocks'])
         ram[rt.ELIGIBLE]^=1
         with self.assertRaisesRegex(ValueError,'changed'):rt.build_memory(ram)
+
+    def test_native_dead_target_mirror_keeps_controls_for_revivable_allies(self):
+        # The game invokes this setter only after its real death test succeeds.
+        # An enemy KO still sets B1, while each human can target a fallen ally.
+        for viewer in range(4):
+            c=machine(humans=(0,1,2,3));down(c,4);down(c,5)
+            c.write(rt.DEAD_TARGET,rt.dead_target_code())
+            calls=[]
+            def native_flag(m):calls.append((m.r[4],m.r[5]))
+            c.callbacks[A(0x1DA9D0)]=native_flag
+            for candidate,blocked in ((4+(viewer&1),False),(5-(viewer&1),True)):
+                before=len(calls)
+                c.r[16]=target.ACTORS[candidate];c.r[4:6]=[target.ACTORS[viewer],0xB1]
+                c.r[29]=0x1FFFF00;c.r[31]=0xFEED0000;c.run(rt.DEAD_TARGET)
+                self.assertEqual(len(calls)>before,blocked,(viewer,candidate))
+                self.assertEqual(c.r[4:6],[target.ACTORS[viewer],0xB1])
+                self.assertEqual(c.r[16],target.ACTORS[candidate])
+                self.assertEqual(c.r[29],0x1FFFF00)
+            self.assertEqual(calls,[(target.ACTORS[viewer],0xB1)])
+            c.w(rt.CONTROL,0);c.r[16]=target.ACTORS[4+(viewer&1)]
+            c.r[31]=0xFEED0000;c.run(rt.DEAD_TARGET)
+            self.assertEqual(len(calls),2)
+
+    def test_gauntlet_keeps_its_separate_death_predicate_hook(self):
+        import gauntlet_runtime as gauntlet
+        self.assertNotEqual(rt.DEAD_CALL,gauntlet.MIRROR_CALL)
+        self.assertEqual(rt.DEAD_CALL,gauntlet.MIRROR_CALL+16)
 
 
 if __name__=='__main__':unittest.main()

@@ -10,6 +10,7 @@ import unittest
 import gauntlet_runtime as g
 import viewport_hud as hud
 from test_ai_shadow import Mips
+from native_map import GP, GPO
 
 
 class SnapshotCpu(Mips):
@@ -22,14 +23,14 @@ class SnapshotCpu(Mips):
 
 def machine():
     c = SnapshotCpu({'segments': []})
-    c.r[28] = 0x304270
+    c.r[28] = GP
     head = hud.active()[:8]
     c.write(g.HUDGATE, g.hud_gate_code(head))
     # ACTIVE: its own prologue, then a stand-in body that undoes the frame and answers 0x55.
     stub = struct.pack('<4I', 0x27BD0240, 0x24020055, 0x03E00008, 0)      # addiu sp,0x240; li v0,0x55; jr ra; nop
     c.write(hud.ACTIVE, g.jump(g.HUDGATE) + stub)
     manager = 0x01870400
-    c.w(c.r[28]-22364, manager); c.w(c.r[28]-22180, 0x01874B80)
+    c.w(c.r[28]+GPO(-22364), manager); c.w(c.r[28]+GPO(-22180), 0x01874B80)
     c.w(g.CONTROL, g.MAGIC); c.w(g.CONTROL+g.C['manager'], manager)
     return c
 
@@ -52,7 +53,7 @@ class GauntletHudGateTests(unittest.TestCase):
     def test_otherwise_active_runs_with_its_own_prologue(self):
         for case in ('no_intro', 'no_camera', 'other_manager', 'not_installed'):
             c = machine(); c.w(g.CONTROL+g.C['intro_camera'], 0 if case == 'no_intro' else 3)
-            if case == 'no_camera': c.w(c.r[28]-22180, 0)
+            if case == 'no_camera': c.w(c.r[28]+GPO(-22180), 0)
             if case == 'other_manager': c.w(g.CONTROL+g.C['manager'], 0x01990000)
             if case == 'not_installed': c.w(g.CONTROL, 0)
             self.assertEqual(call(c), 0x55, case)

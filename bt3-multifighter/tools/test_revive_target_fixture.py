@@ -17,7 +17,8 @@ import lockon_switch as ls
 import team_participation as part
 from input_script import RECORDS
 from test_fusion_partner_lifecycle import FusionCpu
-GP, MANAGER, CAM = 0x304270, 0x1870400, 0x1900000
+from native_map import A, GP, GPO
+MANAGER, CAM = 0x1870400, 0x1900000
 ACTORS = [0x2000000+i*0x2000 for i in range(12)]
 MODELS = [0x3000000+i*0x2000 for i in range(12)]
 BONES = [0x3100000+i*0x100 for i in range(12)]
@@ -25,7 +26,7 @@ PREVIOUS = 0x07200600
 BATTLE = 0x1A00000
 ORTHO = (1,0,0,0,0,1,0,0,0,0,1,0,1792,1824,0,1)
 L3 = 2
-A_BATTLE = 0x2FEB38
+A_BATTLE = A(0x2FEB38)
 def project(matrix, point):
     clip = [sum(matrix[k*4+j]*point[k] for k in range(4)) for j in range(4)]
     if not all(math.isfinite(x) for x in clip) or clip[3] <= 0: return None
@@ -71,7 +72,7 @@ def make(count=6, humans=(0,), mode='teams', positions=None, view=(0, 511, 0, 44
     # Seat cameras: side 0 follows the first human, side 1 the second (or physical 1).
     c.w(follow.SUCCESSOR_CONTROL+8, humans[0] if humans else 0)
     c.w(follow.SUCCESSOR_CONTROL+12, humans[1] if len(humans) > 1 else 1)
-    c.w(GP-22172, CAM-1824); c.w(GP-22176, CAM)
+    c.w(GP+GPO(-22172), CAM-1824); c.w(GP+GPO(-22176), CAM)
     for base in (CAM, CAM+656):
         for i, v in enumerate(view): c.w(base+512+4*i, v)
         c.write(base+320, struct.pack('<16f', *matrix))
@@ -90,11 +91,11 @@ def make(count=6, humans=(0,), mode='teams', positions=None, view=(0, 511, 0, 44
     def begin(m): m.r[2] = m.cursor+16
     def end(m):
         m.events.append('sprite'); m.packets.append(m.read(m.cursor+16, m.r[4]-m.cursor-16)); m.cursor = m.r[4]
-    c.callbacks = {0x120AB0: push, 0x120AC8: pop, 0x120B80: load, 0x1210D8: projection, 0x121ED8: subtract,
-                   0x1DC2A0: pad, 0x100878: begin, 0x100890: end,
-                   0x1DAA50: lambda m: m.calls.append(('clear', m.r[4], m.r[5])),
-                   0x1DA9D0: lambda m: m.calls.append(('set', m.r[4], m.r[5])),
-                   0x1E0290: lambda m: m.calls.append(('action', m.r[4], m.r[5])),
+    c.callbacks = {A(0x120AB0): push, A(0x120AC8): pop, A(0x120B80): load, A(0x1210D8): projection, A(0x121ED8): subtract,
+                   A(0x1DC2A0): pad, A(0x100878): begin, A(0x100890): end,
+                   A(0x1DAA50): lambda m: m.calls.append(('clear', m.r[4], m.r[5])),
+                   A(0x1DA9D0): lambda m: m.calls.append(('set', m.r[4], m.r[5])),
+                   A(0x1E0290): lambda m: m.calls.append(('action', m.r[4], m.r[5])),
                    display.BAR_DRAW: lambda m: m.events.append('bars')}
     return c
 

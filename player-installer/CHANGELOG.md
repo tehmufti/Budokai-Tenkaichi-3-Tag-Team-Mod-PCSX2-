@@ -1,3 +1,11 @@
+## Version 14.6
+
+- Fixed losing control when locking onto a downed teammate. You can move, guard and revive them normally while keeping them targeted.
+
+Already installed? Use the Windows or Linux Updater and choose your existing mod folder. Your saves and settings stay in place. For a fresh install, download the full installer for your system.
+
+Everyone in an online room should use Version 14.6.
+
 ## Version 14.5
 
 - Fixed broken terrain and distorted characters when Linux selects a CPU-based Vulkan driver. The mod now lets PCSX2 choose a suitable hardware renderer instead, in both offline and online play.

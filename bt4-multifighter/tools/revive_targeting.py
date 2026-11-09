@@ -13,6 +13,8 @@ import fresh_team_combat as core
 # Between battle_camera_zoom and outnumbered; no native addresses are borrowed.
 BASE, END = 0x06961000, 0x06964000
 ELIGIBLE, CONTROL = BASE, BASE+0x1000
+DEAD_TARGET = BASE+0x800
+DEAD_CALL = A(0x1DBDF0)
 MAGIC, VERSION = 0x52565431, 1
 
 
@@ -72,7 +74,33 @@ def eligible_code():
     for i,reg in enumerate(saved):a.i(55,reg,29,i*8)
     a.addiu(29,29,0xC0);a.jr()
     a.label('no_leaf');a.move(2,0);a.jr()
-    data=a.finish();assert len(data)<CONTROL-ELIGIBLE;return data
+    data=a.finish();assert len(data)<DEAD_TARGET-ELIGIBLE;return data
+
+
+def dead_target_code():
+    """Suppress only the opponent-death input flag for a revivable ally.
+
+    This native call passes the viewer in a0, flag B1 in a1 and keeps the
+    selected target in s0. Hook the flag setter, leaving the preceding death
+    test available to Gauntlet's independent between-wave movement hook.
+    Real health/death predicates remain unchanged everywhere else.
+    """
+    a=Assembler(DEAD_TARGET)
+    a.addiu(29,29,-0x20)
+    for i,reg in enumerate((4,5,31)):a.i(63,reg,29,8*i)
+    a.lw(5,16);a.lw(4,4)
+    emit_check(a,4,5)
+    a.branch(5,2,0,'ally')
+    for i,reg in enumerate((4,5,31)):a.i(55,reg,29,8*i)
+    a.addiu(29,29,0x20);a.jump(A(0x1DA9D0))
+    a.label('ally');a.move(2,0)
+    for i,reg in enumerate((4,5,31)):a.i(55,reg,29,8*i)
+    a.addiu(29,29,0x20);a.jr()
+    data=a.finish();assert len(data)<CONTROL-DEAD_TARGET;return data
+
+
+def death_call(destination):
+    return struct.pack('<I',0x0C000000|(destination>>2))
 
 
 @policy.matching_install
@@ -86,15 +114,19 @@ def build_memory(ram,settings=None,source='<prepared>'):
         raise ValueError('Revival targeting belongs to another match')
     if u(revive.CONTROL+12)==policy.FFA:return dict(blocks=[])
     if count not in policy.ACTOR_COUNTS:raise ValueError('Invalid revival targeting actor count')
-    code=eligible_code();control=struct.pack('<4I',MAGIC,VERSION,manager,count)
+    code=eligible_code();dead=dead_target_code();control=struct.pack('<4I',MAGIC,VERSION,manager,count)
+    original=death_call(A(0x1DA9D0));hook=death_call(DEAD_TARGET)
     if u(CONTROL)==MAGIC:
-        if ram[CONTROL:CONTROL+len(control)]!=control or ram[ELIGIBLE:ELIGIBLE+len(code)]!=code:
+        if (ram[CONTROL:CONTROL+len(control)]!=control or ram[ELIGIBLE:ELIGIBLE+len(code)]!=code
+            or ram[DEAD_TARGET:DEAD_TARGET+len(dead)]!=dead or ram[DEAD_CALL:DEAD_CALL+4]!=hook):
             raise ValueError('Revival targeting installation changed')
         return dict(blocks=[],control=CONTROL,status='REVIVABLE ALLY TARGETS VERIFIED')
     if any(ram[BASE:END]):raise ValueError('Revival targeting reservation occupied')
-    pieces=((ELIGIBLE,code),(CONTROL,control))
+    if ram[DEAD_CALL:DEAD_CALL+4]!=original:raise ValueError('Native opponent death check changed before revival targeting')
+    pieces=((ELIGIBLE,code),(DEAD_TARGET,dead),(DEAD_CALL,hook),(CONTROL,control))
     return dict(serial=SERIAL,crc=CRC,source=str(source),control=CONTROL,
         blocks=[dict(address=p,expected_hex=ram[p:p+len(data)].hex(),data_hex=data.hex()) for p,data in pieces],
         status='REVIVABLE ALLIES IN NORMAL TARGET SELECTION',
         support={'capacity':count,'features':{'revive_targeting':[
-            dict(address=ELIGIBLE,data_hex=code.hex())]}})
+            dict(address=ELIGIBLE,data_hex=code.hex()),dict(address=DEAD_TARGET,data_hex=dead.hex()),
+            dict(address=DEAD_CALL,data_hex=hook.hex())]}})
