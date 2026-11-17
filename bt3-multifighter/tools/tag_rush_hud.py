@@ -334,10 +334,16 @@ def draw_code(meter=True):
     for off in (12, 60):
         a.lw(9, 16, off); a.addiu(8, 0, 1); a.branch(5, 9, 8, 'done')
     # A captured free-for-all has no allies, regardless of physical slot parity.
-    a.li(8,modes.CONTROL);a.lw(9,8);a.li(11,modes.MAGIC);a.branch(5,9,11,'team_mode')
-    a.lw(9,8,4);a.lw(11,16,4);a.branch(5,9,11,'team_mode')
-    a.lw(9,8,12);a.li(11,modes.FFA);a.branch(4,9,11,'done')
-    a.label('team_mode')
+    squads=modes.squad_feature('tag_attacks')
+    if squads:
+        # Three to five teams (free-for-all engine): allies come from the live team table, or nothing is drawn.
+        a.li(8,modes.SQUAD);a.lw(9,8);a.li(11,modes.SQUAD_MAGIC);a.branch(5,9,11,'done')
+        a.lw(9,8,modes.SQUAD_FIELDS['manager']);a.lw(11,16,4);a.branch(5,9,11,'done')
+    else:
+        a.li(8,modes.CONTROL);a.lw(9,8);a.li(11,modes.MAGIC);a.branch(5,9,11,'team_mode')
+        a.lw(9,8,4);a.lw(11,16,4);a.branch(5,9,11,'team_mode')
+        a.lw(9,8,12);a.li(11,modes.FFA);a.branch(4,9,11,'done')
+        a.label('team_mode')
     a.li(8, participation.CONTROL); a.lw(9, 8); a.addiu(11, 0, 5); a.branch(5, 9, 11, 'done')
     a.lw(9, 8, 4); a.lw(11, 16, 4); a.branch(5, 9, 11, 'done')
     a.lw(9, 8, 8); a.branch(5, 9, 10, 'done')
@@ -367,10 +373,14 @@ def draw_code(meter=True):
     a.lw(8,16,20);a.li(9,1);a.r(4,9,18,9);a.r(0x24,8,8,9);a.branch(5,8,0,'done')
     a.label('free_subject')
     # Team parity comes from the captured physical subject, not an actor role alias.
-    a.i(12, 19, 18, 1); a.move(20, 19); a.move(21, 0); a.lw(22, 16, 8)
-    a.label('ally'); a.move(4, 20); a.call(ALIVE); a.branch(4, 2, 0, 'next_ally')
+    if squads: a.move(19, 0)
+    else: a.i(12, 19, 18, 1)
+    a.move(20, 19); a.move(21, 0); a.lw(22, 16, 8)
+    a.label('ally')
+    if squads: modes.emit_same_team(a, 20, 18, 'next_ally')            # the subject's team, itself included
+    a.move(4, 20); a.call(ALIVE); a.branch(4, 2, 0, 'next_ally')
     a.addiu(21, 21, 1); a.addiu(8, 0, 2); a.branch(4, 21, 8, 'team_ready')
-    a.label('next_ally'); a.addiu(20, 20, 2); a.r(0x2B, 8, 20, 22); a.branch(5, 8, 0, 'ally'); a.jump('done')
+    a.label('next_ally'); a.addiu(20, 20, 1 if squads else 2); a.r(0x2B, 8, 20, 22); a.branch(5, 8, 0, 'ally'); a.jump('done')
     a.label('team_ready'); a.r(0, 19, 0, 18, 5); a.li(8, METERS); a.r(0x21, 19, 19, 8)
     a.lw(20, 16, 48); a.branch(6, 20, 0, 'done'); a.lw(23, 19)
     a.r(0x2B, 8, 23, 20); a.branch(5, 8, 0, 'charging'); a.move(23, 20)

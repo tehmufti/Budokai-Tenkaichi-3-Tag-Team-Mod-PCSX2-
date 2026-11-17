@@ -15,6 +15,7 @@ Direct: the host listens on TCP and UDP port P; the guest connects to host:P. Th
 Relay: both sides connect to the relay's TCP port and send to its UDP port; the relay pairs the host and the guest of
 the same room and forwards bytes between them (kit_relay.py).
 """
+import collections
 import heapq
 import json
 import random
@@ -34,6 +35,8 @@ REG_MAGIC, REG_ACK = b'TTMR', b'TTMA'
 PING = struct.Struct('<4sBIQ')                  # magic, kind (1 ping, 2 pong), sequence, sender clock in ns
 MAX_FRAME = 4 << 20
 CHUNK = 64 * 1024
+SEND_TIMEOUT = 20.0                  # seconds one frame may take to leave (a member that takes nothing is gone)
+OUTBOX_MAX = 512                     # control frames that may wait behind a transfer before the member is given up
 
 
 def address(text, default_port):
@@ -62,8 +65,9 @@ class Channel:
         self.closed = False
         self.send_lock = threading.Lock()
         self.last_rx = self.last_tx = time.monotonic()
-        self.transfers = 0                       # known transfers running (either direction): silence is expected
+        self.transfers = 0                       # transfers this side is sending: the other side answers no PING
         self.sent_bytes = self.received_bytes = 0
+        self.outbox = collections.deque()        # control frames queued while a transfer thread holds the lock
 
     def send_preamble(self, protocol):
         self.sock.sendall(PREAMBLE + struct.pack('>H', protocol))
@@ -109,29 +113,70 @@ class Channel:
         body = struct.pack('>16sQ', bytes.fromhex(token), offset) + data
         self._send(struct.pack('>I', len(body) + 1) + b'W' + body)
 
+    def _write(self, frame):
+        """One frame onto the socket (the caller holds send_lock). Bounded: SEND_TIMEOUT for the whole frame."""
+        try:
+            self.sock.sendall(frame)
+        except OSError:                              # includes socket.timeout: the frame may be half sent
+            self.closed = True
+            raise
+        self.last_tx = time.monotonic()
+        self.sent_bytes += len(frame)
+
+    def _flush(self):
+        """Queued control frames, oldest first (the caller holds send_lock)."""
+        while self.outbox:
+            self._write(self.outbox.popleft())
+
     def _send(self, frame):
+        """Blocking send (handshake and transfer threads): queued control frames leave first."""
         with self.send_lock:
-            try:
-                self.sock.sendall(frame)
-            except OSError:
-                self.closed = True
-                raise
-            self.last_tx = time.monotonic()
-            self.sent_bytes += len(frame)
+            self._flush()
+            self._write(frame)
+
+    def flush_outbox(self):
+        """The main loop's turn: send what waited behind a transfer, if no thread is sending right now."""
+        if not self.outbox or self.closed or not self.send_lock.acquire(blocking=False):
+            return
+        try:
+            self._flush()
+        except OSError:
+            pass
+        finally:
+            self.send_lock.release()
 
     def try_send(self, **message):
-        """send_json that never raises (a closed channel is only marked closed)."""
+        """send_json that never raises (a closed channel is only marked closed) and never waits behind a
+        transfer: while another thread is sending a chunk to this member the frame is queued (in order) and
+        leaves at the next chunk boundary, so the session's loop is not held by a slow or stalled member."""
+        if self.closed:
+            return False
         try:
-            self.send_json(**message)
-            return True
-        except (OSError, ValueError):
+            body = json.dumps(message).encode('utf-8')
+        except (TypeError, ValueError):
             self.closed = True
             return False
+        frame = struct.pack('>I', len(body) + 1) + b'J' + body
+        if not self.send_lock.acquire(blocking=False):
+            if len(self.outbox) >= OUTBOX_MAX:           # nothing left this member for a long time
+                self.closed = True
+                return False
+            self.outbox.append(frame)
+            return True
+        try:
+            self._flush()
+            self._write(frame)
+            return True
+        except OSError:
+            return False
+        finally:
+            self.send_lock.release()
 
     def blocking(self):
-        """After the handshake: a plain blocking socket (no timeout) for the rest of its life."""
+        """After the handshake: reads are select-gated (poll_frames) and every send is bounded by SEND_TIMEOUT for
+        the rest of its life (it had no timeout: one member that stopped reading froze whoever sent to it)."""
         try:
-            self.sock.settimeout(None)
+            self.sock.settimeout(SEND_TIMEOUT)
         except OSError:
             self.closed = True
         return self
@@ -142,6 +187,7 @@ class Channel:
         out = []
         if self.closed and not self.buffer:
             return out
+        self.flush_outbox()
         got = 0
         while not self.closed and got < limit:
             try:
@@ -164,6 +210,7 @@ class Channel:
             self.buffer += chunk
             got += len(chunk)
             self.received_bytes += len(chunk)
+            self.last_rx = time.monotonic()              # bytes arriving are life (a long frame on a slow link)
         while len(self.buffer) >= 4:
             length = struct.unpack('>I', self.buffer[:4])[0]
             if not 1 <= length <= MAX_FRAME:
@@ -177,7 +224,7 @@ class Channel:
             if body[:1] == b'J':
                 try:
                     out.append(('J', json.loads(body[1:].decode('utf-8'))))
-                except ValueError:
+                except (ValueError, RecursionError):     # not JSON, or nested absurdly deep: dropped
                     pass
             elif body[:1] == b'B':
                 out.append(('B', body[1:]))
@@ -188,12 +235,11 @@ class Channel:
         return out
 
     def silent(self, now=None):
-        """Seconds since the last received frame (0 while a known transfer runs)."""
+        """Seconds since this member last showed life: received bytes, or - while this side sends it a transfer
+        (it answers no PING meanwhile) - a chunk it took. A transfer that stalls no longer counts as life."""
         now = time.monotonic() if now is None else now
-        if self.transfers:
-            self.last_rx = now
-            return 0.0
-        return now - self.last_rx
+        last = max(self.last_rx, self.last_tx) if self.transfers else self.last_rx
+        return max(0.0, now - last)
 
     def receive(self, timeout):
         """('J', dict) or ('B', bytes); TimeoutError / ConnectionError."""
@@ -245,6 +291,13 @@ class Channel:
         arrives until the other side closes (or `linger` seconds), then close. Closing a socket with unread data at
         once makes Windows reset the connection, and the other PC would lose the message (a background thread, or
         inline with block=True when the process is about to end)."""
+        if not self.closed and self.outbox and self.send_lock.acquire(timeout=1.0):
+            try:
+                self._flush()                            # the last message (BYE, REFUSE) may still be queued
+            except OSError:
+                pass
+            finally:
+                self.send_lock.release()
         self.closed = True
         sock = self.sock
 
@@ -513,6 +566,29 @@ def auto_delay(rtt):
     return max(1, min(12, math.ceil((one_way + jitter + 5.0) / 33.4)))
 
 
+class _Counted:
+    """A set that counts: add() twice needs discard() twice (two handshakes from one IP)."""
+
+    def __init__(self):
+        self.counts = {}
+
+    def add(self, item):
+        self.counts[item] = self.counts.get(item, 0) + 1
+
+    def discard(self, item):
+        left = self.counts.get(item, 0) - 1
+        if left > 0:
+            self.counts[item] = left
+        else:
+            self.counts.pop(item, None)
+
+    def __contains__(self, item):
+        return item in self.counts
+
+    def __len__(self):
+        return len(self.counts)
+
+
 class HubSocket:
     """The host's one UDP socket for every guest (kit 2.0): TTMP pings from any allowed IP are answered at once (the
     handshake's round-trip measurement); lockstep datagrams (netproto MAGIC) carry the sender's member id, and are
@@ -529,7 +605,8 @@ class HubSocket:
         self.sock.setblocking(False)
         self.ips = {}                    # member -> IP (from its TCP connection)
         self.addr = {}                   # member -> (ip, port) learned from its datagrams
-        self.pending = set()             # IPs of connections still in their handshake (pings only)
+        self.pending = _Counted()        # IPs of connections still in their handshake (pings only), counted:
+                                         # two PCs behind one router may join at the same time
         self.impair = impairment or Impairment()
         self.queue, self.counter = [], 0
         self.ignored = self.received = 0

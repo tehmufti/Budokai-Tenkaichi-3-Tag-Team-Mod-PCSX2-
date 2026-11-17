@@ -53,10 +53,37 @@ def verify_session_parity(current):
             raise ValueError('Shared session gameplay differs between BT3 and BT4: '+name)
 
 
+# The only reviewed difference inside a shared CPU module: in a match with three to
+# five teams, teammates fuse on BT3 only. Each entry is (BT3 text, BT4 text); after
+# these exact replacements the two files must still be identical.
+REVIEWED_CPU_DIFFERENCES={
+    'battle_mode_policy':((
+        ("SQUAD_FEATURES = frozenset({'successor', 'takeover', 'takeover_split', 'timeover', 'hud', 'revive', 'revive_lockon',",
+         "                            'tag_attacks', 'fusion'})"),
+        ("# 'fusion' (teammates fuse in such a match) is on in the BT3 tree only: it was never seen live on this disc.",
+         "SQUAD_FEATURES = frozenset({'successor', 'takeover', 'takeover_split', 'timeover', 'hud', 'revive', 'revive_lockon',",
+         "                            'tag_attacks'})")),),
+}
+
+
+def reviewed_cpu_difference(module,root=ROOT):
+    pairs=REVIEWED_CPU_DIFFERENCES.get(module)
+    if not pairs:return False
+    name=f'tools/{module}.py'
+    main=normalize_bt3_python((root/'bt3-multifighter'/name).read_bytes()).decode().splitlines()
+    port=(root/'bt4-multifighter'/name).read_bytes().decode('utf-8-sig').splitlines()
+    for before,after in pairs:
+        before,after=list(before),list(after)
+        places=[i for i in range(len(main)) if main[i:i+len(before)]==before]
+        if len(places)!=1:return False
+        main[places[0]:places[0]+len(before)]=after
+    return main==port
+
+
 def verify_cpu_parity(current,root=ROOT):
     for module in CPU_SHARED_MODULES:
         name=f'tools/{module}.py'
-        if not current['files'].get(name,{}).get('shared'):
+        if not current['files'].get(name,{}).get('shared') and not reviewed_cpu_difference(module,root):
             raise ValueError('CPU behavior/targeting differs between BT3 and BT4: '+name)
     # The trainer as a whole intentionally differs: BT4 installs its own model
     # metadata. Its final gameplay composition must still install the same CPU

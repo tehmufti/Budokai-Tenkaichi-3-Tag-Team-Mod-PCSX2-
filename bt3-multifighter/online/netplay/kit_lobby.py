@@ -6,7 +6,9 @@ Members:  member 1 is the host; each guest gets the next id when it joins and ke
           means playing: a new member is a SPECTATOR until it claims a player slot. Names are 'Player N' (the lowest
           free number) unless the member sent its own lobby name; anyone can rename themselves (never the PC's name).
 Match:    {mode:'teams'|'ffa', teams:[[{character, costume, owner}, ...], [...]], stage, bgm, native, gameplay,
-          services}: built by the host on the spot (any fighters, colours, stage, music and rules; no presets). A
+          services}: built by the host on the spot (any fighters, colours, stage, music and rules; no presets).
+          Three to five teams: the match also holds team_count (3..5) and every fighter its team (0..4); the two
+          lists stay the native columns, laid out by the mod's squad_layout on the host. Two teams hold neither. A
           fighter's owner is the member who plays it (None: CPU). Kit 2.1: ANY fighter can be claimed (up to ten
           players, one per fighter of the 5 v 5 engine); every unclaimed fighter is a CPU the host chooses. The host
           can lock a fighter (nobody may claim it: it stays a CPU) and remove a member from the room.
@@ -17,25 +19,27 @@ Players:  a member who owns a fighter. It may change its own fighter and colour;
 Messages (protocol 5):
   LOBBY (host -> every member): {rev, phase, room, members:[...], match:{...}, locked:{...}, notice, warm, delay_hint,
           vote}   (a full snapshot, at most 8 KB; rev rises by 1 on every change)
-  guest -> host (untrusted, the host checks each): NAME {name} | CLAIM {team, index} | UNCLAIM {} |
+  guest -> host (untrusted, the host checks each): NAME {name} | CLAIM {team, index} | CLAIM_TEAM {team} |
+          UNCLAIM {} |
           FIGHTER {team, index, character, costume} | READY {ready} | CHAT {text}
 """
 import copy
 import json
 import secrets
+import time
 
 import kit_settings
 import kit_spec
 
 PHASES = ('lobby', 'preparing', 'sending', 'loading', 'fight', 'results')
+NOTICE_KEEP = 3.0                            # seconds a refusal notice survives changes without a notice
 MAX_MEMBERS = 16                  # kit 2.1: up to ten players and the spectators
 CHAT_MAX = 200
 MAX_BYTES = 12288
 HOST = 1
 LOCK_WHY = 'the host locked this fighter (it stays a CPU)'
-LOCKED = {
-    'three_teams': 'mod',          # the Tag Team Mod has two teams or free-for-all
-}
+LOCKED = {}                       # (three or more teams were locked here until the mod could play them)
+TEAM_DEFAULT = 2                  # fighters of a team the host adds
 
 
 def member(ident, name, role='guest', lang='en'):
@@ -112,7 +116,11 @@ class Lobby:
 
     def bump(self, notice=None):
         self.rev += 1
+        if notice is None and (self.notice or {}).get('code') and \
+                time.monotonic() - getattr(self, 'noticed', 0.0) < NOTICE_KEEP:
+            return self.rev                      # a refusal just made: the next silent change does not hide it
         self.notice = notice
+        self.noticed = time.monotonic()
         return self.rev
 
     # ---- members ----------------------------------------------------------------------------------------------------
@@ -189,6 +197,124 @@ class Lobby:
     def spectators(self):
         return [k for k in sorted(self.members) if self.slot_of(k) is None]
 
+    # ---- two to five teams ------------------------------------------------------------------------------------------
+    def team_count(self):
+        return self.match.get('team_count') or 2
+
+    def logical(self):
+        """[[fighter, ...] per team]: every team's fighters in physical order (two teams: the two columns)."""
+        return [[self.match['teams'][c][i] for c, i in members] for members in kit_spec.team_members(self.match)]
+
+    def label_of(self, column, index):
+        """(team number, fighter number) as the players see them, both from 1."""
+        for t, members in enumerate(kit_spec.team_members(self.match)):
+            if (column, index) in members:
+                return t + 1, members.index((column, index)) + 1
+        return column + 1, index + 1
+
+    def place(self, logical):
+        """Put the teams on the two native columns. Two teams are the columns themselves (no team field is
+        left); three to five are laid out by the mod's squad_layout and every fighter then names its team."""
+        if len(logical) == 2:
+            for team in logical:
+                for f in team:
+                    f.pop('team', None)
+            self.match['teams'] = [list(logical[0]), list(logical[1])]
+            self.match.pop('team_count', None)
+            return
+        layout = kit_spec.squad_policy().squad_layout(tuple(len(team) for team in logical))
+        slots = {}
+        for t, team in enumerate(logical):
+            for f, physical in zip(team, layout.members(t)):
+                f['team'] = t
+                slots[physical] = f
+        self.match['teams'] = [[slots[i] for i in sorted(slots) if i & 1 == column] for column in (0, 1)]
+        self.match['team_count'] = len(logical)
+
+    @staticmethod
+    def _sizes_fit(logical):
+        sizes = [len(team) for team in logical]
+        if len(logical) == 2:
+            return not kit_spec.layout_problems('teams', sizes)
+        return not kit_spec.team_sizes_problems(sizes)
+
+    def _fit(self, logical):
+        """Drop fighters until the teams can be played: a CPU fighter of the largest team first, a player's only
+        when no CPU fighter is left there. Returns the members who lost their fighter."""
+        lost = []
+        while not self._sizes_fit(logical):
+            order = [t for t in sorted(range(len(logical)), key=lambda t: (-len(logical[t]), -t))
+                     if len(logical[t]) > 1]
+            if not order:
+                break
+            team = next((t for t in order if any(f.get('owner') is None for f in logical[t])), order[0])
+            cpu = [i for i, f in enumerate(logical[team]) if f.get('owner') is None]
+            f = logical[team].pop(cpu[-1] if cpu else -1)
+            if f.get('owner') is not None:
+                lost.append(f['owner'])
+        return lost
+
+    def set_team_count(self, count, catalog, rng=None):
+        """Host: two to five teams. A new team gets TEAM_DEFAULT random CPU fighters; a team that goes away gives
+        its players (with their fighters) to the smallest remaining teams, so nobody loses a fighter while there
+        is room. Returns [problems]."""
+        m = self.match
+        if type(count) is not int or not 2 <= count <= kit_spec.TEAMS_MAX:
+            return ['two to five teams can be played']
+        if m.get('type', 'versus') == 'hub':
+            return ['the hub is free-for-all']
+        if count >= kit_spec.TEAMS_MIN and kit_spec.squad_policy() is None:
+            return ['this Tag Team Mod cannot play three to five teams (update it)']
+        current = self.team_count()
+        if count == current and (count == 2 or m['mode'] == 'teams'):
+            return []
+        logical = self.logical()
+        lost = []
+        if count < current:
+            moved = [f for team in logical[count:] for f in team if f.get('owner') is not None]
+            logical = logical[:count]
+            for f in moved:
+                order = sorted(range(count), key=lambda t: (len(logical[t]), t))
+                room = sum(len(team) for team in logical) < kit_spec.FIGHTERS_MAX
+                target = next((t for t in order if room and len(logical[t]) < kit_spec.TEAM_MAX), None)
+                if target is None:                    # every team is full: the player replaces a CPU fighter
+                    target = next((t for t in order if any(x.get('owner') is None for x in logical[t])), None)
+                    if target is None:
+                        lost.append(f['owner'])
+                        continue
+                    cpu = [i for i, x in enumerate(logical[target]) if x.get('owner') is None]
+                    logical[target].pop(cpu[-1])
+                logical[target].append(f)
+        else:
+            for _ in range(count - current):
+                team = []
+                for _ in range(TEAM_DEFAULT):
+                    c, k = kit_spec.random_fighter(catalog, rng) if catalog is not None else (0, 0)
+                    team.append(dict(character=c, costume=k, owner=None))
+                logical.append(team)
+        lost += self._fit(logical)
+        if count >= kit_spec.TEAMS_MIN:
+            m['mode'] = 'teams'
+        self.place(logical)
+        self.clear_ready()
+        self.bump(dict(code=None, key='notice.rule_changed', args=dict(rule='rule.teams', value=count)))
+        return []
+
+    def claim_team(self, ident, team):
+        """Member `ident` joins `team`: it plays that team's first free fighter. Returns [problems]."""
+        if ident not in self.members:
+            return ['not a member']
+        members = kit_spec.team_members(self.match)
+        if type(team) is not int or team not in range(len(members)):
+            return ['no such team']
+        if self.slot_of(ident) in members[team]:
+            return []                                 # already on that team
+        for column, index in members[team]:
+            f = self.match['teams'][column][index]
+            if f.get('owner') is None and not f.get('locked'):
+                return self.claim(ident, column, index)
+        return [f'team {team + 1} has no free fighter']
+
     def claimable(self, team, index=0):
         """None when a member may claim that fighter, else why not."""
         if team not in range(len(self.match['teams'])):
@@ -214,8 +340,9 @@ class Lobby:
                 self.unclaim(owner, bump=False)
         else:
             f.pop('locked', None)
+        shown = self.label_of(team, index)
         self.bump(dict(code=None, key='notice.locked' if locked else 'notice.unlocked',
-                       args=dict(team=team + 1, index=index + 1)))
+                       args=dict(team=shown[0], index=shown[1])))
         return []
 
     def humans(self):
@@ -240,8 +367,9 @@ class Lobby:
         self.unclaim(ident, bump=False)
         self.match['teams'][team][index]['owner'] = ident
         self.members[ident]['ready'] = False
-        self.bump(dict(code=None, key='notice.claimed', args=dict(name=self.members[ident]['name'], team=team + 1,
-                                                                  index=index + 1)))
+        shown = self.label_of(team, index)
+        self.bump(dict(code=None, key='notice.claimed', args=dict(name=self.members[ident]['name'], team=shown[0],
+                                                                  index=shown[1])))
         return []
 
     def unclaim(self, ident, bump=True):
@@ -294,7 +422,8 @@ class Lobby:
         f['potaras'] = sorted(items)
         if ident == HOST and f.get('owner') not in (None, HOST):
             self.clear_ready()
-            self.bump(dict(code=None, key='notice.host_changed_fighter', args=dict(team=team + 1)))
+            self.bump(dict(code=None, key='notice.host_changed_fighter',
+                           args=dict(team=self.label_of(team, index)[0])))
         else:
             if f.get('owner') in self.members:
                 self.members[f['owner']]['ready'] = False
@@ -303,7 +432,10 @@ class Lobby:
 
     def set_sizes(self, sizes, catalog, rng=None):
         """Host: the two columns' sizes (teams: 1..5 each; ffa: 1..5 per column, 2..10 in all). New fighters are
-        random; shrinking drops the last ones (their owners become spectators)."""
+        random; shrinking drops the last ones (their owners become spectators). With three to five teams: one
+        size per team (a CPU fighter goes before a player's), then the teams are laid out again."""
+        if self.team_count() >= kit_spec.TEAMS_MIN:
+            return self.set_team_sizes(list(sizes), catalog, rng)
         found = kit_spec.layout_problems(self.match['mode'], list(sizes))
         if found:
             self.bump(dict(code='TTM-NET-29', key='notice.invalid_rule', args=dict(what='; '.join(found))))
@@ -324,6 +456,31 @@ class Lobby:
                            args=dict(rule='rule.sizes', value=' v '.join(str(n) for n in sizes))))
         return []
 
+    def set_team_sizes(self, sizes, catalog, rng=None):
+        count = self.team_count()
+        found = [f'this room has {count} teams: give {count} sizes'] if len(sizes) != count else \
+            kit_spec.team_sizes_problems(sizes)
+        if found:
+            self.bump(dict(code='TTM-NET-29', key='notice.invalid_rule', args=dict(what='; '.join(found))))
+            return found
+        logical = self.logical()
+        changed = False
+        for team, n in zip(logical, sizes):
+            while len(team) > n:
+                cpu = [i for i, f in enumerate(team) if f.get('owner') is None]
+                team.pop(cpu[-1] if cpu else -1)
+                changed = True
+            while len(team) < n:
+                c, k = kit_spec.random_fighter(catalog, rng)
+                team.append(dict(character=c, costume=k, owner=None))
+                changed = True
+        if changed:
+            self.place(logical)
+            self.clear_ready()
+            self.bump(dict(code=None, key='notice.rule_changed',
+                           args=dict(rule='rule.sizes', value=' / '.join(str(n) for n in sizes))))
+        return []
+
     def set_type(self, value):
         """Host: 'Start in' Menu (a versus match) or Hub (the in-level hub: free-for-all, infinite Duel Time)."""
         if value not in kit_spec.TYPES:
@@ -331,6 +488,8 @@ class Lobby:
         m = self.match
         if m.get('type', 'versus') == value:
             return []
+        if value == 'hub' and self.team_count() >= kit_spec.TEAMS_MIN:
+            self.set_team_count(2, self.catalog)      # the hub is free-for-all: the two columns again
         sizes = [len(t) for t in m['teams']]
         if value == 'hub':
             if kit_spec.layout_problems('ffa', sizes):
@@ -353,6 +512,8 @@ class Lobby:
             return []
         if self.match.get('type') == 'hub':
             return ['the hub is free-for-all']
+        if mode == 'ffa' and self.team_count() >= kit_spec.TEAMS_MIN:
+            self.set_team_count(2, catalog)           # free-for-all has no teams: the two columns again
         sizes = [len(t) for t in self.match['teams']]
         found = kit_spec.layout_problems(mode, sizes)
         if found:
@@ -458,14 +619,16 @@ class Lobby:
         if m['stage'] == 'random' or m['bgm'] == 'random':
             return None
         teams = []
+        count = m.get('team_count')
         for t, team in enumerate(m['teams']):
             teams.append([dict(character=f['character'], costume=f['costume'], potaras=f.get('potaras', []),
-                               slot=kit_spec.slot_of(t, i) if f.get('owner') in self.members else None)
+                               slot=kit_spec.slot_of(t, i) if f.get('owner') in self.members else None,
+                               **({'team': f.get('team')} if count else {}))
                           for i, f in enumerate(team)])
         return kit_spec.make(tables_sha256=tables_sha256, type=m.get('type', 'versus'), mode=m['mode'], teams=teams,
                              stage=m['stage'], bgm=m['bgm'],
                              native=m['native'], gameplay=m['gameplay'], services=m['services'], kit=kit,
-                             mod_build=mod_build)
+                             mod_build=mod_build, team_count=count)
 
     def resolve_random(self, catalog, rng=None):
         """Host at Start: a Random stage / music becomes a concrete one (the lobby shows it)."""
@@ -521,6 +684,8 @@ def snapshot_problem(snap):
                 return 'potaras'
     if kit_spec.layout_problems(match['mode'], [len(t) for t in teams]):
         return 'layout'
+    if kit_spec.team_problems(match):
+        return 'team layout'
     if not (match.get('stage') == 'random' or match.get('stage') in kit_spec.STAGE_IDS):
         return 'stage'
     if not (match.get('bgm') == 'random' or kit_spec.bgm_ok(match.get('bgm'))):

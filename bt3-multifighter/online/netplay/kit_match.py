@@ -100,14 +100,33 @@ def _validate_control_words(words, expected):
         raise ValueError(problem)
 
 
-def current_table():
+def squad_rows(spec):
+    """The extra hash rows of a match with three to five teams (netplay_state_hash.squad_rows); [] for every
+    other match, whose table stays what it was."""
+    if not (spec or {}).get('team_count'):
+        return []
+    import netplay_state_hash as nh
+    rows = list(nh.squad_rows())
+    if revive_on(spec):                              # teammate revive: its control and the ten fighters' rows
+        rows += list(nh.revive_rows())
+    return rows
+
+
+def revive_on(spec):
+    """The room's setting revive_enabled (the host's gameplay rules travel in the spec)."""
+    import kit_settings
+    return bool(kit_settings.gameplay_expand((spec or {}).get('gameplay')).get('revive_enabled'))
+
+
+def current_table(spec=None):
     """(bytes, sha256) of the kit's hash TABLE (data/hash-table.json; kit 2.1 inside an installation: built from the
-    installation's own modules, which every PC of a room shares)."""
-    if kit_paths.INTEGRATED or kit_paths.ADAPTER != 'bt3-usa':
+    installation's own modules, which every PC of a room shares). spec: a match with three to five teams adds
+    its team table rows."""
+    if kit_paths.INTEGRATED or kit_paths.ADAPTER != 'bt3-usa' or squad_rows(spec):
         import netplay_core as nc
         import netplay_state_hash as nh
         import netplay_view as nv
-        table = nh.table_bytes(rows=nc.table_rows('lean', nv.hash_rows()))
+        table = nh.table_bytes(rows=nc.table_rows('lean', list(nv.hash_rows()) + squad_rows(spec)))
         return table, hashlib.sha256(table).hexdigest()
     data = json.loads((kit_paths.NETPLAY / 'data' / 'hash-table.json').read_text(encoding='utf-8'))
     table = bytes.fromhex(data['hex'])
@@ -116,7 +135,7 @@ def current_table():
     return table, data['sha256']
 
 
-def core_options(mask, max_stall=BUILT_MAX_STALL, *, controls=None):
+def core_options(mask, max_stall=BUILT_MAX_STALL, *, controls=None, spec=None):
     """netplay_core options of every kit 2.0 match (see the module text)."""
     import netplay_core as nc
     import netplay_view as nv
@@ -124,7 +143,7 @@ def core_options(mask, max_stall=BUILT_MAX_STALL, *, controls=None):
     options = nc.OPT_NEUTRAL_END | nc.OPT_VOICE | nc.OPT_SCHED | nc.OPT_SEATS      # layout 4: ten slots
     return dict(mode=nc.LOCKSTEP, delay=controls['delay'], max_stall=controls['max_stall'], profile='lean', start_state=nc.ANY,
                 after_state=nc.ANY, end_rule=nc.END_STATE, end_state=nc.RESULT_MENU, mask=mask or 1, options=options,
-                extra_rows=nv.hash_rows())
+                extra_rows=list(nv.hash_rows()) + squad_rows(spec))
 
 
 def _combined_manifest(original, prefix_manifest, prefix_ram, manifest, *, with_proof=False):
@@ -180,7 +199,7 @@ def build_netplay(base, out, mask, spec=None, *, prefix_blocks=None, source_ram=
     out = Path(out)
     patch_state.OUTPUT_ROOT = out.parent
     controls = transport_controls(controls)
-    options = core_options(mask, controls=controls)
+    options = core_options(mask, controls=controls, spec=spec)
     ram = read_ram(base) if source_ram is None else source_ram
     original = ram
     prefix_manifest = None
@@ -209,7 +228,7 @@ def build_netplay(base, out, mask, spec=None, *, prefix_blocks=None, source_ram=
         out.unlink()
     report = patch_state.patch(base, manifest, out)
     output_sha = _bind_verified_output(report, expected_ram_sha, out)
-    table, table_sha = current_table()
+    table, table_sha = current_table(spec)
     if built[nc.TABLE:nc.TABLE + len(table)] != table:
         raise ValueError('the built hash table is not the kit\'s (data/hash-table.json): the kit and its mod modules '
                          'disagree')
@@ -449,6 +468,55 @@ def prune_made(keep=MADE_KEEP, spare=()):
             continue
         shutil.rmtree(path, ignore_errors=True)
         removed.append(path.name)
+    return removed
+
+
+STATES_KEEP = 6                              # match states (and their wire forms) kept per kind
+STATES_YOUNG = 600.0                         # seconds: a file this young may still be in use
+
+
+def prune_states(states=None, keep=STATES_KEEP, spare=(), now=None):
+    """Remove the oldest match states beyond `keep` of each kind (received 'recv-*.p2s', made 'host-*.p2s' with
+    their .json, compact 'wire/*.wire' with their .json) and stale partial files; never a file whose name holds
+    a text of `spare` (the running match's SHA-256 prefixes) or that changed in the last 10 minutes. Every one
+    of them can be made or fetched again; the folder used to grow by 15-40 MB per match for ever."""
+    import time
+    states = Path(states or kit_paths.STATES)
+    now = time.time() if now is None else now
+    removed = []
+    if not states.is_dir():
+        return removed
+
+    def old_enough(path):
+        try:
+            return now - path.stat().st_mtime > STATES_YOUNG
+        except OSError:
+            return False
+
+    def drop(path):
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            pass
+    groups = (sorted(states.glob('recv-*.p2s')), sorted(states.glob('host-*.p2s')),
+              sorted((states / 'wire').glob('*.wire')) if (states / 'wire').is_dir() else [])
+    for files in groups:
+        try:
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        except OSError:
+            continue
+        for path in files[keep:]:
+            if any(text and text in path.name for text in spare) or not old_enough(path):
+                continue
+            drop(path)
+            side = path.with_suffix('.json')
+            if side.is_file():
+                drop(side)
+    for pattern in ('*.part', '*.decoded', 'wire/*.part', 'wire/*.tmp'):
+        for path in states.glob(pattern):
+            if path.is_file() and now - path.stat().st_mtime > 86400:
+                drop(path)
     return removed
 
 

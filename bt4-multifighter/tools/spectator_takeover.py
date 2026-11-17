@@ -102,7 +102,9 @@ def take(*,base=TAKE,commit=True,configurable=True,quad=False,ordinary=True):
     a.li(8,start.CONTROL);a.lw(8,8);a.branch(5,8,0,'no')
     a.li(8,specials.CONTROL);a.lw(9,8);a.addiu(10,0,1);a.branch(5,9,10,'no')
     a.lw(9,8,4);a.lw(10,28,-22364);a.branch(5,9,10,'no')
-    a.li(19,control);a.lw(8,19,fields['battle_mode']);a.addiu(9,0,modes.FFA);a.branch(4,8,9,'no')
+    a.li(19,control);a.lw(8,19,fields['battle_mode'])
+    # Three to five teams run on the free-for-all engine but have allies: the team test below decides.
+    if not modes.squad_feature('takeover'):a.addiu(9,0,modes.FFA);a.branch(4,8,9,'no')
     a.addiu(9,0,modes.COOP);a.branch(5,8,9,'mode_ready')
     a.li(8,modes.CONTROL);a.lw(9,8,24);a.r(0x2B,9,9,18);a.branch(5,9,0,'no')
     a.lw(9,8,64);a.branch(5,9,0,'no')
@@ -111,7 +113,11 @@ def take(*,base=TAKE,commit=True,configurable=True,quad=False,ordinary=True):
     a.r(0,8,0,16,2);a.r(0x2D,19,19,8);a.lw(20,19,fields['owned'])
     a.r(0x2B,8,20,18);a.branch(4,8,0,'no');a.r(0x2B,8,17,18);a.branch(4,8,0,'no')
     a.li(8,feed.CONTROL+spec.DEAD);a.r(0,9,0,20,2);a.r(0x2D,8,8,9);a.lw(8,8);a.branch(4,8,0,'no')
-    a.r(0x26,8,20,17);a.i(12,8,8,1);a.branch(5,8,0,'no')
+    # Two teams: a teammate is a fighter of the player's row. Three to five teams: a fighter of the player's
+    # team, on either row once the split pair has been seen live ('takeover_split').
+    if not (modes.squad_feature('takeover') and modes.squad_feature('takeover_split')):
+        a.r(0x26,8,20,17);a.i(12,8,8,1);a.branch(5,8,0,'no')
+    if modes.squad_feature('takeover'):modes.emit_ally(a,20,17,'no',t0=8,t1=9)
     a.move(4,17);a.call(LOOKUP);a.branch(4,3,0,'no')
     a.li(8,feed.CONTROL+spec.DEAD);a.r(0,9,0,17,2);a.r(0x2D,8,8,9);a.lw(8,8);a.branch(5,8,0,'no')
     a.li(8,core.POINTERS);a.r(0,9,0,17,2);a.r(0x2D,8,8,9);a.lw(21,8)

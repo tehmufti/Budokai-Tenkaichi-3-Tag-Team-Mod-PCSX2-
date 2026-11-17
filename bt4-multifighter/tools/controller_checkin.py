@@ -81,10 +81,11 @@ def start_source(mode, humans, number):
 
 
 class Roster:
-    def __init__(self, humans, mode=CODE_DEFAULT_MODE, team_mode=False):
+    def __init__(self, humans, mode=CODE_DEFAULT_MODE, team_mode=False, teams=2):
         if mode not in MODES:mode = CODE_DEFAULT_MODE
         self.humans, self.mode, self.team_mode = humans, mode, team_mode
-        self.seats = [Seat(n, start_source(mode, humans, n), team=(n-1) & 1) for n in range(1, humans+1)]
+        self.teams = teams if type(teams) is int and 2 <= teams <= 5 else 2     # Team Battle: two to five teams
+        self.seats = [Seat(n, start_source(mode, humans, n), team=(n-1) % self.teams) for n in range(1, humans+1)]
         self.hub_joined = False
         self.changed_at = 0.0
 
@@ -253,11 +254,11 @@ class CheckIn:
         self.messages, self.notices, self.claims, self.log = [], [], [], []
 
     # ---- roster lifecycle (the watcher, through the hub) ----------------------------------------------------------
-    def open(self, humans, team_mode, now, devices, *, mode=None, keep=None):
+    def open(self, humans, team_mode, now, devices, *, mode=None, keep=None, teams=2):
         """Player Setup opened: a fresh roster, pre-filled from the kept check-ins whose controllers are connected."""
         if mode is not None:self.mode = mode
         if keep is not None:self.keep = keep
-        roster = Roster(humans, self.mode, team_mode)
+        roster = Roster(humans, self.mode, team_mode, teams)
         if self.keep and self.committed is not None:
             for kept in self.committed.seats[:humans]:
                 seat = roster.seat(kept.number)
@@ -278,7 +279,7 @@ class CheckIn:
     def clear(self, now):
         """Clear check-ins: every seat back to the mode's start state."""
         if self.roster is None:return
-        roster = Roster(self.roster.humans, self.roster.mode, self.roster.team_mode)
+        roster = Roster(self.roster.humans, self.roster.mode, self.roster.team_mode, self.roster.teams)
         for seat, old in zip(roster.seats, self.roster.seats):seat.team = old.team
         roster.changed_at = now
         self.roster, self.pending = roster, []
@@ -386,7 +387,8 @@ class CheckIn:
         elif bit == SELECT and holder is not None:
             self._leave(holder, t)
         elif bit in (LEFT, RIGHT) and holder is not None and holder.number >= 2 and roster.team_mode:
-            holder.team ^= 1; roster.changed_at = t
+            # Two teams: the other one. Three to five: the next or the previous team.
+            holder.team = (holder.team+(1 if bit == RIGHT else -1)) % roster.teams; roster.changed_at = t
 
     def _unmapped(self, device):
         self.reported_unmapped.add(device.guid)

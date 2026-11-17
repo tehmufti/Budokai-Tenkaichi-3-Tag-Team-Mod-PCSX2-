@@ -14,6 +14,7 @@ from native_map import JPN
 from prototype import Assembler
 from regional import RAW_ACCEPT, RAW_BACK
 import fonts
+import battle_mode_policy
 
 CODE, RESOLVE, END = 0x06911000, 0x06911800, 0x06912000
 MENU, MAGIC = 0x076FF000, 0x324D4E42
@@ -64,9 +65,25 @@ GOLD,WHITE,DIM,GREEN,RED,PANEL,EDGE,BLUE,ORANGE,BG,TEXT=((249,197,90),(242,244,2
     (240,104,92),(31,46,66),(64,80,102),(71,184,241),(246,120,102),(10,16,28),(203,216,234))
 BAR,SLOT_TEXT=(245,184,63),(219,228,240)
 _PALETTE=None
+_SQUAD_PALETTE=None
+TEAM_FULL='Team {team} has no fighter left for another player.'
 
 
-def palette():
+def palette(squads=False):
+    """squads: the panel of a match with three to five teams, which also draws the five team colours."""
+    if squads:
+        global _SQUAD_PALETTE
+        if _SQUAD_PALETTE is None:
+            from PIL import Image
+            colors=[BG,PANEL,EDGE,GOLD,WHITE,DIM,GREEN,RED,TEXT,BAR,SLOT_TEXT]+list(battle_mode_policy.TEAM_RGB)
+            colors+=[tuple(round(b+(f-b)*s) for f,b in zip(GOLD,BG)) for s in (1/4,1/2,3/4)]
+            image=Image.new('P',(1,1));flat=[c for rgb in colors for c in rgb]
+            image.putpalette(flat+flat[:3]*(256-len(colors)));_SQUAD_PALETTE=image
+        return _SQUAD_PALETTE
+    return _ordinary_palette()
+
+
+def _ordinary_palette():
     """The panel's 16 fixed colours: every drawn colour exactly, plus three title edge tones (gold over the
     background). A median-cut palette merged orange into gold and grey into orange depending on the seats shown."""
     global _PALETTE
@@ -153,6 +170,9 @@ class Controller:
     def __init__(self):
         self.active=False;self.screen=None;self.row=0;self.teams=[];self.choice=None;self.input_ready=False
         self.hub=None;self.settings={};self.view=None;self.log=None
+        # Three to five teams (battle_mode_policy.Squads, set by squad_setup while its request is open): every
+        # player picks any team that still has a fighter, and the seats follow the team layout.
+        self.squads=None;self.warning=None
         self.lit=set();self.light={};self.drawn=None;self.drawn_at=0.0;self.dirty=False;self.opened_at=None
 
     # ---- what the panel shows -----------------------------------------------------------------------------------------
@@ -190,8 +210,35 @@ class Controller:
         if view.roster is None or view.roster.humans!=len(self.teams):return True
         return bool(view.ready)
 
+    def default_teams(self,humans):
+        """Two teams: players alternate. More: one player per team while its fighters last, in team order."""
+        if self.squads is None:return [i&1 for i in range(humans)]
+        room=list(self.squads.sizes());count=self.squads.teams;teams=[]
+        for i in range(humans):
+            team=next((t%count for t in range(i,i+count) if room[t%count]),0)
+            teams.append(team);room[team]-=1
+        return teams
+
+    def planned_seats(self):
+        """The seat of every player as the panel shows it (None: that team has no fighter left for this player)."""
+        if self.squads is None:return physical_seats(self.teams)
+        used=[0]*self.squads.teams;seats=[]
+        for team in self.teams:
+            members=self.squads.members(team)
+            seats.append(members[used[team]] if used[team]<len(members) else None);used[team]+=1
+        return tuple(seats)
+
+    def seats_fit(self):
+        """Continue is possible: with three to five teams no team holds more players than fighters."""
+        if self.squads is None:return True
+        seats=self.planned_seats()
+        if None not in seats:return True
+        self.warning=tr(TEAM_FULL,team=self.teams[seats.index(None)]+1);self.dirty=True
+        return False
+
     def notice(self):
         """(text, warning) under the buttons."""
+        if self.warning:return self.warning,True
         view=self.view
         if view is None:return tr(READY),False
         if view.state=='failed':return tr(UNAVAILABLE),True
@@ -233,15 +280,18 @@ class Controller:
             x=25
             for part,width in zip(parts,widths):d.text((round(x),y),part,font=small,fill=color);x+=width+gap
         line(tr(INTRO),50,lines=1)
-        seats=physical_seats(self.teams)
+        seats=self.planned_seats()
         for i,(team,(kind,text,_)) in enumerate(zip(self.teams,self.seats())):
             y=74+i*50;selected=i==self.row
             d.rounded_rectangle((20,y,491,y+45),radius=7,fill=PANEL,outline=GOLD if selected else EDGE,width=2)
             d.text((33,y+3),tr(f'PLAYER {i+1}'),font=font,fill=WHITE)
             if self.choice in TEAM_CHOICES:
-                d.text((196,y+3),tr(f'<  TEAM {team+1}  >'),font=font,fill=(BLUE,ORANGE)[team])
+                d.text((196,y+3),tr(f'<  TEAM {team+1}  >'),font=font,
+                       fill=(BLUE,ORANGE)[team] if self.squads is None else battle_mode_policy.TEAM_RGB[team])
                 # The word and the number apart: crisp glyphs would close up the space between them.
-                word,number=tr(f'SLOT {seats[i]//2+1}').rsplit(' ',1)
+                slot=(seats[i]//2+1 if self.squads is None else
+                      '-' if seats[i] is None else self.squads.members(team).index(seats[i])+1)
+                word,number=tr(f'SLOT {slot}').rsplit(' ',1)
                 d.text((400,y+6),word,font=small,fill=SLOT_TEXT)
                 d.text((400+round(d.textlength(word,font=small))+5,y+6),number,font=small,fill=SLOT_TEXT)
             color={'empty':GOLD,'default':DIM,'pad':GREEN,'lost':RED}[kind]
@@ -262,7 +312,7 @@ class Controller:
         teams=self.choice in TEAM_CHOICES
         columns(tr(FOOTER_P1 if teams else FOOTER_P1_FFA),396,TEXT)
         columns(tr(FOOTER_ALL if teams else FOOTER_ALL_FFA),420,GOLD)
-        return im.quantize(palette=palette(),dither=Image.Dither.NONE).convert('RGB')
+        return im.quantize(palette=palette(self.squads is not None),dither=Image.Dither.NONE).convert('RGB')
 
     # ---- lights ---------------------------------------------------------------------------------------------------------
     def lights(self,now):
@@ -303,21 +353,26 @@ class Controller:
         if not self.active:
             from guest_loading_screen import GuestLoadingScreen
             self.screen=GuestLoadingScreen();self.active=True;self.choice=choice
-            self.row=0;self.teams=[i&1 for i in range(CHOICES[choice])];self.input_ready=False
+            self.row=0;self.teams=self.default_teams(CHOICES[choice]);self.input_ready=False;self.warning=None
             self.lit=set();self.light={};self.drawn=None;self.dirty=True;self.opened_at=time.monotonic()
             if self.hub is not None:
                 try:
                     self.hub.start()
                     self.hub.open_setup(len(self.teams),choice in TEAM_CHOICES,
                                         mode=self.settings.get('controller_checkin'),
-                                        keep=self.settings.get('keep_controller_checkins'))
+                                        keep=self.settings.get('keep_controller_checkins'),
+                                        **({} if self.squads is None else {'teams':self.squads.teams}))
+                    if self.squads is not None:
+                        for number,team in enumerate(self.teams,1):self.hub.set_team(number,team)
                 except RuntimeError:pass
         p.write_u32(MENU+LEASE,HOST_LEASE);p.write_u32(MENU+16,HOST_LEASE)
         now=time.monotonic()
         self.view=self.snapshot()
         roster=self.view.roster if self.view is not None and self.view.state=='ready' else None
         if roster is not None and roster.humans==len(self.teams) and self.choice in TEAM_CHOICES:
-            self.teams=[seat.team for seat in roster.seats]
+            teams=[seat.team if self.squads is None else seat.team%self.squads.teams for seat in roster.seats]
+            if teams!=self.teams:self.warning=None
+            self.teams=teams
         buttons=p.read_u32(MENU+BUTTONS)
         if buttons:p.write_u32(MENU+BUTTONS,0)
         if buttons&RAW_BACK:
@@ -330,7 +385,9 @@ class Controller:
         rows=len(self.teams)+2
         if buttons&0x50:self.row=(self.row+(1 if buttons&0x40 else -1))%rows;self.dirty=True
         if buttons&0xA0 and self.row<len(self.teams) and self.choice in TEAM_CHOICES:
-            self.teams[self.row]^=1;self.dirty=True
+            if self.squads is None:self.teams[self.row]^=1
+            else:self.teams[self.row]=(self.teams[self.row]+(1 if buttons&0x20 else -1))%self.squads.teams
+            self.dirty=True;self.warning=None
             if self.hub is not None:
                 try:self.hub.set_team(self.row+1,self.teams[self.row])
                 except RuntimeError:pass
@@ -341,16 +398,20 @@ class Controller:
                     except RuntimeError:pass
                     self.view=self.snapshot()
                 self.dirty=True
-            elif self.ready():
-                seats=physical_seats(self.teams)
+            elif self.ready() and self.seats_fit():
+                seats=physical_seats(self.teams) if self.squads is None else battle_mode_policy.squad_seats(self.squads,self.teams)
                 p.write(MENU+SEATS,struct.pack('<4I',*(seats+(0xFFFFFFFF,)*(4-len(seats)))))
                 p.write_u32(MENU+HUMANS,len(seats));p.write_u32(MENU+VALID,int(self.choice in TEAM_CHOICES))
+                if self.squads is not None:
+                    # The team setup's receipt goes with the seats: the selector code and the watcher read both.
+                    import squad_setup
+                    squad_setup.publish(p,self.choice,self.squads)
                 self.close(p,commit=True)
                 # The guest performs the ordinary dispatch only after this receipt
                 # has been published completely and the overlay has disappeared.
                 p.write_u32(MENU+STATE,2);return True
         self.lit=self.lights(now)
-        state=(tuple(self.teams),self.row,tuple(self.seats()),frozenset(self.lit),self.ready(),self.notice())
+        state=(tuple(self.teams),self.row,tuple(self.seats()),frozenset(self.lit),self.ready(),self.notice(),self.squads)
         if state!=self.drawn:self.dirty=True
         if self.dirty and now-self.drawn_at>=REDRAW:
             self.screen.show_picture(self.picture(),surface='menu',client=p)

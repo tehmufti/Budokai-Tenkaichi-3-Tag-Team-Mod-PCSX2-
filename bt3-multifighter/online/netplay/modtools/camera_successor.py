@@ -10,6 +10,7 @@ import struct
 from pathlib import Path
 
 from ai_shadow import Assembler
+import battle_mode_policy as policy
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK, NATIVE = A(0x23EBEC), A(0x12B1D0)
@@ -94,6 +95,23 @@ def lookup_stub(require_visibility=True):
     return a.finish()
 
 
+def own_side(a, candidate, label, equal):
+    """Branch to label when the candidate does (equal) or does not belong to this camera's side.
+
+    a1 is the candidate's native row from LOOKUP, s0 the camera's row. In a match of three to five teams the
+    camera's side is the team of its row's first fighter (the seat the row's player started on)."""
+    if policy.squad_feature('successor'):
+        a.load_address(8, policy.SQUAD+policy.SQUAD_FIELDS['team_of'])
+        a.emit((8 << 21) | (candidate << 16) | (9 << 11) | 0x21)
+        a.mem(36, 9, 9, 0)
+        a.emit((8 << 21) | (16 << 16) | (8 << 11) | 0x21)
+        a.mem(36, 8, 8, 0)
+        a.branch(8, 9, label, not_equal=not equal)
+    else:
+        a.branch(5, 16, label, not_equal=not equal)
+    a.nop()
+
+
 def stub():
     a = Assembler(CODE)
     a.addiu(29, 29, -0x90)
@@ -144,8 +162,7 @@ def stub():
     a.move(23, 5)
     a.branch(3, 0, 'scan_own')
     a.nop()
-    a.branch(5, 16, 'stable_own')
-    a.nop()
+    own_side(a, 19, 'stable_own', True)
     a.label('scan_own')
     a.move(21, 0)
     a.label('own_loop')
@@ -153,8 +170,7 @@ def stub():
     a.move(4, 21)
     a.branch(3, 0, 'own_next')
     a.nop()
-    a.branch(5, 16, 'own_next', not_equal=True)
-    a.nop()
+    own_side(a, 21, 'own_next', False)
     a.move(19, 21)
     a.move(20, 2)
     a.addiu(23, 0, 1)

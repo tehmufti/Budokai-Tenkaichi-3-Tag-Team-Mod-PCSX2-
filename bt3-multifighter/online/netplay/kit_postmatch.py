@@ -11,7 +11,8 @@ The host decides (VOTE_STATE is its word): guests send VOTE {epoch, choice}; the
 VOTE_STATE {epoch, left_s, agreed:[ids], players:[ids], decision: None | 'retry' | 'lobby'}.
 
 RESULT (host -> every member): {epoch, winner:0|1|2, how:'ko'|'time'|'nocontest', words:[result, reason], frame,
-seconds, compared, differing, resyncs, title}.
+seconds, compared, differing, resyncs, title}; a match with three to five teams adds teams (their number) and
+team (the winning team from 1, None when no team was the last one standing).
 """
 import struct
 
@@ -22,6 +23,7 @@ REMATCH_SLOT, RESYNC_SLOT = 241, 240
 SENTINEL_OFFSET = 0xF0                                   # CONTROL+0xF0: the kit's token word (never hashed)
 LOADING = 0xDEAD0001
 WINNERS = (1, 2)
+SQUAD_WINNER_TEAM = 0x0712F100 + 68                      # battle_mode_policy SQUAD.winner_team (-1: none yet)
 
 
 def words():
@@ -89,6 +91,25 @@ class Vote:
 def result_message(epoch, *, winner, how, words_, frame, seconds, compared, differing, resyncs, title=None):
     return dict(type='RESULT', epoch=epoch, winner=winner, how=how, words=list(words_), frame=frame,
                 seconds=seconds, compared=compared, differing=differing, resyncs=resyncs, title=title)
+
+
+def read_team(link):
+    """The winning team (from 1) of a match with three to five teams, read from the game's team table; None while
+    no team is the last one standing."""
+    value = struct.unpack('<I', link.read_ranges([(SQUAD_WINNER_TEAM, 4)])[0])[0]
+    return value + 1 if value < 5 else None
+
+
+def result_line(how, winner, teams=None, team=None, nocontest=None):
+    """The one-line result every PC's log shows."""
+    if how == 'nocontest' or not winner:
+        return 'Result: no contest' + (f' ({nocontest})' if nocontest else '') + '.'
+    by = 'by KO' if how == 'ko' else 'on time'
+    if teams:
+        if team is None:
+            return f'Result: time is up with {teams} teams, no team was the last one standing.'
+        return f'Result: team {team} won {by} ({teams} teams).'
+    return f'Result: team {1 if winner & 1 else 2} won {by}.'
 
 
 def read_words(link):

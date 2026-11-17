@@ -55,7 +55,8 @@ def draw(automatic=True,configurable=True,quad=False):
     a.li(8,A(0x2FEB38));a.lw(14,8);takeover.pointer(a,14,0x108,'done')
     a.lw(8,14);a.addiu(9,0,3);a.branch(5,8,9,'done')
     a.li(8,seat_control);a.lw(9,8,fields['battle_mode'])
-    a.addiu(10,0,takeover.modes.FFA);a.branch(4,9,10,'done')
+    # Three to five teams (free-for-all engine) do offer a takeover; its own admission names the teammates.
+    if not takeover.modes.squad_feature('takeover'):a.addiu(10,0,takeover.modes.FFA);a.branch(4,9,10,'done')
     a.lw(17,28,-22176);takeover.pointer(a,17,832,'done')
     a.call(hud.ACTIVE);a.branch(4,2,0,'full')
     # Locate this world pass in the HUD's validated viewport descriptors.

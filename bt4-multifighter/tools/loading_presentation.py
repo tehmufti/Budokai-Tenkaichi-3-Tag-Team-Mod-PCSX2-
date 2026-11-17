@@ -51,6 +51,11 @@ def normalize_teams(teams):
                 player=fighter['player']
                 if type(player)is not int or not 0<=player<=4:raise ValueError('Invalid loading player label')
                 info=dict(info,player=player)
+            if 'team' in fighter:
+                # Team Battle with three to five teams: the fighter's team (0..4), shown by its colour.
+                team=fighter['team']
+                if type(team)is not int or not 0<=team<=4:raise ValueError('Invalid loading team')
+                info=dict(info,team=team)
             entries.append(info)
         result.append(dict(side=side,fighters=entries))
     return sorted(result,key=lambda item:item['side'])

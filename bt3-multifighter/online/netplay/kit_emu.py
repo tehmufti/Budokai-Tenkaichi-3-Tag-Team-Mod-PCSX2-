@@ -61,6 +61,7 @@ PAD_NAMES = {'cross': 'Cross', 'start': 'Start', 'select': 'Select', 'left': 'Le
              'rleft': 'RLeft', 'lup': 'LUp', 'lright': 'LRight', 'ldown': 'LDown', 'lleft': 'LLeft'}
 HOTKEYS = {'space': (0x20, 0x39, 0, 'Space'), 'f8': (0x77, 0x42, 0, 'F8'), 'pause': (0x13, 0x45, 0, 'Pause'),
            'scrolllock': (0x91, 0x46, 0, 'ScrollLock')}
+PORT_WAIT = 5.0                              # a PCSX2 just closed lets go of the PINE port within this
 PAUSE_KEY = 'pause'                          # PCSX2's TogglePause (make_ini); fallback ScrollLock (--pause-key)
 from native_map import SERIAL, CRC, SERIAL_FILE
 STATE_NAME = __import__('kit_adapter').state_name('{slot}')
@@ -237,9 +238,21 @@ class Emulator:
             raise KitError('TTM-NET-25', what=f'{path} did not keep the forced settings.')
 
     # ---- the process -------------------------------------------------------------------------------------------------
+    stopped = None                           # the PID stop() ended last
+
     def pine_owner(self):
         """PID of the process serving our PINE slot (None: nobody)."""
         return kit_win.listener_pid(self.pine_slot)
+
+    def port_taken(self):
+        """The process that keeps our PINE port, None when it is free. A PCSX2 that was closed a moment ago is
+        still being taken down by Windows (taskkill returns first): it gets PORT_WAIT seconds to let go."""
+        end = time.time() + PORT_WAIT
+        while True:
+            owner = kit_win.listener_pid(self.pine_slot)
+            if owner is None or time.time() >= end or (owner != self.stopped and kit_win.pid_alive(owner)):
+                return owner
+            time.sleep(0.05)
 
     def install_pnach(self, sha):
         """The runtime pnach the match needs (its installation's build family) into the PCSX2 data folder; returns
@@ -268,7 +281,7 @@ class Emulator:
         return changed
 
     def launch(self, state, iso, fullscreen=False, slot=None):
-        owner = kit_win.listener_pid(self.pine_slot)
+        owner = self.port_taken()
         if owner is not None:
             raise KitError('TTM-NET-22', what=f'PINE port {self.pine_slot} is already used by process {owner} '
                                               f'({kit_win.process_path(owner) or "unknown"}). Close that program or '
@@ -291,7 +304,7 @@ class Emulator:
         It stays paused and has no online match yet. The verified match is
         subsequently loaded through the normal PINE path, after everyone loads.
         """
-        owner = kit_win.listener_pid(self.pine_slot)
+        owner = self.port_taken()
         if owner is not None:
             raise KitError('TTM-NET-22', what=f'PINE port {self.pine_slot} is already used by process {owner}.',
                            logs=str(self.run_dir))
@@ -392,7 +405,9 @@ class Emulator:
 
     def stop(self):
         """Close our PCSX2 (by its PID) if it still runs."""
-        stopped = kit_win.kill_tree(self.pid) if self.pid else False
+        stopped = kit_win.kill_tree(self.pid, exe=self.root / EXE) if self.pid else False
+        if stopped:
+            self.stopped = self.pid               # launch() waits for its PINE port (port_taken)
         return stopped
 
     # ---- kit 1.3.0: pause, resume, load, window ------------------------------------------------------------------------

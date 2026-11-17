@@ -473,7 +473,12 @@ def selection_line(selected):
     humans = int(selected.get('humans') or 0)
     players = 'CPU Only' if humans == 0 else '1 Player' if humans == 1 else f'{humans} Players'
     mode = selected.get('mode')
-    return say(SAY_SELECTED, mode=say_text(MODE_LABELS.get(mode, str(mode))), players=say_text(players))
+    line = say(SAY_SELECTED, mode=say_text(MODE_LABELS.get(mode, str(mode))), players=say_text(players))
+    squads = selected.get('squads')
+    if squads is not None:
+        # Team Battle with three to five teams: name the count and the sizes after the usual line.
+        line = line.rstrip('.')+f" ({say('{count} teams', count=squads.teams)}: {'-'.join(str(n) for n in squads.sizes())})."
+    return line
 
 # Problems the watcher detects itself (player_errors.Detected, beta.33 round 2): fixed English sentences with
 # Spanish in localization.ES; the numbers and paths go to DETAILS and the report file.
@@ -565,6 +570,7 @@ class Autopilot:
         self.assigned_input = AssignmentOwner(lifetime.process.pid, hub=hub) if lifetime is not None else None
         self.battle_mode, self.humans = 'teams', 1
         self.assignment=None
+        self.squads=None        # Team Battle with three to five teams: its layout (battle_mode_policy.Squads)
         self.menu_checkpoints = None
         self.tournament = None           # tag_tournament.Controller (the Modded Modes pager owns it)
         self.tournament_match = None     # the Tag Team Tournament match being prepared or played
@@ -868,6 +874,7 @@ class Autopilot:
                     # One Tag Team Tournament roster pick on the Team Battle select: the check-in roster stays the
                     # tournament's (no hub.select), its seats are tournament players.
                     self.battle_mode,self.humans,self.assignment='teams',selected['humans'],None
+                    self.squads=None
                     self.report(say(SAY_TOURNAMENT_DRAFT),obs)
                     selected=None
                 elif selected.get('mode')=='tournament':
@@ -879,6 +886,7 @@ class Autopilot:
             if selected is not None:
                 self.battle_mode,self.humans=selected['mode'],selected['humans']
                 self.assignment=selected.get('assignment')
+                self.squads=selected.get('squads')
                 self.report(selection_line(selected),obs)
                 hub=getattr(self,'controller_hub',None)
                 if hub is not None:
@@ -1259,6 +1267,10 @@ class Autopilot:
         self.report(say(SAY_RETURN_FAILED.get(destination, SAY_RETURN_FAILED['main']),
                         error=str(error).rstrip('.')), level='error')
 
+    def loading_mode(self):
+        """The loading screen's layout: three to five teams are drawn on the free-for-all grid, in team colours."""
+        return 'ffa' if self.battle_mode=='teams' and getattr(self,'squads',None) is not None else self.battle_mode
+
     def set_loading_teams(self, characters):
         if self.presentation is None or not hasattr(self.presentation, 'set_teams'): return
         assignment,label=self.assignment,lambda n:n
@@ -1268,7 +1280,9 @@ class Autopilot:
             # Tag Team Tournament: the cards name each fighter's tournament player (their own controller).
             assignment=assignment if assignment is not None else (0,)
             label=lambda n:order[n-1] if 0<n<=len(order) else n
-        self.presentation.set_teams([dict(side=i, fighters=[dict(character_id=c,player=(label(assignment.index(2*slot+i)+1) if 2*slot+i in assignment else 0)) if assignment is not None else dict(character_id=c) for slot,c in enumerate(team)])
+        squads=getattr(self,'squads',None) if self.battle_mode=='teams' else None
+        colour=lambda slot,i:{} if squads is None or squads.team_of[2*slot+i] is None else {'team':squads.team_of[2*slot+i]}
+        self.presentation.set_teams([dict(side=i, fighters=[dict(character_id=c,player=(label(assignment.index(2*slot+i)+1) if 2*slot+i in assignment else 0),**colour(slot,i)) if assignment is not None else dict(character_id=c,**colour(slot,i)) for slot,c in enumerate(team)])
                                      for i,team in enumerate(characters)])
 
     def early_loading(self, obs):
@@ -1283,11 +1297,12 @@ class Autopilot:
                     match['token']=os.urandom(16)
                 self.tournament_match=match
                 self.battle_mode,self.humans,self.assignment='teams',match['humans'],match['assignment']
+                self.squads=None
         teams = obs.selected_early_teams(include_single=battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) or story_missions.pending_for(self.battle_mode))
         if teams is None or obs.battle_state not in (-1, 0, 1): return
         self.set_loading_teams(teams)
         if self.presentation is not None and hasattr(self.presentation, 'set_mode'):
-            self.presentation.set_mode(self.battle_mode, self.humans)
+            self.presentation.set_mode(self.loading_mode(), self.humans)
         # 12BD10 starts native disc loading before BATTLE_OBJECT exists. Paint
         # ahead while its minigame is visible, but publish only when phase 0
         # initializes the arena (or phase 1 if the polling interval missed 0).
@@ -1395,7 +1410,7 @@ class Autopilot:
         try:
             if progress is not None: self.progress = progress
             if hasattr(self.presentation, 'set_mode'):
-                self.presentation.set_mode(self.battle_mode, self.humans)
+                self.presentation.set_mode(self.loading_mode(), self.humans)
             title = {'teams': 'Preparing team battle', 'ffa': 'Preparing free-for-all',
                      'coop': 'Preparing co-op battle','training':'Preparing modded training',
                      'training_coop':'Preparing co-op training'}[self.battle_mode]
@@ -2185,9 +2200,12 @@ class Autopilot:
             import mod_settings
             self.diagnostic_settings=mod_settings.load_settings()
             session_type=StreamingSession if self.streaming else Session
+            # Team Battle with three to five teams runs on the free-for-all engine with its team layout.
+            squads=getattr(self,'squads',None) if self.battle_mode=='teams' else None
             session = session_type(self.mode, progress=self.on_progress,
                               play_intro=self.play_intro_after_loading,
-                              battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment)
+                              battle_mode='ffa' if squads is not None else self.battle_mode, humans=self.humans,
+                              assignment=self.assignment,squads=squads)
             self.preparation_session = session   # watch_start_freeze borrows its unused slot
             # Tag Team Tournament: the session also saves the fresh native battle (tag_tournament.save_original).
             session.tournament = getattr(self,'tournament_match',None)
@@ -2622,6 +2640,7 @@ class Autopilot:
                         match['key']=obs.key
                         self.tournament_match=match
                     self.battle_mode,self.humans,self.assignment='teams',match['humans'],match['assignment']
+                    self.squads=None
                 self.set_loading_teams(obs.characters)
                 self.streaming=obs.streaming
                 self.play_intro_after_loading=self.play_intro_after_loading or obs.streaming or obs.native_intro

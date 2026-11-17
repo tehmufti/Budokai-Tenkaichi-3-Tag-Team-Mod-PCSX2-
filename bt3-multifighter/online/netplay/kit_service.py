@@ -24,6 +24,9 @@ import time
 import traceback
 
 
+SEAL_WAIT = 300.0                            # seconds the host's game may stand still under a queued write
+
+
 class LinkError(RuntimeError):
     pass
 
@@ -72,11 +75,16 @@ class RemotePine:
         k = m.get('k')
         if k is None:
             return
-        deadline = time.monotonic() + 30
+        # the game may stand still for a while (everybody waits for one player's input, a resync holds every
+        # game): only a game that does not move at all for SEAL_WAIT seconds is given up
+        deadline = time.monotonic() + SEAL_WAIT
+        last = None
         while time.monotonic() < deadline:
             frame, state = self.frame()
             if frame is None or state != 2 or frame > k:
                 return
+            if frame != last:
+                last, deadline = frame, time.monotonic() + SEAL_WAIT
             time.sleep(0.01)
         raise LinkError(f'the host game did not reach frame {k}')
 
@@ -177,8 +185,13 @@ def main():
     ap.add_argument('--tools', required=True)
     ap.add_argument('--w1', required=True)
     ap.add_argument('--services', default='cpu_transform')
+    ap.add_argument('--squads', default='', help='team sizes of a match with three to five teams (3,2,1)')
     args = ap.parse_args()
     sys.path.insert(0, args.tools)
+    if args.squads:
+        # everything this process emits or recognises is built for the match's teams, as the mod's watcher does
+        import battle_mode_policy as policy
+        policy.session_squads(policy.squad_layout(tuple(int(n) for n in args.squads.split(','))))
     p = RemotePine(args.port, args.token)
     w1 = int(args.w1, 0)
     try:

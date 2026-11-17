@@ -682,7 +682,7 @@ def build_offline(ram,settings,source='<prepared>',training=False,iso=None,onlin
     if len(ram)==0x8000000:
         if _u(ram,NETPLAY_CONTROL)==NETPLAY_MAGIC and _u(ram,NETPLAY_CONTROL+4):
             return _not_usable('Tag-team rush is unavailable online.',source)
-        if _u(ram,modes.CONTROL+12)==modes.FFA:
+        if _u(ram,modes.CONTROL+12)==modes.FFA and not modes.squad_feature('tag_attacks'):
             return _not_usable('Tag-team rush requires teammates.',source)
     plan=build_memory(ram,options,source=source,training=training,iso=selected_iso() if iso is None else iso,
                       online=online,enable_scene=True,reviewed_assets=True)
@@ -744,7 +744,8 @@ def build_memory(ram,settings,source='<prepared>',training=False,iso=None,online
         raise ValueError('Tag-rush battle manager is not live')
     if (_u(ram,participation.CONTROL),_u(ram,participation.CONTROL+4),_u(ram,participation.CONTROL+8))!=(5,manager,count):
         raise ValueError('Tag rush requires captured participation data')
-    if _u(ram,modes.CONTROL+12)==modes.FFA:return _not_usable('Tag rush requires teammates; free-for-all is unchanged.',source)
+    if _u(ram,modes.CONTROL+12)==modes.FFA and not modes.squad_feature('tag_attacks'):
+        return _not_usable('Tag rush requires teammates; free-for-all is unchanged.',source)
     roster=_roster(ram,count)
     try:
         pack,identity=assets_once(iso)

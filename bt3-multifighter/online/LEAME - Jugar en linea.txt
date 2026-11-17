@@ -25,6 +25,15 @@ cámara de su propio luchador. Cada equipo puede tener de uno a cinco luchadores
 independientemente (2 contra 1, 5 contra 3, etc.), hasta diez luchadores y diez
 jugadores. Todos contra todos admite 2-10 luchadores. Una sala admite dieciséis
 personas, incluidos los espectadores. Si un jugador sale, la CPU toma su luchador.
+El combate por equipos admite de dos a cinco equipos: el anfitrión elige
+"Equipos 2 3 4 5" y el tamaño de cada equipo (de uno a cinco luchadores, diez en
+total). Con tres a cinco equipos cada equipo tiene su color y su número en todos
+los PC; pulsa "Unirme" en un equipo para jugar con un luchador libre de ese
+equipo (o toma un luchador directamente). Los compañeros no se pueden dañar ni
+fijar entre sí, la CPU ataca a todos los demás equipos y gana el último equipo
+en pie: el resultado dice qué equipo ganó. Al volver a dos equipos todos los
+jugadores conservan un luchador. Todos en la sala necesitan la misma versión de
+Tag Team Mod (una versión anterior se rechaza al entrar).
 
 En las reglas de la sala, "Si un jugador no carga" tiene "Cancelar el inicio"
 por defecto. "Expulsar y continuar" elimina al jugador si su carga falla o
@@ -97,13 +106,25 @@ no se guardan en el perfil ni en los registros. Por ahora están ocultos los
 controles de búsqueda, publicación y directorio; las salas creadas desde la
 ventana no se publican. Entra por dirección.
 
+SI UN JUGADOR SE CAE
+Si el PC de un jugador deja de responder durante un combate (su juego se cuelga,
+se suspende o pierde la conexión), sale del combate a los doce segundos
+aproximadamente: la CPU toma su luchador y los demás siguen jugando. Un invitado
+que pierde la conexión vuelve a entrar solo en la misma sala (cuatro intentos);
+si vuelve en menos de tres minutos recupera su nombre y, en la sala de
+selección, su luchador. Quien entra durante un combate lo mira. Si se cierra el
+juego del anfitrión, el combate termina sin resultado y la sala sigue abierta.
+El idioma de los menús del mod puede ser distinto entre jugadores: en ese
+combate todos ven los textos del mod del anfitrión.
+
 CONEXIÓN Y PROBLEMAS
 Permite Python en el cortafuegos. Por internet, redirige el puerto del juego
 (47400 por defecto), tanto TCP como UDP, o usa una VPN como Tailscale, ZeroTier
 o Radmin VPN. TCP lleva la sala y los estados; UDP lleva las entradas por
 fotograma. Publicar una sala no la hace accesible automáticamente a través de NAT.
 
-TTM-NET-01/02: instala la misma versión en todos los PC. TTM-NET-06: usa discos
+TTM-NET-01/02/34: instala la misma versión en todos los PC (el 34 nombra las
+dos versiones: quien tenga la más antigua usa el actualizador). TTM-NET-06: usa discos
 idénticos. TTM-NET-17: corrige la contraseña o la regla indicada. TTM-NET-10/11:
 comprueba dirección, cortafuegos y ambos protocolos. TTM-NET-23/31: reintenta
 la preparación y conserva el informe si se repite. Una desincronización se

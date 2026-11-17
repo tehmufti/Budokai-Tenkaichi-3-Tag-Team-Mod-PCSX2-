@@ -147,7 +147,18 @@ def resolver_code(free_for_all=False, revive_targets=None):
     else: a.i(12, 2, 3, 1)
     a.li(8, TABLE); a.r(0, 9, 0, 3, 2); a.r(0x2D, 8, 8, 9); a.lw(3, 8)
     a.r(0x2B, 9, 3, 10); a.branch(4, 9, 0, 'native')
-    if free_for_all: a.branch(4, 3, 2, 'native')
+    if free_for_all:
+        # Three to five teams: the target must be on another team (a free-for-all only excludes the fighter itself).
+        if modes.emitted_squads() is not None and revive_targets and modes.squad_feature('revive_lockon'):
+            # An enemy, or (for a player) a downed teammate that can be revived: the two-team admission.
+            import revive_targeting
+            a.move(15, 2)
+            modes.emit_enemy(a, 2, 3, 'resolver_mate', 'resolver'); a.jump('target_allowed')
+            a.label('resolver_mate'); a.branch(4, 15, 3, 'native')
+            revive_targeting.emit_check(a, 15, 3); a.branch(4, 2, 0, 'native')
+            a.label('target_allowed')
+        elif modes.emitted_squads() is not None: modes.emit_enemy(a, 2, 3, 'native', 'resolver')
+        else: a.branch(4, 3, 2, 'native')
     elif revive_targets:
         import revive_targeting
         a.i(12,9,3,1);a.branch(5,9,2,'target_allowed')

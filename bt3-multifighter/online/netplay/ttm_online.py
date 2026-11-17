@@ -112,7 +112,7 @@ def stop_leftovers(say):
         return []
     killed = []
     path = kit_win.process_path(pid).lower() if pid else ''
-    if pid and kit_win.pid_alive(pid) and path.startswith(str(kit_paths.PCSX2).lower()):
+    if pid and kit_win.pid_alive(pid) and path.startswith(str(kit_paths.PCSX2).lower() + os.sep):
         kit_win.kill_tree(pid)
         killed.append(pid)
         say(f'Closed the PCSX2 an earlier run of this kit left open (process {pid}).')
@@ -139,10 +139,31 @@ def session_argv(argv):
     return out
 
 
+def session_listens(info):
+    """True when something accepts connections on the recorded IPC port: a session.json left by a session that
+    was killed names a pid Windows may have given to another program since (Play online then died with a
+    ConnectionRefusedError traceback on every start)."""
+    import socket
+    try:
+        with socket.create_connection(('127.0.0.1', int(info.get('port'))), timeout=2.0):
+            return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def start_session(argv, args, say):
     """Start the session process (or re-attach to a running one); returns (port, token, pid)."""
     info = kit_ipc.read_info(kit_paths.DATA / 'session.json')
-    if info and not args.new_session and kit_win.pid_alive(info.get('pid')):
+    if info and info.get('closing') and kit_win.pid_alive(info.get('pid')):
+        # the previous window was just closed and its session is still closing its game: attaching to it gave
+        # an empty window that then said 'the session stopped'
+        say('The previous online session is still closing; waiting for it...')
+        end = time.time() + 45
+        while time.time() < end and kit_win.pid_alive(info.get('pid')):
+            time.sleep(0.2)
+        info = kit_ipc.read_info(kit_paths.DATA / 'session.json')
+    if info and not info.get('closing') and not args.new_session and kit_win.pid_alive(info.get('pid')) and \
+            session_listens(info):
         say('Re-attaching to the running online session (process %s).' % info['pid'])
         return info['port'], info['token'], info['pid'], True
     token = kit_ipc.new_token()

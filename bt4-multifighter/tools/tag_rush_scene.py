@@ -199,8 +199,13 @@ def start_code():
     a.li(8,2);a.sw(8,19,tag.C['start_check'])
     a.lw(8,19,tag.C['active']);a.branch(5,8,0,'reject')
     for x,y in ((16,17),(16,18),(17,18)):a.branch(4,x,y,'reject')
-    a.r(0x26,8,16,17);a.i(12,8,8,1);a.branch(5,8,0,'reject')
-    a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'reject')
+    if tag.modes.squad_feature('tag_attacks'):
+        # Initiator and partner share a team, the victim is of another one (the team table; indices bounded first).
+        for reg in (16,17,18):a.i(11,8,reg,tag.modes.ENGINE_ACTORS);a.branch(4,8,0,'reject')
+        tag.modes.emit_ally(a,16,17,'reject');tag.modes.emit_enemy(a,16,18,'reject','cast_victim')
+    else:
+        a.r(0x26,8,16,17);a.i(12,8,8,1);a.branch(5,8,0,'reject')
+        a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'reject')
     for k,reg in enumerate((16,17,18)):a.sw(reg,29,0x300+4*k)
     a.move(20,0);a.sw(0,29,0x30C)
     a.label('preflight');a.addiu(8,20,0x10);a.sw(8,19,tag.C['start_check'])

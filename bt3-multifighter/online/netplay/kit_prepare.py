@@ -207,6 +207,8 @@ def patches(slot):
              "            value['native_mode_receipt'] = dict(\n"
              "                epoch=getattr(self.mode_menu, 'epoch', 0),\n"
              "                choice=getattr(self.mode_menu, 'last_choice', None),\n"
+             "                squads=(list(self.squads.sizes()) if getattr(self, 'squads', None) is not None\n"
+             "                        else None),\n"
              "                custom=bool(self.preparation_enabled))")],
         # This copy runs accelerated and has no interactive player. Poll native
         # acknowledgements promptly without changing readiness/frame/idle gates.
@@ -441,7 +443,7 @@ class Prepare:
     def launch(self):
         if not kit_win.WINDOWS:
             return self.launch_linux()
-        owner = kit_win.listener_pid(self.slot)
+        owner = reap_leftover(self.slot, self.dest, getattr(self.run, 'say', None))
         if owner is not None:
             raise KitError('TTM-NET-23', what=f'PINE port {self.slot} (for the match preparation) is used by process '
                                               f'{owner}.', fix='Close that program, or use --prep-pine-slot N.')
@@ -453,6 +455,7 @@ class Prepare:
         if self.desktop:
             self.cmd_pid = kit_win.launch(['cmd.exe', '/d', '/c', str(play)], self.dest, console, self.desktop,
                                           env=dict(env, PYTHONUTF8='1', PYTHONIOENCODING='utf-8'))
+            self.cmd_created = kit_win.process_created(self.cmd_pid)
             kit_win.kill_with_me(self.cmd_pid)
         else:
             self.cmd_pid = subprocess.Popen(['cmd.exe', '/d', '/c', str(play)], cwd=str(self.dest), env=env,
@@ -538,9 +541,36 @@ class Prepare:
         raise KitError('TTM-NET-23', what='PCSX2 did not write the match save.', fix='Try --prepare again.')
 
     def close(self):
-        for pid in (self.pid, self.cmd_pid):
-            if pid:
-                kit_win.kill_tree(pid)
+        """End the copy's PCSX2 and its launcher, each only while the PID still is that process."""
+        if self.pid:
+            kit_win.kill_tree(self.pid, exe=self.dest / 'game' / 'runtime28' / 'pcsx2-qt.exe'
+                              if kit_win.WINDOWS else None)
+        if self.cmd_pid:
+            created = getattr(self, 'cmd_created', None)
+            if created is None or kit_win.process_created(self.cmd_pid) == created:
+                kit_win.kill_tree(self.cmd_pid)
+        self.cmd_created = None
+
+
+def reap_leftover(slot, dest, say=None, wait=10.0):
+    """The process still serving the preparation PINE port, after ending it when it is THIS kit's own leftover:
+    a match-making copy whose session was killed (or crashed) keeps running hidden, and the next room then
+    failed with 'PINE port ... is used by process N' with nothing the player could close. Ours = its executable
+    is the pcsx2-qt.exe inside this kit's private copy. Anything else is left alone. None: the port is free."""
+    owner = kit_win.listener_pid(slot)
+    if owner is None or not kit_win.WINDOWS:
+        return owner
+    exe = Path(dest) / 'game' / 'runtime28' / 'pcsx2-qt.exe'
+    if not kit_win.same_path(kit_win.process_path(owner), exe):
+        return owner
+    if say:
+        say(f'Closing the match-making copy an earlier session left open (process {owner}).')
+    kit_win.resume_pids([owner])                 # it may have been left suspended
+    kit_win.kill_tree(owner, exe=exe)
+    end = time.time() + wait
+    while time.time() < end and kit_win.listener_pid(slot) == owner:
+        time.sleep(0.1)
+    return kit_win.listener_pid(slot)
 
 
 def have_packages():
@@ -636,12 +666,61 @@ def quad_backup_conversion(ram):
     return out
 
 
-def test_ko_blocks(ram, actors, divisor=8):
+# The three lines the mod's preparation prints around its wait for the two native leaders' models
+# (fresh_team_trainer.StreamingSession.settled_leaders), in the copy's own language: English or Spanish.
+LEADER_WAITING = ('Waiting for the game to finish setting up the first fighters...',
+                  'Esperando a que el juego termine de preparar a los primeros luchadores...')
+LEADER_READY = (re.compile(r'First fighters ready after ([\d.]+) s \(memory read (\d+) times\)\.'),
+                re.compile(r'Primeros luchadores listos tras ([\d.]+) s \(memoria leída (\d+) veces\)\.'))
+LEADER_LATE = (re.compile(r'First fighters not ready after ([\d.]+) s: (.*)'),
+               re.compile(r'Los primeros luchadores no están listos tras ([\d.]+) s: (.*)'))
+
+
+def leader_wait(lines):
+    """What the copy's watcher last said about its wait for the first fighters, from its log lines (the ones of
+    this preparation): None (no wait), dict(state='waiting'), dict(state='ready', seconds, reads) or
+    dict(state='late', seconds, reason)."""
+    found = None
+    for line in lines:
+        text = line.strip()
+        if text in LEADER_WAITING:
+            found = dict(state='waiting')
+            continue
+        for pattern in LEADER_READY:
+            m = pattern.fullmatch(text)
+            if m:
+                found = dict(state='ready', seconds=float(m.group(1)), reads=int(m.group(2)))
+        for pattern in LEADER_LATE:
+            m = pattern.fullmatch(text)
+            if m:
+                found = dict(state='late', seconds=float(m.group(1)), reason=m.group(2).strip())
+    return found
+
+
+def test_ko_blocks(ram, actors, divisor=8, spec=None, keep=0):
     """TEST HOOK ONLY (--test-hooks): Team 2 (odd fighters) nearly beaten, so bots reach a KO in seconds: its leader (the
     guest's fighter) at 1 HP, its CPU partners at an eighth of their HP, so the guest falls first and can take over a
     teammate. Both PCs load the same file, so this is part of the agreed state; a real match never gets it."""
     u = lambda a: struct.unpack_from('<I', ram, a)[0]
     out = []
+    if (spec or {}).get('team_count'):
+        # three to five teams: one team stays healthy, the first fighter of every other team starts at 1 HP and
+        # their teammates at HP / divisor, so the last team standing is known and reached in seconds
+        team_of = {2 * j + s: f.get('team') for s, column in enumerate(spec['teams'])
+                   for j, f in enumerate(column)}
+        first = {}
+        for index in sorted(team_of):
+            first.setdefault(team_of[index], index)
+        for a in actors:
+            team = team_of.get(a['index'])
+            if team is None or team == keep:
+                continue
+            slot = u(a['actor'] + HP_SLOT)
+            address = a['actor'] + HP_ROW + min(slot, 4) * HP_STRIDE
+            new = 1 if a['index'] == first[team] else max(1, u(address) // divisor)
+            if u(address) > new:
+                out.append((address, struct.pack('<I', new)))
+        return out
     for a in actors:
         if a['index'] % 2 == 1:
             slot = u(a['actor'] + HP_SLOT)
@@ -785,7 +864,41 @@ def online_blocks(ram, actors, spec, problems):
         blocks += [(a, new) for a, _, new in netplay_fixups.seat_blocks(ram)]               # (f)
     except ValueError as error:
         problems.append(str(error))
+    blocks += squad_blocks(ram, spec, humans, problems)                                     # (i)
     return blocks
+
+
+def squad_blocks(ram, spec, humans, problems):
+    """(i) Three to five teams: the installed team table (battle_mode_policy SQUAD) must be the one of the spec's
+    teams, on the free-for-all engine; its human mask (the win rule names a player's fighter first) becomes the
+    room's players: that one word only, everything else stays what the mod installed (the seats the private
+    match was prepared with included). Without teams no table may be installed."""
+    import kit_spec
+    policy = kit_spec.squad_policy()
+    u = lambda a: struct.unpack_from('<I', ram, a)[0]
+    if not spec.get('team_count'):
+        if policy is not None and any(ram[policy.SQUAD:policy.SQUAD_END]):
+            problems.append('a team table is installed in a match without teams')
+        return []
+    if policy is None:
+        problems.append('this Tag Team Mod cannot play three to five teams')
+        return []
+    layout = kit_spec.squads(spec)
+    fields = policy.SQUAD_FIELDS
+    manager = u(policy.SQUAD + fields['manager'])
+    expected = layout.block(manager, ())
+    installed = bytes(ram[policy.SQUAD:policy.SQUAD_END])
+    if u(policy.SQUAD) != policy.SQUAD_MAGIC or not manager or \
+            installed[:fields['humans']] != expected[:fields['humans']]:
+        problems.append('the team table of the prepared match is not the one of the room\'s teams')
+        return []
+    if (u(policy.CONTROL), u(policy.CONTROL + 4), u(policy.CONTROL + 12)) != (policy.MAGIC, manager, policy.FFA):
+        problems.append('the prepared team match does not run on the free-for-all engine')
+        return []
+    new = struct.pack('<I', sum(1 << slot for slot in set(humans)))
+    if installed[fields['humans']:fields['humans'] + 4] == new:
+        return []
+    return [(policy.SQUAD + fields['humans'], new)]
 
 
 def background_online(ram):
@@ -959,6 +1072,15 @@ def check_held_export_source(capture, receipt):
 
 
 def _convert(capture, folder, names_file, spec=None, options=None, *, controls=None, held_export=None):
+    """The conversion, inside the mod's build flavour of the spec's match (three to five teams: every module the
+    kit rebuilds or recognises - the lock-on queue, the takeover prompt - is built for those teams)."""
+    import kit_spec
+    with kit_spec.flavour(spec):
+        return _convert_built(capture, folder, names_file, spec, options, controls=controls,
+                              held_export=held_export)
+
+
+def _convert_built(capture, folder, names_file, spec=None, options=None, *, controls=None, held_export=None):
     import hashlib
     import kit_match
     controls = kit_match.transport_controls(controls)
@@ -1096,7 +1218,8 @@ def _convert(capture, folder, names_file, spec=None, options=None, *, controls=N
     if options.get('test_ko'):
         divisor = options.get('ko_divisor', 8)
         divisor = divisor if isinstance(divisor, int) and 2 <= divisor <= 64 else 8
-        test = test_ko_blocks(ram, actors, divisor)
+        keep = options.get('ko_keep')
+        test = test_ko_blocks(ram, actors, divisor, spec, keep if type(keep) is int and 0 <= keep < 5 else 0)
     elif options.get('test_leaders'):
         test = test_leader_blocks(ram, actors)
     if options.get('test_ki'):

@@ -238,11 +238,10 @@ TEXT = {
                                 'Saved matches.',
                           'es': 'Los dos están listos, pero ningún combate guardado tiene estos equipos: anfitrión, '
                                 'elige uno en Combates guardados.'},
-    'notice.prep_refused': {'en': 'The host\'s Tag Team Mod installation cannot make online matches: the host can '
-                                  'choose a saved match, or another installation on the Start screen.',
+    'notice.prep_refused': {'en': 'The host\'s Tag Team Mod installation cannot make online matches: the host '
+                                  'updates (or reinstalls) Tag Team Mod and opens Play online again.',
                             'es': 'La instalación de Tag Team Mod del anfitrión no puede crear combates en línea: el '
-                                  'anfitrión puede elegir un combate guardado u otra instalación en la pantalla de '
-                                  'inicio.'},
+                                  'anfitrión actualiza (o reinstala) Tag Team Mod y vuelve a abrir Play online.'},
     'notice.swap_offer': {'en': '{name} offers to swap the roles (Let ... host).',
                           'es': '{name} propone cambiar los papeles (anfitrión e invitado).'},
     'notice.swap_withdrawn': {'en': '{name} no longer wants to swap the roles.',
@@ -358,6 +357,13 @@ TEXT = {
     'prep.confirm': {'en': 'Starting the match with the lobby\'s teams', 'es': 'Empezando el combate con los equipos '
                                                                                'de la sala'},
     'prep.loading': {'en': 'Loading the fighters', 'es': 'Cargando a los luchadores'},
+    # the mod's own bounded wait in the host's copy (fresh_team_trainer settled_leaders), shown and logged
+    'prep.leaders': {'en': 'Waiting for the game to finish setting up the first fighters',
+                     'es': 'Esperando a que el juego termine de preparar a los primeros luchadores'},
+    'prep.leaders_ready': {'en': 'First fighters ready after {seconds} s (memory read {reads} times).',
+                           'es': 'Primeros luchadores listos tras {seconds} s (memoria leída {reads} veces).'},
+    'prep.leaders_late': {'en': 'First fighters not ready after {seconds} s: {reason}',
+                          'es': 'Los primeros luchadores no están listos tras {seconds} s: {reason}'},
     'prep.capture': {'en': 'Saving the match', 'es': 'Guardando el combate'},
     'prep.convert': {'en': 'Making it an online match and checking it', 'es': 'Convirtiéndolo en combate en línea y '
                                                                              'comprobándolo'},
@@ -527,6 +533,20 @@ _DETAIL_ES += (
     (r'settings that are not online rules: (.+)', 'ajustes que no son reglas en línea: {0}'),
     (r'(.+) are not consistent \(the mod would change them\)', '{0} no son coherentes (el mod los cambiaría)'),
     (r'no such team', 'ese equipo no existe'),
+    (r'team (\d+) has no free fighter', 'el equipo {0} no tiene ningún luchador libre'),
+    (r'two to five teams can be played', 'se puede jugar con dos a cinco equipos'),
+    (r'(\d+) teams: choose two to five', '{0} equipos: elige de dos a cinco'),
+    (r'each team needs between one and five fighters', 'cada equipo necesita entre uno y cinco luchadores'),
+    (r'these team sizes do not fit the two rows of five fighters: make one team smaller',
+     'estos tamaños de equipo no caben en las dos filas de cinco luchadores: reduce un equipo'),
+    (r'this room has (\d+) teams: give (\d+) sizes', 'esta sala tiene {0} equipos: indica {1} tamaños'),
+    (r'this Tag Team Mod cannot play three to five teams \(update it\)',
+     'este Tag Team Mod no puede jugar con tres a cinco equipos (actualízalo)'),
+    (r'three to five teams are a Team Battle started from the menu',
+     'de tres a cinco equipos es un combate por equipos iniciado desde el menú'),
+    (r'the fighters do not stand where the team layout puts them',
+     'los luchadores no están donde los coloca la distribución de equipos'),
+    (r'a fighter has no team', 'un luchador no tiene equipo'),
     (r'no such fighter', 'ese luchador no existe'),
     (r'empty team', 'el equipo está vacío'),
     (r'the host locked this fighter \(it stays a CPU\)', 'el anfitrión bloqueó este luchador (sigue siendo de la CPU)'),
@@ -635,11 +655,16 @@ TEXT.update({
     'room.mode': {'en': 'Battle', 'es': 'Combate'},
     'room.mode.teams': {'en': 'Two teams', 'es': 'Dos equipos'},
     'room.mode.ffa': {'en': 'Free-for-all', 'es': 'Todos contra todos'},
-    'room.mode.three': {'en': 'Three or more teams', 'es': 'Tres equipos o más'},
-    'room.mode.three_why': {'en': 'The Tag Team Mod has two teams or free-for-all: three or more teams need a mod '
-                                  'update.',
-                            'es': 'El Tag Team Mod tiene dos equipos o todos contra todos: tres equipos o más necesitan '
-                                  'una actualización del mod.'},
+    'room.mode.team_battle': {'en': 'Team Battle', 'es': 'Combate por equipos'},
+    'room.teams': {'en': 'Teams', 'es': 'Equipos'},
+    'room.teams_why': {'en': 'Three to five teams: the last team standing wins. Teammates cannot hurt or lock on '
+                             'to each other. Up to 10 fighters in all, at least one per team.',
+                       'es': 'De tres a cinco equipos: gana el último equipo en pie. Los compañeros no se pueden '
+                             'dañar ni fijar entre sí. Hasta 10 luchadores en total, al menos uno por equipo.'},
+    'room.join_team': {'en': 'Join this team', 'es': 'Unirme'},
+    'room.my_team': {'en': 'Your team', 'es': 'Tu equipo'},
+    'room.team_size': {'en': '{n} fighters', 'es': '{n} luchadores'},
+    'room.team_size_one': {'en': '1 fighter', 'es': '1 luchador'},
     'room.quad_why': {'en': 'Players 3 and 4 (a player on a non-leader fighter) are not offered online yet.',
                       'es': 'Los jugadores 3 y 4 (un jugador en un luchador que no es el líder) aún no están en línea.'},
     'room.sizes': {'en': 'Fighters per team', 'es': 'Luchadores por equipo'},
@@ -690,6 +715,8 @@ TEXT.update({
     'fight.end_confirm2': {'en': 'End this match as No contest for everybody?',
                            'es': '¿Terminar este combate sin resultado para todos?'},
     'results.winner_team': {'en': 'Team {team} won', 'es': 'Ganó el equipo {team}'},
+    'results.no_team': {'en': 'Time is up: no team was the last one standing',
+                        'es': 'Se acabó el tiempo: ningún equipo quedó como el último en pie'},
     'results.retry': {'en': 'RETRY', 'es': 'REPETIR'},
     'results.to_lobby': {'en': 'Return to lobby', 'es': 'Volver a la sala'},
     'results.vote_line': {'en': '{left} s: Retry needs every player ({agreed} of {players} agreed). Otherwise everyone '
@@ -703,6 +730,8 @@ TEXT.update({
                               'es': 'Todos aceptaron: el mismo combate otra vez.'},
     'results.decided_lobby': {'en': 'Back to the lobby.', 'es': 'De vuelta a la sala.'},
     'load.retry': {'en': 'Loading the match again', 'es': 'Cargando el combate otra vez'},
+    'load.patch': {'en': 'Getting the room\'s game patch from the host',
+                   'es': 'Recibiendo del anfitrión el parche del juego de la sala'},
     'load.join': {'en': 'Joining the running match (receiving the host\'s game)',
                   'es': 'Entrando al combate en curso (recibiendo la partida del anfitrión)'},
     'load.waiting_players': {'en': 'Waiting for the players to load the match',
@@ -714,6 +743,30 @@ TEXT.update({
     'notice.unlocked': {'en': 'Team {team}, fighter {index} can be taken again.',
                         'es': 'El luchador {index} del equipo {team} se puede tomar otra vez.'},
     'notice.kicked': {'en': 'The host removed you from the room.', 'es': 'El anfitrión te sacó de la sala.'},
+    'notice.player_dropped': {'en': '{name} stopped responding: their fighter is now a CPU and the fight goes on.',
+                              'es': '{name} dejó de responder: su luchador ahora es una CPU y el combate sigue.'},
+    'notice.dropped_not_responding': {
+        'en': 'Your game stopped sending inputs, so the host continued without you (your fighter became a CPU). '
+              'You are still in the room for the next match.',
+        'es': 'Tu juego dejó de enviar controles, así que el anfitrión siguió sin ti (tu luchador pasó a ser una '
+              'CPU). Sigues en la sala para el próximo combate.'},
+    'notice.rejoining': {'en': 'The connection to the host was lost. Joining the room again…',
+                         'es': 'Se perdió la conexión con el anfitrión. Entrando otra vez en la sala…'},
+    'notice.left_fight_error': {
+        'en': 'Your game had a problem and left the fight; the others play on with a CPU in your place. You are '
+              'still in the room for the next match.',
+        'es': 'Tu juego tuvo un problema y salió del combate; los demás siguen con una CPU en tu lugar. Sigues en '
+              'la sala para el próximo combate.'},
+    'notice.dropped_resync_failed': {
+        'en': 'Your game could not be re-synchronized with the host\'s, so the fight continued without you. You '
+              'are still in the room for the next match.',
+        'es': 'Tu juego no se pudo resincronizar con el del anfitrión, así que el combate siguió sin ti. Sigues '
+              'en la sala para el próximo combate.'},
+    'notice.dropped_resync_limit': {
+        'en': 'Your game went out of sync three times, so the fight continued without you. You are still in the '
+              'room for the next match.',
+        'es': 'Tu juego se desincronizó tres veces, así que el combate siguió sin ti. Sigues en la sala para el '
+              'próximo combate.'},
     'notice.spectating': {'en': '{name} watches now.', 'es': '{name} ahora mira.'},
     'notice.renamed': {'en': '{old} is now {name}.', 'es': '{old} ahora es {name}.'},
     'notice.claim_refused': {'en': 'That slot cannot be taken: {what}', 'es': 'Ese puesto no se puede tomar: {what}'},
@@ -730,6 +783,7 @@ TEXT.update({
                                 'es': 'Ajustes del emulador cambiados durante el combate ({what}): no cambia nada '
                                       'ahora; el kit vuelve a escribir los suyos al iniciar el juego otra vez.'},
     'rule.sizes': {'en': 'Fighters', 'es': 'Luchadores'},
+    'rule.teams': {'en': 'Teams', 'es': 'Equipos'},
     'rule.mode': {'en': 'Battle', 'es': 'Combate'},
     'rule.bgm': {'en': 'Music', 'es': 'Música'},
     'card.pause': {'en': 'No pause menu online', 'es': 'Sin menú de pausa en línea'},

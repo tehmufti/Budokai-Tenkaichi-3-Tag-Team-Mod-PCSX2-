@@ -182,21 +182,26 @@ def payload(previous, hold_release=True, free_for_all=False, coop_controls=False
     a.label('search'); a.addiu(11, 11, 1); a.r(0x2B, 8, 17, 11); a.branch(5, 8, 0, 'consume')
     a.addiu(14, 14, 1); a.r(0x2B, 8, 14, 17); a.branch(5, 8, 0, 'wrapped'); a.move(14, 0)
     a.label('wrapped'); a.branch(4, 14, 20, 'consume')
-    if revive_targets and hold_release and not free_for_all:
+    # A downed, revivable ally is a candidate: in the two-team mode, and for a team of a three-to-five-team match.
+    mates = revive_targets and hold_release and (not free_for_all or policy.squad_feature('revive_lockon'))
+    if mates:
         import revive_targeting
         revive_targeting.emit_check(a,18,14)
         a.branch(5,2,0,'candidate_relation')
-    if free_for_all: a.branch(4, 14, 18, 'search')
+    if free_for_all:
+        # Three to five teams: skip the fighter's own team as well as the fighter.
+        if policy.emitted_squads() is not None: policy.emit_enemy(a, 14, 18, 'search', 'cycle')
+        else: a.branch(4, 14, 18, 'search')
     else: a.i(12, 8, 14, 1); a.i(12, 9, 18, 1); a.branch(4, 8, 9, 'search')
-    if revive_targets and hold_release and not free_for_all:a.label('candidate_relation')
+    if mates:a.label('candidate_relation')
     a.li(8, core.POINTERS); a.r(0, 9, 0, 14, 2); a.r(0x2D, 8, 8, 9); a.lw(9, 8)
     a.branch(4, 9, 0, 'search')
     a.lw(8, 9, 0x994); a.i(11, 10, 8, 5); a.branch(4, 10, 0, 'search')
     a.r(0, 10, 0, 8, 7); a.r(0, 12, 0, 8, 5); a.r(0x2D, 10, 10, 12)
     a.r(0, 12, 0, 8, 2); a.r(0x2D, 10, 10, 12); a.r(0x2D, 10, 10, 9)
-    if revive_targets and hold_release and not free_for_all:a.branch(5,2,0,'candidate_health')
+    if mates:a.branch(5,2,0,'candidate_health')
     a.lw(10, 10, 0x9E4); a.branch(6, 10, 0, 'search')
-    if revive_targets and hold_release and not free_for_all:a.label('candidate_health')
+    if mates:a.label('candidate_health')
     a.sw(14, 15)
     a.lw(8, 16, F['switches']); a.addiu(8, 8, 1); a.sw(8, 16, F['switches'])
     a.lw(8, 21, F['per_actor']); a.addiu(8, 8, 1); a.sw(8, 21, F['per_actor'])

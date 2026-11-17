@@ -51,7 +51,7 @@ class PrefetchMixin:
         meta = kit_match.netplay_state(prepared['file'], delay, max_stall, self.states, self.say,
                                       base_controls=kit_match.prepared_controls(prepared))
         words = kit_verify.file_words(meta['state'])
-        problems = kit_verify.problems(words, prepared['spec'], netplay_fixups.fixed_sha256())
+        problems = kit_verify.problems(words, prepared['spec'], kit_spec.fixup_code(prepared['spec']))
         if problems:
             raise ValueError('Lobby match differs from selected rules: ' + '; '.join(problems[:5]))
         meta = dict(meta, spec=prepared['spec'], spec_sha=prepared['spec_sha'], pnach=prepared['pnach'],

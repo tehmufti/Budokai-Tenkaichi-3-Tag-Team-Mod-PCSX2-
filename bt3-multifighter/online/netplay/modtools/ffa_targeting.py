@@ -56,6 +56,12 @@ def check_mode(battle_mode):
     return battle_mode
 
 
+def related(battle_mode):
+    """Whether this build asks who is an enemy: teams and co-op always, a free-for-all only with three to five teams
+    (the squads build), where the fighters of one team leave each other alone and open on their authored targets."""
+    return battle_mode!='ffa' or mode.emitted_squads() is not None
+
+
 def save(a):
     a.addiu(29,29,-0x60)
     for i,r in enumerate(tuple(range(16,24))+(31,)):a.i(63,r,29,i*8)
@@ -218,7 +224,7 @@ def accumulate_code(battle_mode='ffa'):
     a=Assembler(ACCUMULATE);save(a);a.move(16,4);a.move(17,5);a.move(18,6)
     a.call(GATE);a.branch(4,2,0,'done');a.branch(6,18,0,'done');a.branch(4,16,17,'done')
     # Damage between allies is an accident, not a grudge worth remembering.
-    if battle_mode!='ffa':mode.emit_enemy(a,16,17,'done','acc')
+    if related(battle_mode):mode.emit_enemy(a,16,17,'done','acc')
     a.move(4,16);a.call(ALIVE);a.branch(4,2,0,'done')
     a.lw(8,2,0x1278);a.addiu(9,0,1);a.branch(5,8,9,'done')
     a.move(4,17);a.call(ALIVE);a.branch(4,2,0,'done')
@@ -243,7 +249,7 @@ def apply_code(battle_mode='ffa'):
     a.branch(4,20,16,'forced');a.move(4,20);a.call(ALIVE);a.branch(4,2,0,'forced')
     # A retained target that is now an ally (a rematch plan, a fusion, a mode
     # change) is replaced at once rather than held for the minimum duel time.
-    if battle_mode!='ffa':mode.emit_enemy(a,16,20,'forced','cur')
+    if related(battle_mode):mode.emit_enemy(a,16,20,'forced','cur')
     a.lw(8,19,8);a.r(0x23,8,17,8);a.i(11,8,8,MIN_HOLD);a.branch(5,8,0,'next')
     a.lw(8,19,4);a.r(0x23,8,17,8);a.branch(1,8,0,'next')
     a.lw(8,19,16);a.r(0x23,8,17,8);a.branch(1,8,0,'retaliation_only')
@@ -254,7 +260,7 @@ def apply_code(battle_mode='ffa'):
     a.label('threat_next');a.addiu(21,21,1);a.li(8,CONTROL);a.lw(8,8,8);a.branch(5,21,8,'threat')
     a.addiu(8,17,EVALUATE);a.sw(8,19,4);a.jump('next')
     a.label('periodic');a.move(23,0);a.jump('search')
-    if battle_mode=='ffa':
+    if not related(battle_mode):
         a.label('opening');a.addiu(23,0,1);a.jump('search')
     else:
         # Teams and co-op open on the matching-slot opponent the participation
@@ -268,7 +274,7 @@ def apply_code(battle_mode='ffa'):
     a.label('forced');a.move(23,0)
     a.label('search');a.addiu(21,0,-1);a.addiu(22,0,-1);a.move(18,0)
     a.label('candidate');a.branch(4,18,16,'candidate_next')
-    if battle_mode!='ffa':mode.emit_enemy(a,16,18,'candidate_next','cand')
+    if related(battle_mode):mode.emit_enemy(a,16,18,'candidate_next','cand')
     a.move(4,18);a.call(ALIVE)
     a.branch(4,2,0,'candidate_next');a.move(4,16);a.move(5,18);a.move(6,23);a.call(SCORE)
     a.r(0x2A,8,22,2);a.branch(4,8,0,'candidate_next');a.move(22,2);a.move(21,18)

@@ -70,9 +70,13 @@ def launch(copy, identity_value=None, timeout=45, *, boot=None):
     expected = (kit_paths.PREP / 'Tag Team Mod').resolve()
     if base.dest.resolve() != expected or not base.desktop or Path(copy.install['root']).resolve() == expected:
         raise ValueError('Fast preparation launch requires an isolated owned installation copy')
-    if kit_win.listener_pid(copy.slot) is not None:
-        raise KitError('TTM-NET-23', what='The private preparation PINE port is already in use.',
-                       fix='Close the earlier online room, then try again.')
+    import kit_prepare
+    owner = kit_prepare.reap_leftover(copy.slot, base.dest, getattr(copy, 'say', None))
+    if owner is not None:
+        raise KitError('TTM-NET-23', what=f'The private preparation PINE port {copy.slot} is used by another '
+                                          f'program (process {owner}: '
+                                          f'{kit_win.process_path(owner) or "unknown"}).',
+                       fix='Close that program (or another Play online window of this PC), then try again.')
     checked = kit_selector_cache.identity(copy)
     if identity_value is not None and checked != identity_value:
         raise ValueError('Private preparation media/build/configuration changed before launch')

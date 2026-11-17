@@ -240,8 +240,86 @@ def stage_anchors(ram):
     return dict(stage=stage,header=header,records=records,data=data,anchors=anchors,distance=distance,sector_count=count,sectors=sectors)
 
 
-def candidate_plan(anchors,radii,present_mask):
+# Three to five teams: degrees around the midpoint of the two authored anchors, counted from the first anchor, for
+# the teams that own neither anchor. The teams of the two row leaders keep the authored anchors (0 and 180).
+SQUAD_ANGLES={0:(),1:(90.,),2:(90.,270.),3:(60.,120.,270.)}
+
+
+def squad_bases(anchors,squads,minimum,spread,limit=None):
+    """One base per team on a circle through the two authored anchors, far enough apart for `spread`.
+
+    limit is the arena's usable radius around the origin (arena_bounds.read), or None: a base is pulled back
+    inside it. Returns ({team: (x, z)}, centre)."""
+    gap=math.dist(*anchors)
+    cx,cz=(anchors[0][0]+anchors[1][0])/2,(anchors[0][1]+anchors[1][1])/2
+    ux,uz=(anchors[0][0]-cx)/(gap/2),(anchors[0][1]-cz)/(gap/2)
+    owners=(squads.team_of[0],squads.team_of[1])
+    others=[t for t in range(squads.teams) if t not in owners]
+    angles={owners[0]:0.,owners[1]:180.}
+    angles.update(zip(others,SQUAD_ANGLES[len(others)]))
+    ordered=sorted(angles.values())
+    step=min((b-a)%360 for a,b in zip(ordered,ordered[1:]+ordered[:1]))
+    radius=max(gap/2,minimum/2,spread/(2*math.sin(math.radians(step)/2)))
+    bases={}
+    for team,degrees in angles.items():
+        c,s=math.cos(math.radians(degrees)),math.sin(math.radians(degrees))
+        x,z=cx+radius*(ux*c-uz*s),cz+radius*(uz*c+ux*s)
+        if limit is not None:
+            # Never further out than the arena allows, and never tighter than the authored anchors themselves.
+            depth=spread/2 if max(squads.sizes())>1 else minimum/2
+            reach=math.hypot(x,z);room=max(limit-depth,max(math.hypot(*anchor) for anchor in anchors))
+            if reach>room:x,z=x*room/reach,z*room/reach
+        bases[team]=(x,z)
+    return bases,(cx,cz)
+
+
+def squad_plan(anchors,radii,present_mask,squads,limit=None):
+    """Formation for three to five teams: every team stands together at its own base, facing the middle.
+
+    The same candidate recipe as two teams (the leader's spot, then a shallow V behind it, then compact columns),
+    with a tighter wing because up to five formations share the arena, steps toward the middle for a base that
+    has no ground under it, and last of all spots along the line between the two authored anchors. The guest
+    still checks every candidate's floor, footprint, body clearance and distance to the fighters already placed."""
+    n=len(radii);gap=math.dist(*anchors)
+    largest=max(r for i,r in enumerate(radii) if present_mask>>i&1)
+    minimum=max(48.,radii[0]+radii[1]+32.)
+    wing=max(48.,2*largest+32.);spacing=max(32.,2*largest+20.)
+    bases,(cx,cz)=squad_bases(anchors,squads,minimum,max(minimum,wing*2.5),limit)
+    ax,az=(anchors[1][0]-anchors[0][0])/gap,(anchors[1][1]-anchors[0][1])/gap
+    ordered=[i for t in range(squads.teams) for i in squads.members(t) if present_mask>>i&1]
+    result=[]
+    for i in range(n):
+        team=squads.team_of[i]
+        if not present_mask>>i&1 or team is None:result.append([]);continue
+        x,z=bases[team];reach=math.hypot(cx-x,cz-z)
+        fx,fz=((cx-x)/reach,(cz-z)/reach) if reach>1e-3 else (ax,az)
+        rx,rz=fz,-fx;rank=squads.members(team).index(i)
+        if rank==0:
+            offsets=[(0,0),(0,16),(0,32),(0,64),(-16,24),(16,24)]
+            for depth in (-1.,-2.,1.,-3.,2.):
+                for lateral in (0.,1.,-1.):offsets.append((spacing*lateral,spacing*depth))
+        else:
+            hand=-1 if rank%2 else 1;row=(rank-1)//2
+            offsets=[(hand*wing*w,wing*b+row*wing*.9) for w,b in
+                     ((1,.6),(.8,.8),(.65,1),(1,1.2),(1.2,.6),(.65,1.5),
+                      (.5,1.8),(1.4,1),(1.6,.6),(.8,2),(1.2,1.8),(1.6,1.6))]
+            for depth in (1.,2.,3.,4.):
+                for lateral in (0.,.5,1.,-.5,-1.):offsets.append((hand*spacing*lateral,spacing*depth))
+            for depth in (0.,.5,1.5,-1.,-2.):
+                for lateral in (1.,-1.,1.5,-1.5,2.,-2.):offsets.append((hand*spacing*lateral,spacing*depth))
+        points=[(x+rx*lr-fx*back,z+rz*lr-fz*back) for lr,back in dict.fromkeys(offsets)]
+        part=(ordered.index(i)+.5)/len(ordered)
+        lx,lz=anchors[0][0]+ax*gap*part,anchors[0][1]+az*gap*part
+        last=[(lx-az*spacing*k,lz+ax*spacing*k) for k in (0.,1.,-1.,2.,-2.,3.,-3.)]
+        points=points[:MAX_CANDIDATES-len(last)]+last
+        result.append(points)
+    return dict(candidates=result,minimum_opposing=minimum,wing=wing,back=wing*.6,
+                anchors=[bases[squads.team_of[0]],bases[squads.team_of[1]]],bases=bases,centre=(cx,cz))
+
+
+def candidate_plan(anchors,radii,present_mask,squads=None,limit=None):
     """Prefer a shallow V, then fit narrow terrain without weakening collision checks."""
+    if squads is not None:return squad_plan(anchors,radii,present_mask,squads,limit)
     n=len(radii);gap=math.dist(*anchors)
     forward=((anchors[1][0]-anchors[0][0])/gap,(anchors[1][1]-anchors[0][1])/gap)
     largest=max(r for i,r in enumerate(radii) if present_mask>>i&1)
@@ -468,6 +546,8 @@ def formation_build_memory(ram, source='<offline-memory>', present_mask=None):
     if any(not 1<=v<=policy.TEAM_CAPACITY for v in counts):
         raise ValueError(f'Requires one to {policy.TEAM_CAPACITY} fighters per side')
     anchor=stage_anchors(ram);rows=bytearray(STRIDE*n);radii=[]
+    squads=policy.emitted_squads()
+    if squads is not None and squads.present()!=mask:raise ValueError('The team layout does not match the selected fighters')
     bias=f(A(0x304270-0x5C24))
     if not math.isfinite(bias) or not 0<=bias<=10:raise ValueError('Invalid native sphere bias')
     for i,item in enumerate(old['actors']):
@@ -480,12 +560,16 @@ def formation_build_memory(ram, source='<offline-memory>', present_mask=None):
             raise ValueError('Invalid native body radius or center')
         inflation=abs(center[0]-root[0])+abs(center[2]-root[2]);radii.append(radius+inflation)
         if inflation>radius*2+16:raise ValueError('Unbounded idle body offset')
-        struct.pack_into('<4I',rows,i*STRIDE,actor,model,item['model_id'],i&1)
+        # Row +12 only widens the gap between fighters whose values differ: the team with three to five teams.
+        struct.pack_into('<4I',rows,i*STRIDE,actor,model,item['model_id'],
+                         i&1 if squads is None or squads.team_of[i] is None else squads.team_of[i])
         struct.pack_into('<2f',rows,i*STRIDE+0x20,radii[-1],center[1]-root[1]-inflation)
         struct.pack_into('<I',rows,i*STRIDE+0x48,(mask>>i)&1)
         struct.pack_into('<3I',rows,i*STRIDE+0x64,u(model+0x1004),*bones)
         item.update(present=bool(mask>>i&1),radius=radii[-1],native_radius=radius)
-    plan=candidate_plan(anchor['anchors'],radii,mask);candidates=bytearray()
+    import arena_bounds
+    bounds=arena_bounds.read(ram) if squads is not None else None
+    plan=candidate_plan(anchor['anchors'],radii,mask,squads,None if bounds is None else bounds[0]);candidates=bytearray()
     for i,points in enumerate(plan['candidates']):
         struct.pack_into('<2I',rows,i*STRIDE+0x4C,len(points),CANDIDATES+len(candidates))
         for x,z in points:candidates+=struct.pack('<2f',x,z)

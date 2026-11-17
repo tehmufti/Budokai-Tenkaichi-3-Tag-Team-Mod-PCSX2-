@@ -150,6 +150,12 @@ def sync_code(quad_support=False):
     a.r(2,13,0,15,1);a.lw(9,4,0x998);a.r(0x2B,9,13,9);a.branch(4,9,0,'next')
     a.lw(9,4,0x994);a.branch(4,9,13,'next') # Never mirror over the owner's live row.
     row_address(a,3,4,13,9)
+    if policy.squad_feature('fusion'):
+        # Three to five teams: the row mates of a native side belong to several teams. Only a fighter of the
+        # owner's own team is offered as a partner (t7 owner, t7' slot: both below the fighter count).
+        a.li(9,policy.SQUAD);a.lw(11,9);a.li(8,policy.SQUAD_MAGIC);a.branch(5,11,8,'absent')
+        a.lw(11,9,policy.SQUAD_FIELDS['manager']);a.lw(8,28,-22364);a.branch(5,11,8,'absent')
+        policy.emit_same_team(a,15,7,'absent',t0=9,t1=11)
     a.addiu(9,0,1);a.r(4,9,15,9);a.r(0x24,11,24,9);a.branch(4,11,0,'absent')
     a.r(0x24,11,25,9);a.branch(5,11,0,'absent')
     a.r(0,9,0,15,2);a.li(10,core.POINTERS);a.r(0x21,10,10,9);a.lw(10,10)
@@ -157,6 +163,10 @@ def sync_code(quad_support=False):
     a.lw(9,11);a.branch(5,9,10,'absent');a.lw(9,10);a.branch(5,9,15,'absent')
     a.lw(9,10,8);a.branch(5,9,14,'absent')
     a.branch(4,10,4,'absent') # Never offer the owner itself as its partner.
+    if policy.squad_feature('fusion'):
+        # Such a match has no consent controller for two players: a player's fighter is never offered, so it
+        # takes part only in a fusion its own player starts (and then keeps the fused fighter).
+        a.lw(9,10,0x1278);a.branch(4,9,0,'absent')
     # A leader is never consumed: the fusion goes through the leader path, whose
     # survivor keeps its controller. Only extras need the human guards below.
     a.i(11,11,15,2);a.branch(5,11,0,'human_guard_done')

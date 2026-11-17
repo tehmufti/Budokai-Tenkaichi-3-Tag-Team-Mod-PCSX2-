@@ -43,6 +43,8 @@ from kit_codes import KitError
 REMATCH_SLOT = kit_postmatch.REMATCH_SLOT
 LOAD_SENTINEL = kit_resync.TOKEN_WORD
 STALL_BANNER = 2.0
+STALL_DROP = 12.0                    # host: a player whose input the game waited for this long leaves the fight
+STALL_DROP_FIRST = 45.0              # ... before that player's first datagram of the fight (a slow PC still loading)
 FREEZE_REPORT, FREEZE_END = 20.0, 40.0
 FREEZE_SLOT = 246
 LOAD_WAIT = 120.0                    # load deadline: cancel, or drop missing players if the host opted in
@@ -87,6 +89,8 @@ class FightMixin:
         self.load_mode = None
         self.startup_started_at = None       # includes preparation, transfer, load and native introduction
         self.waiting_late = None
+        self.resume_after_attach = None      # the emulator a guarded load left paused until the attach
+        self.stall_watch = None              # host: {frame, since} while the game waits for a player's input
         self.service = None                  # host: kit_services.Broker while a match runs host services
         self.guest_bulk = None               # guest: kit_services.GuestBulk
 
@@ -202,6 +206,12 @@ class FightMixin:
         self.match['prep_gen'] = gen
         if self.adopt_prebuild(spec, options, gen):
             return
+        stale = self.prebuild
+        if stale is not None and stale.get('running') and stale.get('prep') is self.prep and self.busy('prebuild'):
+            # the copy is loading an EARLIER lobby choice in the background: stop that (it is back at the
+            # selection in well under a second) instead of making everybody wait for a match nobody wants
+            self.say('Stopping the background preparation of an earlier lobby choice.')
+            self.prep.cancel.set()
         controls = kit_match.transport_controls(dict(delay=self.match['delay'], max_stall=self.match['max_stall']))
         self.job('prep', self.prepare_job, self.prep, gen, spec, folder, options, self.match['title'], controls,
                  then=lambda meta, g=gen: self.auto_prepared(meta, g), fail=lambda e, g=gen: self.auto_failed(e, g))
@@ -283,7 +293,7 @@ class FightMixin:
         proved = type(fresh_proof) is kit_wire.FreshArchiveProof and \
             fresh_proof.matches(meta['state_sha256'], meta['size'])
         words = fresh_proof.words() if proved else kit_verify.file_words(meta['state'])
-        found = kit_verify.problems(words, owner['spec'], netplay_fixups.fixed_sha256())
+        found = kit_verify.problems(words, owner['spec'], kit_spec.fixup_code(owner['spec']))
         if found:
             raise KitError('TTM-NET-31', what='The match file does not hold the lobby\'s match: ' + '; '.join(found[:5]))
         meta['verify_sha'] = kit_verify.sha(words)
@@ -311,9 +321,13 @@ class FightMixin:
             return
         what = error.values.get('what') if isinstance(error, KitError) else f'{type(error).__name__}: {error}'
         code = error.code if isinstance(error, KitError) else 'TTM-NET-30'
+        found = re.search(r'differs in ([\w, ]+?)\.', str(what)) if code == 'TTM-NET-24' else None
+        if code == 'TTM-NET-24' and not found and 'is not one the online kit knows' not in str(what):
+            # raised while preparing (a pad page read, a patch that changed underneath): this attempt failed,
+            # the installation is not refused. Marking it made 'cannot make online matches' permanent.
+            code = 'TTM-NET-30'
         if code == 'TTM-NET-24' and self.prep is not None:
             root = self.prep.install.get('root')
-            found = re.search(r'differs in ([\w, ]+?)\.', str(what))
             kit_install.mark_unusable(root, what, found.group(1) if found else None)
             self.lobby.members[1]['can_prepare'] = False
             self.lobby.warm = dict(state='refused', eta_s=None, why_key='why.refused_code' if found else 'why.refused',
@@ -567,7 +581,7 @@ class FightMixin:
         snapshot = manager.snapshot_for(path, m.get('sha'), m.get('size')) \
             if manager is not None and hasattr(manager, 'snapshot_for') else None
         words = kit_verify.file_words(path, snapshot=snapshot) if snapshot is not None else kit_verify.file_words(path)
-        found = kit_verify.problems(words, m['spec'], netplay_fixups.fixed_sha256())
+        found = kit_verify.problems(words, m['spec'], kit_spec.fixup_code(m['spec']))
         if m.get('verify_sha') and kit_verify.sha(words) != m['verify_sha']:
             found.append('its check words differ from the host\'s (verify_sha)')
         if found:
@@ -642,6 +656,16 @@ class FightMixin:
         self.go = False
         self.rematch_copy = None
         self.load_generation += 1
+        if self.role == 'guest':
+            import kit_ident
+            if self.match['pnach'] not in kit_ident.pnach_files():
+                # the match names a patch this PC does not own (the host's installation generates another one,
+                # e.g. in another language): fetch it from the host; load_match runs again when it is here
+                self.progress = dict(step='load.patch', pct=0)
+                if not self.want_patch(self.match['pnach'], then='load'):
+                    self.load_failed(KitError('TTM-NET-24', what='The host named a game patch that cannot be '
+                                                                 'fetched.'))
+                return
         changed = self.emulator.install_pnach(self.match['pnach'])
         running = self.emulator.pid and self.emulator.alive() and self.link is not None
         if running and changed:
@@ -690,6 +714,9 @@ class FightMixin:
 
     def _paused_machine_allowed(self, request):
         em = request['emulator']
+        hooks = getattr(getattr(self, 'args', None), 'test_hooks', False)
+        if hooks and os.environ.get('TTM_TEST_UNPAUSED_LOAD') == '1':
+            return False                 # TEST HOOK ONLY: the conventional copy, as on a PC that cannot pause
         return em.START_PAUSED is True and em.CAN_POST_KEYS is True
 
     def _make_load_copy(self, request, target, fast):
@@ -751,7 +778,8 @@ class FightMixin:
             if em.pid == pid:
                 em.stop()
             raise
-        problems = kit_ident.runtime_problems(info or {})
+        problems = kit_ident.runtime_problems(info or {}, build=((request.get('local') or self.local or {})
+                                                                .get('identity') or {}).get('pcsx2'))
         if problems:
             if em.pid == pid:
                 em.stop()
@@ -905,6 +933,8 @@ class FightMixin:
                 self.prep_failed('TTM-NET-22', what=f'{name}\'s PCSX2 could not load the match: {m.get("why")}')
         else:
             self.say(f'{name} could not load the match: {m.get("why")}')
+            if self.phase == 'fight':                 # after GO (a Retry): nobody may wait for its input
+                self.drop_from_fight(ident)
 
     def drop_loading_members(self, targets, reason):
         """Remove failed guests as a batch. A member-left callback must not start halfway through the batch."""
@@ -952,7 +982,15 @@ class FightMixin:
     def on_go(self):
         self.progress = None
         if self.load_mode == 'launch':
-            self.begin_fight(late=False)
+            try:
+                self.begin_fight(late=False)
+            except (OSError, RuntimeError, ValueError) as error:
+                # the loaded game is not the match the room agreed on (or PINE stopped answering): without
+                # this the phase stayed 'loading' for ever, with no message
+                self.session = None
+                self.load_failed(KitError('TTM-NET-22', what=f'the loaded match could not start: {error}',
+                                          logs=str(self.run_dir)))
+                return
             if not self.emulator.ensure_running(self.link):
                 self.say('PCSX2 did not start running the match (it stayed paused).')
         else:
@@ -1008,10 +1046,14 @@ class FightMixin:
         if record['plan'] is not None:
             self._apply_load_plan(request, record, link, pid)
         self._check_load_current(request)
+        if record['plan'] is not None:
+            # the guarded plan was applied to a PAUSED game: it stays paused until the session has attached
+            # (tick_fight resumes it). A game resumed here needs nobody's input when its only player is this
+            # PC's own, and would be past the first frames before the attach.
+            self.resume_after_attach = em
+            return round(time.time() - t0, 3)
         resumed = em.ensure_running(link)
         self._check_load_current(request)
-        if record['plan'] is not None and not resumed:
-            raise ValueError('The guarded initial match did not resume after its machine words were verified.')
         return round(time.time() - t0, 3)
 
     # ---- the fight --------------------------------------------------------------------------------------------------------
@@ -1049,6 +1091,14 @@ class FightMixin:
             self.emu_watch = kit_emu.EmulatorWatch(self.emulator)
         except Exception:  # noqa: BLE001 - a watch that cannot start never stops a fight
             self.emu_watch = None
+
+    def resume_loaded_game(self):
+        """The game a guarded load left paused runs from here: its session is attached."""
+        em, self.resume_after_attach = getattr(self, 'resume_after_attach', None), None
+        if em is not None and em is self.emulator and not em.ensure_running(self.link):
+            self.fail(KitError('TTM-NET-22', what='the loaded match did not resume after its session attached',
+                               logs=str(self.run_dir)))
+            self.end_fight('error', mine=True)
 
     def begin_fight(self, late):
         self.new_session(late)
@@ -1104,8 +1154,9 @@ class FightMixin:
         try:
             services = ((self.match or {}).get('spec') or {}).get('services') or {}
             on = tuple(k for k in ('cpu_transform', 'body_change') if services.get(k))
+            layout = kit_spec.squads((self.match or {}).get('spec') or {})
             self.service = kit_services.Broker(self, base.python(), base.dest / 'game' / 'tools', nc.w_entry(1), log,
-                                               on)
+                                               on, squads=None if layout is None else layout.sizes())
             self.say(f'Host services started ({", ".join(on)}; log {log}).')
         except OSError as error:
             self.say(f'Host services could not start: {error}')
@@ -1132,7 +1183,9 @@ class FightMixin:
             self.service = None
 
     def msg_BULK(self, ident, m):
-        if self.role != 'guest' or self.session is None:
+        # without a game: only while joining a running fight (msg_JOINFIGHT made the store): kept until the
+        # host's state is loaded
+        if self.role != 'guest' or (self.session is None and self.guest_bulk is None):
             return
         import kit_services
         if self.guest_bulk is None:
@@ -1173,11 +1226,13 @@ class FightMixin:
             try:
                 s.attach()
                 self.waiting_late = None
+                self.resume_loaded_game()
                 self.start_missing_cpus()
-            except RuntimeError:
+            except RuntimeError as error:
                 if time.time() - self.waiting_late > 60:
                     self.waiting_late = None
-                    self.fail(KitError('TTM-NET-22', what=f'the loaded match did not start: {c}',
+                    self.resume_after_attach = None
+                    self.fail(KitError('TTM-NET-22', what=f'the loaded match did not start ({error}): {c}',
                                        logs=str(self.run_dir)))
                     self.end_fight('error', mine=True)
                 return
@@ -1187,17 +1242,20 @@ class FightMixin:
             self.host_fight_steps()
             self.tick_hub()
             self.tick_service()
-        elif self.guest_bulk is not None and self.guest_bulk.waiting:
-            c = self.session.control or {}
-            self.guest_bulk.tick(self.link, c.get('frame'), self.send)
         elif self.resync is not None:
-            self.step_guest_resync()
+            self.step_guest_resync()                     # (a waiting packet never keeps it from finishing)
+        elif self.guest_bulk is not None and self.guest_bulk.waiting and s.control:
+            # never while this PC's world is being replaced (it would be lost with it), and only with a frame
+            # this session read (a new session's first tick reads it)
+            self.guest_bulk.tick(self.link, s.control.get('frame'), self.send)
         try:
             result = s.tick()
         except (OSError, RuntimeError) as error:
             s.event('emulator_gone', error=f'{type(error).__name__}: {error}')
-            self.say('The game window was closed.')
-            self.my_game_closed()
+            closed = not (self.emulator and self.emulator.alive())
+            self.say('The game window was closed.' if closed else
+                     f'The game stopped answering ({type(error).__name__}: {error}).')
+            self.my_game_closed('closed its game' if closed else 'its game stopped answering')
             return
         st = s.control or {}
         startup = getattr(s, 'startup_seconds', None)
@@ -1218,7 +1276,12 @@ class FightMixin:
             self.last_status = t
             self.dirty = True
         if result != 'running':
-            self.finish_fight(result)
+            if self.role == 'guest' and result in ('aborted', 'mismatch'):
+                # only this PC's game gave up (it waited too long, or its match is not the host's): the others
+                # must not wait behind it
+                self.end_fight(result, mine=True)
+            else:
+                self.finish_fight(result)
 
     # ---- host: resync, joins, departures ------------------------------------------------------------------------------
     def resync_ctx(self):
@@ -1256,6 +1319,10 @@ class FightMixin:
                 return ctl.emulator.alive()
 
             @staticmethod
+            def bulk_count():
+                return ctl.service.bulk_seq if ctl.service is not None else 0
+
+            @staticmethod
             def log(text):
                 ctl.say(text)
         return Ctx
@@ -1268,22 +1335,21 @@ class FightMixin:
                 self.fight['resyncs'][str(ident)] = self.fight['resyncs'].get(str(ident), 0) + \
                     (0 if worker.reason == 'join' else 1)
                 del self.resyncs[ident]
+                if self.service is not None:                 # the packets made while its state travelled
+                    self.service.resync_done(ident, worker.bulk_count)
                 if not self.resyncs:
                     self.hide_overlay()
             elif state == 'failed':
                 del self.resyncs[ident]
                 self.say(f'Bringing member {ident} back failed: {worker.error}')
-                if ident in hub.members:
-                    hub.remove_member(ident)
-                self.send_to(ident, type='LEFT_FIGHT', why='resync_failed')
+                self.drop_from_fight(ident, 'resync_failed')
                 self.hide_overlay()
         if hub.decided is None and not self.resyncs:
             for ident in hub.members_needing_resync():
                 done = self.fight['resyncs'].get(str(ident), 0)
                 if done >= kit_resync.MAX_RESYNCS:
                     self.say(f'Member {ident}\'s game differed again after {done} resyncs: it leaves this fight.')
-                    hub.remove_member(ident)
-                    self.send_to(ident, type='LEFT_FIGHT', why='resync_limit')
+                    self.drop_from_fight(ident, 'resync_limit')
                     continue
                 self.start_host_resync([ident], f'its game differs at frame {hub.members[ident].compare.desync}')
                 break
@@ -1294,6 +1360,72 @@ class FightMixin:
             elif t >= at and not self.resyncs and hub.decided is None and (hub.control or {}).get('state') == 2:
                 del self.join_pending[ident]
                 self.join_running(ident)
+        self.drop_silent_players()
+
+    def drop_silent_players(self):
+        """Host: the game has waited at ONE frame for a player's input for STALL_DROP seconds (that player's game
+        hung, its PC sleeps, or only its UDP died while TCP still answers): that player leaves the fight, its
+        fighter becomes a CPU and everybody else plays on. A game that is merely slow keeps moving, so it never
+        stays at one frame that long. Not during a resync hold (every game waits on purpose then)."""
+        hub = self.session
+        c = hub.control or {}
+        frame = c.get('frame')
+        if c.get('state') != 2 or not c.get('waiting') or frame is None or hub.hold_at is not None or \
+                self.resyncs or hub.decided is not None or self.waiting_late is not None:
+            self.stall_watch = None
+            return
+        t = now()
+        w = self.stall_watch
+        if w is None or w['frame'] != frame:
+            self.stall_watch = dict(frame=frame, since=t)
+            return
+        waited = t - w['since']
+        if waited < STALL_DROP:
+            return
+        for ident, m in list(hub.members.items()):
+            if m.slot is None or m.paused or hub.have.get(m.slot, frame + 1) > frame:
+                continue                                  # not the input the game is waiting for
+            if not m.confirmed and waited < STALL_DROP_FIRST:
+                continue                                  # it has not sent anything yet: still loading
+            name = self.lobby.members.get(ident, {}).get('name', ident) if self.lobby else ident
+            self.say(f'{name} sent no input for {int(waited)} s (frame {frame}): it leaves this fight, its fighter '
+                     'becomes a CPU and the fight goes on.')
+            hub.event('player_dropped', guest=ident, slot=m.slot, frame=frame, waited=round(waited, 1))
+            self.summary.setdefault('stall_drops', []).append(dict(member=ident, slot=m.slot, frame=frame,
+                                                                 waited=round(waited, 1)))
+            self.drop_from_fight(ident, 'not_responding')
+            if self.lobby:
+                self.lobby.bump(dict(code=None, key='notice.player_dropped', args=dict(name=str(name))))
+                self.broadcast()
+        self.stall_watch = None
+
+    def drop_from_fight(self, ident, why=None):
+        """Host: member `ident` is out of the running fight but stays in the room (it left, it stopped answering,
+        it could not be brought back or could not load): its fighter becomes a CPU at a scheduled frame (neutral
+        input until then), nobody waits for it, a resync of it ends (its hold released), the Retry vote no longer
+        needs it and a Retry starts without it. why: sent to the member as LEFT_FIGHT (None: it already knows)."""
+        self.join_pending.pop(ident, None)
+        self.loaded.discard(ident)
+        hub = self.session if self.role == 'host' else None
+        if hub is not None and ident in hub.members:
+            hub.remove_member(ident)
+            try:
+                self.drop_to_cpu(ident)
+            except Exception as error:  # noqa: BLE001 - the fighter then idles; the others still play on
+                self.say(f'Member {ident}\'s fighter could not be made a CPU ({type(error).__name__}: {error}).')
+        worker = self.resyncs.pop(ident, None)
+        if worker is not None:
+            if hub is not None and hub.hold_at is not None and not self.resyncs:
+                hub.release()
+            if not self.resyncs and self.overlay and self.overlay.get('key') == 'fight.resync':
+                self.hide_overlay()
+        if self.vote is not None and self.vote.drop(ident):
+            self.publish_vote()
+        self.hub_member_left(ident)
+        if self.service is not None:
+            self.service.member_gone(ident)
+        if why is not None:
+            self.send_to(ident, type='LEFT_FIGHT', why=why)
 
     def start_host_resync(self, targets, reason):
         hub = self.session
@@ -1313,8 +1445,9 @@ class FightMixin:
         if ident in hub.members:
             return
         hub.add_member(ident, None, self.lobby.members.get(ident, {}).get('name', ''))
+        hub.pause_member(ident)                          # until it runs the state it is about to get
         self.send_to(ident, type='JOINFIGHT', epoch=self.epoch, spec=m['spec'], spec_sha=m['spec_sha'],
-                     title=m['title'], delay=m['delay'], sha256=m['sha'], pnach=m['pnach'],
+                     title=m['title'], delay=m['delay'], sha256=m['sha'], pnach=m['pnach'], mask=hub.mask,
                      seats={str(k): v for k, v in m['seats'].items()})
         self.start_host_resync([ident], 'join')
 
@@ -1325,44 +1458,35 @@ class FightMixin:
     def member_left_match(self, ident):
         """Host: a member left the room during a match: a player's fighter becomes a CPU at a scheduled frame
         (drop_to_cpu; neutral input until then)."""
-        self.join_pending.pop(ident, None)
-        self.loaded.discard(ident)
-        if self.session is not None and self.role == 'host' and ident in self.session.members:
-            self.session.remove_member(ident)
-            self.drop_to_cpu(ident)
-        worker = self.resyncs.pop(ident, None)
-        if worker is not None and self.session is not None and self.session.hold_at is not None:
-            self.session.release()
-        if self.vote is not None and self.vote.drop(ident):
-            self.publish_vote()
-        self.hub_member_left(ident)
-        if self.service is not None:
-            self.service.member_gone(ident)
+        self.drop_from_fight(ident)
         if self.match and ident in self.match.get('seats', {}) and self.phase in ('sending', 'loading'):
             self.check_go()
 
     def msg_LEFT_FIGHT(self, ident, m):
         if self.role == 'host':
             self.say(f'{self.lobby.members.get(ident, {}).get("name", ident)} left the fight ({m.get("why")}).')
-            if self.session is not None and ident in self.session.members:
-                self.session.remove_member(ident)
-                self.drop_to_cpu(ident)
-            if self.vote is not None and self.vote.drop(ident):
-                self.publish_vote()
-            self.hub_member_left(ident)
+            self.drop_from_fight(ident)
+            if self.match and ident in self.match.get('seats', {}) and self.phase in ('sending', 'loading'):
+                self.check_go()
             return
         # guest: the host took this PC out of the fight
-        self.say(f'You left the fight ({m.get("why")}).')
+        why = str(m.get('why') or '')
+        self.say(f'You left the fight ({why}).')
         if self.session is not None:
             self.abort_game()
         self.leave_match_state()
+        self.to_background()
         self.set_phase('lobby')
+        if why in ('not_responding', 'resync_failed', 'resync_limit'):
+            self.note('notice.dropped_' + why)
 
     def drop_to_cpu(self, ident):
         """Host (kit 2.1): the fighter of a player who left becomes a CPU on every PC at one scheduled frame K: its
         seat := none, its slot leaves the core's mask (nobody waits for it after K; the host feeds it neutral input
         until then), the actor's CPU flag := 1 and its pad words cleared, as the mod's takeover does; a side leader's
-        human takeover port is closed too. Not in the hub (it parks the fighter instead)."""
+        human takeover port is closed too; with three to five teams its bit leaves the team table's human mask
+        in the same entry (the win rule names a living player's fighter first). Not in the hub (it parks the
+        fighter instead)."""
         import netplay_core as nc
         slot = (self.match or {}).get('seats', {}).get(ident)
         spec = (self.match or {}).get('spec') or {}
@@ -1389,6 +1513,7 @@ class FightMixin:
             if slot < 2:
                 import kit_prepare
                 writes.append((kit_prepare.SPECTATOR + kit_prepare.HUMAN_PORTS, 0, 1 << slot))
+            writes += self.squad_leaver_writes(spec, slot)
             seq, k = self.session.schedule(writes)
             self.say(f'Slot {slot}\'s player left: its fighter is a CPU from frame {k} (entry {seq}).')
             self.summary.setdefault('dropped', []).append(dict(member=ident, slot=slot, frame=k))
@@ -1396,6 +1521,17 @@ class FightMixin:
         except Exception as error:  # noqa: BLE001 - the fighter then idles (neutral input), as before
             self.say(f'Slot {slot}\'s fighter could not be made a CPU ({type(error).__name__}: {error}); it idles.')
             return False
+
+    @staticmethod
+    def squad_leaver_writes(spec, slot):
+        """[(address, value, mask)]: three to five teams: clear the leaver's bit in SQUAD.humans (a masked write of
+        the hashed word, scheduled with the rest of the hand-over); nothing for every other match."""
+        if not (spec or {}).get('team_count'):
+            return []
+        policy = kit_spec.squad_policy()
+        if policy is None:
+            return []
+        return [(policy.SQUAD + policy.SQUAD_FIELDS['humans'], 0, 1 << slot)]
 
     def start_missing_cpus(self):
         """Schedule the same CPU handoff on every PC, including a rematch of the original checkpoint."""
@@ -1415,13 +1551,14 @@ class FightMixin:
         if self.session is not None:
             self.abort_game()
         self.leave_match_state()
+        self.to_background()
         self.set_phase('lobby')
 
-    def my_game_closed(self):
+    def my_game_closed(self, why='closed its game'):
         if self.role == 'host':
             self.end_fight('host_closed', mine=True)
         else:
-            self.send(type='LEFT_FIGHT', why='closed its game')
+            self.send(type='LEFT_FIGHT', why=why)
             self.leave_match_state()
             self.set_phase('lobby')
 
@@ -1467,6 +1604,12 @@ class FightMixin:
             self.say(f'The host\'s RESYNC message is malformed ({error}).')
             self.send(type='LEFT_FIGHT', why='bad resync')
             return
+        count = m.get('bulk')
+        if type(count) is int and count >= 0:
+            import kit_services
+            if self.guest_bulk is None:
+                self.guest_bulk = kit_services.GuestBulk()
+            self.guest_bulk.loaded(count)                # the state holds them: never written again
         if m.get('reason') != 'join':
             self.show_overlay('fight.resync', n=1, mb=round(m.get('size', 0) / 1e6, 1))
         self.say(f'Taking the host\'s game ({m.get("size", 0) / 1e6:.1f} MB; {m.get("reason")}).')
@@ -1505,10 +1648,16 @@ class FightMixin:
                           delay=int(m['delay']), pnach=m['pnach'], slot=None, epoch=self.epoch,
                           seats={int(k): v for k, v in (m.get('seats') or {}).items()},
                           mask=kit_spec.slot_mask(spec))
+        mask = m.get('mask')                             # the running fight's own (a hub's players change)
+        if type(mask) is int and 0 < mask < 1 << 10:
+            self.match['mask'] = mask
         self.watch_side = 0
         if self.session is not None:
             self.abort_game()
         self.session = None
+        self.invalidate_preboot()                        # an idle game still starting: the join starts its own
+        import kit_services
+        self.guest_bulk = kit_services.GuestBulk()       # the host's packets from now on wait for its state
         self.say(f'A match is running: you watch it now ({self.match["title"]}).')
         self.set_phase('loading')
         self.progress = dict(step='load.join', pct=0)
@@ -1520,7 +1669,14 @@ class FightMixin:
         if em.pid and em.alive():
             em.stop()
         self.link = None
-        em.install_pnach(self.match['pnach'])
+        import kit_ident
+        wanted = self.match['pnach']
+        if wanted not in kit_ident.pnach_files():        # (worker thread) the loop receives it meanwhile
+            self.want_patch(wanted)
+            end = time.time() + 30
+            while wanted not in kit_ident.pnach_files() and time.time() < end:
+                time.sleep(0.1)
+        em.install_pnach(wanted)
         pid = em.launch(path, self.local['iso'], fullscreen=bool(self.cfg.get('fullscreen')))
         self.remember_pid(pid)
         em.wait_ready(nc.CONTROL, nc.MAGIC, timeout=max(self.args.timeout, 120))
@@ -1656,6 +1812,18 @@ class FightMixin:
             self.end_fight(m.get('why') or 'host', mine=False)
 
     def end_fight(self, why, mine):
+        if mine and self.role == 'guest':
+            # only this PC's game failed: the host makes its fighter a CPU and the others play on; this PC waits
+            # in the room (it used to sit in a private No contest while every other game waited for its input)
+            self.send(type='LEFT_FIGHT', why=str(why)[:60])
+            self.say(f'This PC leaves the fight ({why}); the others play on.')
+            if self.session is not None:
+                self.abort_game()
+            self.leave_match_state()
+            self.to_background()
+            self.set_phase('lobby')
+            self.note('notice.left_fight_error')
+            return
         if mine and self.role == 'host':
             self.send(type='END_FIGHT', epoch=self.epoch, why=why)
         self.nocontest = why
@@ -1698,9 +1866,18 @@ class FightMixin:
                 words = [decided.get('result') or 0, 0]
             how = kit_postmatch.how_of(decided.get('result'), words[1])
             winner = (decided.get('result') or 0) & 0x1F
+        # three to five teams: the game's win rule named the winning team in its team table (hashed state)
+        teams = ((self.match or {}).get('spec') or {}).get('team_count')
+        team = None
+        if teams and how != 'nocontest':
+            try:
+                team = kit_postmatch.read_team(self.link)
+            except (OSError, RuntimeError, AttributeError):
+                team = None
         summary = s.summary() if s else {}
         record = dict({k: v for k, v in (self.fight or {}).items() if k != 'started'}, result=result, how=how,
                       winner=winner, words=words, decided=decided, session=summary, nocontest=self.nocontest,
+                      **({'teams': teams, 'team': team} if teams else {}),
                       seconds=round(time.time() - (self.fight or {}).get('started', time.time()), 1))
         self.summary.setdefault('fights', []).append(record)
         self.write_summary()
@@ -1724,12 +1901,16 @@ class FightMixin:
                                                    resyncs=sum(self.fight.get('resyncs', {}).values())
                                                    if self.fight else 0, title=(self.match or {}).get('title'))
             message['nocontest'] = self.nocontest
+            if teams:
+                message['teams'], message['team'] = teams, team
+            self.say(kit_postmatch.result_line(how, winner, teams, team, self.nocontest))
             self.results = dict(message, members=members)
             self.send(**message)
             self.hub_state = None
             if self.hub_after_fight():
                 return
-            players = [k for k in (self.match or {}).get('seats', {}) if k == self.me or k in self.members]
+            players = [k for k in (self.match or {}).get('seats', {})
+                       if k == self.me or (k in self.members and k in self.loaded)]
             self.vote = kit_postmatch.Vote(self.epoch, players, now())
             self.lobby.phase = 'results'
             self.lobby.vote = self.vote.state(now())
@@ -1739,7 +1920,10 @@ class FightMixin:
         else:
             self.results = dict(how=how, winner=winner, words=words, frame=(decided or {}).get('frame'),
                                 seconds=record['seconds'], title=(self.match or {}).get('title'),
-                                nocontest=self.nocontest, mine=summary)
+                                nocontest=self.nocontest, mine=summary,
+                                **({'teams': teams, 'team': team} if teams else {}))
+            # (no result line here: the host's RESULT says it, msg_RESULT; this PC's own game may be a few
+            # frames short of the end when the host decides)
         self.set_phase('results')
 
     def msg_RESULT(self, ident, m):
@@ -1752,6 +1936,11 @@ class FightMixin:
             if self.session is not None and self.session.result is None:
                 self.finish_fight('decided' if m.get('how') != 'nocontest' else 'nocontest')
                 self.results = dict({k: v for k, v in m.items() if k != 'type'}, mine=self.results.get('mine'))
+        said = (m.get('epoch'), m.get('frame'), m.get('how'), m.get('winner'), m.get('team'))
+        if said != getattr(self, 'result_said', None):          # once per result (a rejoin gets it again)
+            self.result_said = said
+            self.say(kit_postmatch.result_line(m.get('how'), m.get('winner'), m.get('teams'), m.get('team'),
+                                               m.get('nocontest')))
         self.dirty = True
 
     # ---- the vote ---------------------------------------------------------------------------------------------------------
@@ -1778,6 +1967,12 @@ class FightMixin:
         if self.vote.decision is not None:
             decision = self.vote.decision
             self.say(f'Vote: {decision}.')
+            if decision == 'retry' and not (self.emulator and self.emulator.alive() and self.link is not None):
+                # the host's own game window is closed: a Retry cannot start (and the room stayed 'loading')
+                self.say('Retry is not possible: this PC\'s game window is closed. Everybody returns to the lobby.')
+                decision = self.vote.decision = 'lobby'
+                self.lobby.vote = self.vote.state(now())
+                self.send(type='VOTE_STATE', **self.lobby.vote)
             if decision == 'retry':
                 self.epoch += 1
                 self.send(type='RETRY', epoch=self.epoch)
@@ -1826,6 +2021,11 @@ class FightMixin:
             self.broadcast()
         if not (self.emulator and self.emulator.alive() and self.link is not None):
             self.say('This PC\'s game window is closed: it waits in the lobby.')
+            if self.role == 'host':
+                self.send(type='TO_LOBBY', why='host_game_closed')
+                self.back_to_lobby()                  # also takes the room out of 'loading'
+                return
+            self.send(type='LEFT_FIGHT', why='closed its game')
             self.leave_match_state()
             self.set_phase('lobby')
             return
@@ -1860,6 +2060,10 @@ class FightMixin:
         self.hide_overlay()
         if self.session is not None:
             self.abort_game()
+        try:                                             # the match just played stays; older ones go
+            kit_match.prune_states(self.states, spare=[str((self.match or {}).get('sha') or '')[:20]])
+        except OSError:
+            pass
         self.leave_match_state(keep_match=True)
         self.to_background()
         if self.role == 'host' and self.lobby:
@@ -1885,6 +2089,7 @@ class FightMixin:
         self.stop_receive()
         self.session = None
         self.resync = None
+        self.guest_bulk = None                           # (a left fight's packets never reach the next one)
         self.resyncs = {}
         self.results = None
         self.vote = None
@@ -1953,6 +2158,110 @@ class FightMixin:
             impure = u(A(0x2E9808))
             self.link.w32(impure + 168, u(impure + 168) ^ 0x1234567)
             self.say('TEST: newlib rand state changed on this PC only')
+
+    def cmd_test_revive(self, c):
+        """TEST HOOK ONLY (--test-hooks, the host): set a teammate revive up with DATA writes that every PC applies
+        at one scheduled frame (the SCHED ring). stage 'ko': fighter `body` loses its health, the reviver `by`
+        gets blast stocks and full health, the CPU fighters of the other teams stand still; 'place': `by` is
+        put on the body's position; 'release': the stilled CPU fighters fight again; any stage: one line with
+        the body's health and action, the reviver's revive row and its lock-on target."""
+        if not self.args.test_hooks or self.role != 'host' or self.link is None or self.session is None:
+            return
+        import struct
+        import kit_prepare
+        try:
+            u, full = self.link.u32, 0xFFFFFFFF
+            stage = str(c.get('stage'))
+            count = min(u(0xD8084), 10)
+            teams = self.link.read(kit_spec.squad_policy().SQUAD + 16, 12)       # SQUAD.team_of
+            by = int(c['by']) if c.get('by') is not None else int(self.my_slot())
+            body = int(c['body']) if c.get('body') is not None else \
+                next(i for i in range(count) if i != by and teams[i] == teams[by])
+            actor = lambda i: u(kit_verify.POINTERS + 4 * i)
+            row = lambda a: a + kit_prepare.HP_ROW + min(u(a + kit_prepare.HP_SLOT), 4) * kit_prepare.HP_STRIDE
+            a_by, a_body = actor(by), actor(body)
+            writes = []
+            if stage == 'ko':
+                writes = [(row(a_body), 0, full), (row(a_by) + 20, 600000, full),
+                          (row(a_by), u(row(a_by) + 4), full)]
+                policy = kit_spec.squad_policy()
+                table = self.link.read(policy.SQUAD + policy.SQUAD_FIELDS['team_of'], 12)
+                self.test_revive_calmed = []
+                for i in range(count):
+                    if table[i] != table[by] and table[i] != 0xFF and u(actor(i) + 0x1278) == 1:
+                        writes.append((actor(i) + 0x1278, 0, full))
+                        self.test_revive_calmed.append(i)
+            elif stage == 'place':
+                pos = self.link.read(a_body + 0x10, 12)
+                writes = [(a_by + 0x10 + 4 * k, int.from_bytes(pos[4 * k:4 * k + 4], 'little'), full)
+                          for k in range(3)]
+                if u(row(a_by) + 20) < 300000:
+                    writes.append((row(a_by) + 20, 600000, full))
+            elif stage == 'release':
+                writes = [(actor(i) + 0x1278, 1, full) for i in getattr(self, 'test_revive_calmed', [])]
+            at = self.session.schedule(writes)[1] if writes else None
+            r = lambda i, offset: u(0x070BF100 + 64 * i + offset)
+            import fresh_team_combat
+            hp = struct.unpack('<i', self.link.read(row(a_body), 4))[0]
+            self.say(f'TEST revive {stage}: body {body} hp {hp} action {u(a_body + 0x948)} recovering '
+                     f'{r(body, 44)} | by {by} target {r(by, 4)} progress {r(by, 8)} revives {r(by, 52)} short '
+                     f'{r(by, 56)} stock {u(row(a_by) + 20)} lockon {u(fresh_team_combat.TABLE + 4 * by)} '
+                     f'tag {u(0x06D08000):#x}/{u(0x06D75FF0):#x}'
+                     + (f' | scheduled for frame {at}' if at is not None else ''))
+        except Exception as error:  # noqa: BLE001 - a test hook never ends a fight
+            self.say(f'TEST revive failed: {type(error).__name__}: {error}')
+
+    def cmd_test_fusion(self, c):
+        """TEST HOOK ONLY (--test-hooks): a fusion between teammates, set up with DATA writes that every PC
+        applies at one scheduled frame (the host; a guest only looks). stage 'clear': the fighters of the other
+        teams that no player sits on are knocked out; 'stock': the team of fighter `by` (default: this PC's
+        own) gets full blast stocks and health; 'fall': the fused fighter is knocked out; any stage: one line
+        with the participation masks, the team's fighters, their characters, health and stocks."""
+        if not self.args.test_hooks or self.link is None:
+            return
+        import struct
+        import kit_prepare
+        try:
+            from native_map import A
+            import team_participation as part
+            u, full, stage = self.link.u32, 0xFFFFFFFF, str(c.get('stage'))
+            spec = (self.match or {}).get('spec') or {}
+            actors = {i: u(kit_verify.POINTERS + 4 * i) for i in range(10)}
+            here = [i for i, a in actors.items() if 0x100000 <= a < 0x8000000 - 0x1300]
+            policy = kit_spec.squad_policy() if spec.get('team_count') else None
+            table = self.link.read(policy.SQUAD + policy.SQUAD_FIELDS['team_of'], 12) if policy else None
+            team = (lambda i: table[i]) if table else (lambda i: i & 1)
+            here = [i for i in here if team(i) != 0xFF]
+            row = lambda i: actors[i] + kit_prepare.HP_ROW + \
+                min(u(actors[i] + kit_prepare.HP_SLOT), 4) * kit_prepare.HP_STRIDE
+            hp = lambda i: struct.unpack('<i', self.link.read(row(i), 4))[0]
+            seats = set(((self.match or {}).get('seats') or {}).values())
+            mine = self.my_slot()
+            by = int(c['by']) if c.get('by') is not None else (int(mine) if mine is not None else min(seats))
+            pair = [i for i in here if team(i) == team(by)]
+            consumed, present = u(part.CONSUMED), u(part.PRESENT)
+            writes = []
+            if self.role == 'host' and self.session is not None:
+                if stage == 'clear':
+                    writes = [(row(i), 0, full) for i in here if team(i) != team(by) and i not in seats]
+                elif stage == 'stock':
+                    for i in pair:
+                        if hp(i) > 0 and not consumed >> i & 1:
+                            writes += [(row(i) + 20, u(row(i) + 24), full), (row(i), u(row(i) + 4), full)]
+                elif stage == 'fall' and consumed:
+                    writes = [(row(i), 0, full) for i in pair if not consumed >> i & 1]
+            at = self.session.schedule(writes)[1] if writes else None
+
+            def character(i):
+                model = u(A(0x31C640) + 4 * u(actors[i] + 12))
+                return u(model + 12) if 0x100000 <= model < 0x7FFFFF0 else None
+            alive = f'{u(policy.SQUAD + 64):#x}' if policy else 'n/a'
+            self.say(f'TEST fusion {stage}: consumed {consumed:#x} present {present:#x} pair {pair} chars '
+                     f'{[character(i) for i in pair]} hp {[hp(i) for i in pair]} stock '
+                     f'{[u(row(i) + 20) for i in pair]} action {[u(actors[i] + 0x948) for i in pair]} alive '
+                     f'{alive}' + (f' | scheduled for frame {at}' if at is not None else ''))
+        except Exception as error:  # noqa: BLE001 - a test hook never ends a fight
+            self.say(f'TEST fusion failed: {type(error).__name__}: {error}')
 
     def cmd_test_key(self, c):
         if not self.args.test_hooks or not self.emulator or not self.emulator.pid:

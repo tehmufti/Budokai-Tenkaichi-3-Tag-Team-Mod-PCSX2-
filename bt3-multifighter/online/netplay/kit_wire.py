@@ -73,7 +73,7 @@ def sha(path):
 
 
 class Manager:
-    def __init__(self, iso_path, expected_iso_sha, adapter, cache, say=lambda _: None):
+    def __init__(self, iso_path, expected_iso_sha, adapter, cache, say=lambda _: None, known=None):
         self.lock = threading.RLock()
         self.iso = None
         self.codec = None
@@ -86,7 +86,7 @@ class Manager:
         try:
             import kit_wire_codec
             self.codec = kit_wire_codec
-            self.iso = kit_wire_codec.VerifiedIso(iso_path, expected_iso_sha, adapter=adapter)
+            self.iso = kit_wire_codec.VerifiedIso(iso_path, expected_iso_sha, adapter=adapter, known=known)
         except Exception as error:
             self.say(f'Compact transfer unavailable; ordinary snapshots remain enabled ({type(error).__name__}).')
 

@@ -571,13 +571,28 @@ def find_watcher(copy, timeout=30):
     raise ValueError('Current private watcher did not publish its ownership receipt')
 
 
-def mode_receipt(status, engine, *, after=-1):
+def mode_receipt(status, engine, *, after=-1, squads=None):
+    """The private watcher committed `engine` for one player after epoch `after` - with exactly this team setup
+    (squads: battle_mode_policy.Squads of three to five teams) or, for None, with none at all."""
     import native_mode_menu as menu
     value = status.get('native_mode_receipt', {})
     epoch = value.get('epoch')
     return (status.get('battle_mode') == engine and status.get('humans') == 1 and
             isinstance(epoch, int) and epoch > after and value.get('custom') is True and
-            value.get('choice') == menu.SELECTIONS.index((engine, 1)))
+            value.get('choice') == menu.SELECTIONS.index((engine, 1)) and
+            value.get('squads') == (None if squads is None else list(squads.sizes())))
+
+
+def publish_squads(client, commit, squads):
+    """Three to five teams: the mod's own team setup receipt (squad_setup.publish: data words of the pager
+    control) for the choice about to be committed, so the private watcher prepares that layout."""
+    if squads is None:
+        return
+    import native_mode_menu as menu
+    import squad_setup
+    if commit != 'teams':
+        raise ValueError('Three to five teams are a Team Battle')
+    squad_setup.publish(client, menu.SELECTIONS.index((commit, 1)) + 1, squads)
 
 
 def _startup_menu_frame(client):
@@ -815,7 +830,8 @@ class SelectorCache:
                          state_path=str(target.resolve()), cache_folder=str(self.folder), record=record)
             return dict(claim=claim, mac=hmac.new(self.key, canonical(claim), hashlib.sha256).hexdigest())
 
-    def restore_boot(self, copy, engine, identity_value, lease, descriptor, timeout=45, *, commit=None):
+    def restore_boot(self, copy, engine, identity_value, lease, descriptor, timeout=45, *, commit=None,
+                     squads=None):
         """Authorize the VM's startup checkpoint without loading it a second time.
 
         PCSX2's -statefile startup restores the archive before guest execution.
@@ -876,13 +892,15 @@ class SelectorCache:
                     raise ValueError('Private startup game paused before native authorization')
                 first_frame = _startup_menu_frame(client)
                 # The full live proof above also requires no outstanding lease.
+                publish_squads(client, commit, squads)
                 client.write_u32(menu.CONTROL + 16, 0)
                 client.write_u32(menu.CONTROL + 12, menu.SELECTIONS.index((commit, 1)) + 1)
                 client.write_u32(menu.CONTROL + 4, 3)
             acknowledged = None
             while time.monotonic() < end:
                 current = lease.read(copy)
-                if current.get('state') == 'MENU' and mode_receipt(current, commit, after=previous_epoch):
+                if current.get('state') == 'MENU' and mode_receipt(current, commit, after=previous_epoch,
+                                                                 squads=squads):
                     with copy.pine() as client:
                         consumed = client.read_u32(menu.CONTROL + 12) == client.read_u32(menu.CONTROL + 4) == 0
                         running = client.require_game(serial=SERIAL, crc=CRC).get('status') == 'running'
@@ -900,7 +918,7 @@ class SelectorCache:
                         bootstrap_code_wait_seconds=0, queued_load_canary=False, direct_state_boot=True,
                         native_mode_receipt=acknowledged, loaded_game=info)
 
-    def restore(self, copy, engine, identity_value, lease, timeout=45, *, boot=None, commit=None):
+    def restore(self, copy, engine, identity_value, lease, timeout=45, *, boot=None, commit=None, squads=None):
         """Restore before logos or from an idle native game; never while a prep worker owns it.
 
         For a post-export reset the caller first waits for watcher ACTIVE, which
@@ -908,7 +926,8 @@ class SelectorCache:
         The subsequent MENU acknowledgement below waits for worker cleanup.
         """
         if boot is not None:
-            return self.restore_boot(copy, engine, identity_value, lease, boot, timeout, commit=commit)
+            return self.restore_boot(copy, engine, identity_value, lease, boot, timeout, commit=commit,
+                                     squads=squads)
         commit = engine if commit is None else commit
         if commit not in ('teams', 'ffa'):
             raise ValueError('Unknown selector engine')
@@ -977,13 +996,15 @@ class SelectorCache:
                 client.require_game(serial=SERIAL, crc=CRC)
                 if selector(LiveMemory(client), engine) != record['selector']:
                     raise ValueError('Loaded live selector differs from its authenticated template')
+                publish_squads(client, commit, squads)
                 client.write_u32(menu.CONTROL + 16, 0)
                 client.write_u32(menu.CONTROL + 12, menu.SELECTIONS.index((commit, 1)) + 1)
                 client.write_u32(menu.CONTROL + 4, 3)  # native semantic commit, state last
             acknowledged = None
             while time.monotonic() < end:
                 current = lease.read(copy)
-                if current.get('state') == 'MENU' and mode_receipt(current, commit, after=previous_epoch):
+                if current.get('state') == 'MENU' and mode_receipt(current, commit, after=previous_epoch,
+                                                                 squads=squads):
                     with copy.pine() as client:
                         consumed = client.read_u32(menu.CONTROL + 12) == client.read_u32(menu.CONTROL + 4) == 0
                     if consumed and copy.at_map_select():

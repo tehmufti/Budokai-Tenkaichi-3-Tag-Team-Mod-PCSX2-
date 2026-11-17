@@ -57,8 +57,13 @@ def begin_code():
     a.call(tag.GATE);a.branch(4,2,0,'no');a.li(19,tag.CONTROL)
     for off in (tag.C['active'],tag.C['approaching']):a.lw(8,19,off);a.branch(5,8,0,'no')
     for first,second in ((16,17),(16,18),(17,18)):a.branch(4,first,second,'no')
-    a.r(0x26,8,16,17);a.i(12,8,8,1);a.branch(5,8,0,'no')
-    a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'no')
+    if tag.modes.squad_feature('tag_attacks'):
+        # Initiator and partner share a team, the victim is of another one (the team table; indices bounded first).
+        for reg in (16,17,18):a.i(11,8,reg,tag.modes.ENGINE_ACTORS);a.branch(4,8,0,'no')
+        tag.modes.emit_ally(a,16,17,'no');tag.modes.emit_enemy(a,16,18,'no','cast_victim')
+    else:
+        a.r(0x26,8,16,17);a.i(12,8,8,1);a.branch(5,8,0,'no')
+        a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'no')
     for i,r in enumerate((16,17,18)):a.sw(r,29,0x300+4*i)
     a.li(20,0);a.li(21,ROWS)
     a.label('check');a.r(0,8,0,20,2);a.addiu(9,29,0x300);a.r(0x21,9,9,8);a.lw(4,9)

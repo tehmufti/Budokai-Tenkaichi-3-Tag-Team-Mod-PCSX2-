@@ -101,14 +101,20 @@ class VerifiedIso:
     context; create a fresh context and verify its complete hash before reuse.
     """
 
-    def __init__(self, local_path, expected_sha256, *, adapter='bt3-usa'):
+    def __init__(self, local_path, expected_sha256, *, adapter='bt3-usa', known=None):
+        """known: (sha256, size, mtime_ns) this PC's own disc cache holds for this very file (kit_ident.
+        cached_stamp): when it names the expected hash and the file still has that size and modification time,
+        the 4 GB image is not hashed a second time (it was at every Host / Join). Nothing a peer sends can
+        supply it, and every byte rebuilt from the ISO is still checked against the archive's SHA-256."""
         require(valid_digest(expected_sha256), 'Invalid expected ISO hash')
         require(adapter == 'bt3-usa', 'Only BT3 USA is prototyped', FallbackRequired)
         self.path = Path(local_path)
         self._lock = threading.RLock()
         self.stamp = unchanged_stamp(self.path)
         start = time.perf_counter()
-        actual = file_digest(self.path)
+        trusted = type(known) is tuple and len(known) == 3 and known[0] == expected_sha256 and \
+            (known[1], known[2]) == self.stamp[:2]
+        actual = expected_sha256 if trusted else file_digest(self.path)
         require(unchanged_stamp(self.path) == self.stamp, 'ISO changed during identity verification')
         require(actual == expected_sha256, 'Full ISO identity mismatch')
         self.sha256 = actual

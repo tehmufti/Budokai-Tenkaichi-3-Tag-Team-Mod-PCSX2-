@@ -11,8 +11,12 @@ Spec v2 (canonical: sort_keys, separators (',', ':'); spec_sha = sha256 of that 
 type: 'versus' (a match: intro, fight, result, then Retry / Return to lobby) or 'hub' (the in-level hub: free roam
   with consent damage, respawn, a scoreboard and challenges; tools/hub_mode.py installed into the match; always
   free-for-all with infinite Duel Time, so a K.O. never ends it).
-mode 'teams': exactly two teams of 1..5 fighters each, independent sizes; 1 v 1 is prepared on the mod's free-for-all engine, where both fighters are enemies as in a duel; mode 'ffa':
-  free-for-all, every fighter for himself, 2..10 fighters given as the two Team Select columns (independent sizes). The mod has no third team: 3+ teams are refused with a reason.
+mode 'teams': two teams of 1..5 fighters each, independent sizes; 1 v 1 is prepared on the mod's free-for-all engine, where both fighters are enemies as in a duel; mode 'ffa':
+  free-for-all, every fighter for himself, 2..10 fighters given as the two Team Select columns (independent sizes).
+Three to five teams (mode 'teams', type 'versus'): the two columns stay the native rows, every fighter also carries
+  "team": 0..4, and the spec carries "team_count": 3..5 and "squad_layout": the version of the mod's layout function
+  (battle_mode_policy.squad_layout / SQUAD_LAYOUT). All three are OMITTED for two teams, so an ordinary spec keeps its
+  text and spec_sha. Every PC checks that the fighter at physical i is on the team the layout puts there.
 At most 10 fighters (the 5 v 5 engine). A fighter's "slot" is the input slot of the human who plays it, or null for a
 CPU fighter. Kit 2.1: ANY fighter can be a player (up to 10 humans); the slot is the fighter's physical index in the
 mod's engine, slot = 2 x position + column (0/1: the side leaders, 2..9 the other fighters, side = slot & 1).
@@ -36,6 +40,7 @@ TIMES = (60, 90, 180, 240, 0)                     # save-word order; 0 = infinit
 COM_CODES = (0, 6, 13, 21, 29)                    # member +12 per CPU level 0..4
 REFEREES = ('Ox King', 'Videl', 'Supreme Kai', 'Shenron', 'Announcer 1', 'Announcer 2', 'Announcer 3')
 TEAM_MAX, FIGHTERS_MAX = 5, 10
+TEAMS_MIN, TEAMS_MAX = 3, 5                       # a match with more than two teams (two teams: no team fields)
 HUMAN_SLOTS = tuple(range(10))                    # kit 2.1: every fighter (slot = 2 x position + column)
 STAGE_IDS = range(kit_adapter.stage_count())
 BGM_TRACKS = range(24)
@@ -45,7 +50,7 @@ DEFAULT_NATIVE = dict(time=240, com=2, referee=2, destructible=True)
 SCENE = A(0x331DC8)
 SIDE_STRIDE, MEMBER_STRIDE = 624, 100
 MODE, COUNT = 0xD8080, 0xD8084
-KIT = '2.3.0'
+KIT = '2.4.0'
 
 
 def canonical(spec):
@@ -69,28 +74,38 @@ def bgm_ok(value):
     return isinstance(value, int) and not isinstance(value, bool) and value in BGM_TRACKS
 
 
-def fighter(character, costume, slot=None, potaras=None):
+def fighter(character, costume, slot=None, potaras=None, team=None):
     import kit_potara
     items = [] if potaras is None else potaras
     found = kit_potara.shape_problem(items)
     if found:
         raise ValueError(found)
-    return dict(character=int(character), costume=int(costume), slot=None if slot is None else int(slot),
-                potaras=sorted(items))
+    out = dict(character=int(character), costume=int(costume), slot=None if slot is None else int(slot),
+               potaras=sorted(items))
+    if team is not None:                          # three to five teams only: two-team specs never hold it
+        out['team'] = int(team)
+    return out
 
 
 def make(*, tables_sha256, mode='teams', teams, stage, bgm=DEFAULT_BGM, native=None, gameplay=None, services=None,
-         kit=KIT, mod_build=None, type=TYPE):
-    """teams: [[(character, costume, slot or None), ...], [...]] (two columns)."""
+         kit=KIT, mod_build=None, type=TYPE, team_count=None):
+    """teams: [[(character, costume, slot or None), ...], [...]] (two columns). team_count 3..5: every fighter
+    (a dict) also names its "team"; None (two teams) leaves the spec exactly as it always was."""
     n = dict(DEFAULT_NATIVE)
     n.update({k: v for k, v in (native or {}).items() if k in DEFAULT_NATIVE})
-    return dict(schema=SCHEMA, v=V, type=type, family=FAMILY, disc=DISC, tables_sha256=tables_sha256,
+    spec = dict(schema=SCHEMA, v=V, type=type, family=FAMILY, disc=DISC, tables_sha256=tables_sha256,
                 mod_build=mod_build, kit=kit, mode=mode,
                 teams=[[fighter(*m) if not isinstance(m, dict) else fighter(m['character'], m['costume'],
-                                                                              m.get('slot'), m.get('potaras', []))
+                                                                              m.get('slot'), m.get('potaras', []),
+                                                                              m.get('team') if team_count else None)
                         for m in team] for team in teams],
                 stage=stage, bgm=bgm, native=n, gameplay=dict(gameplay or {}),
                 services={k: bool((services or {}).get(k, False)) for k in SERVICES})
+    if team_count:
+        policy = squad_policy()
+        spec['team_count'] = int(team_count)
+        spec['squad_layout'] = policy.SQUAD_LAYOUT if policy is not None else None
+    return spec
 
 
 def humans(spec):
@@ -117,6 +132,136 @@ def engine_mode(spec):
     if spec['mode'] == 'ffa':
         return 'ffa'
     return 'ffa' if [len(t) for t in spec['teams']] == [1, 1] else 'teams'
+
+
+# ---- three to five teams ------------------------------------------------------------------------------------------
+def squad_policy():
+    """The mod's battle_mode_policy when it knows three to five teams, else None (an older Tag Team Mod)."""
+    try:
+        import battle_mode_policy as policy
+        import netplay_state_hash
+    except ImportError:
+        return None
+    if not hasattr(netplay_state_hash, 'squad_rows') or not hasattr(netplay_state_hash, 'revive_rows'):
+        return None                                   # the team table could not be hashed
+    return policy if hasattr(policy, 'squad_layout') and hasattr(policy, 'SQUAD_LAYOUT') else None
+
+
+def team_sizes_problems(sizes):
+    """[text] for the sizes of three to five teams (what the lobby refuses)."""
+    policy = squad_policy()
+    if policy is None:
+        return ['this Tag Team Mod cannot play three to five teams (update it)']
+    if not TEAMS_MIN <= len(sizes) <= TEAMS_MAX:
+        return [f'{len(sizes)} teams: choose two to five']
+    if any(type(s) is not int or not 1 <= s <= TEAM_MAX for s in sizes):
+        return ['each team needs between one and five fighters']
+    if sum(sizes) > FIGHTERS_MAX:
+        return [f'at most {FIGHTERS_MAX} fighters at once (got {sum(sizes)})']
+    try:
+        policy.squad_layout(tuple(sizes))
+    except ValueError:
+        return ['these team sizes do not fit the two rows of five fighters: make one team smaller']
+    return []
+
+
+def placed(match):
+    """[(physical index, fighter)] of the two columns of a spec or a lobby match (physical = 2 x position + column)."""
+    return sorted(((2 * i + c, f) for c, column in enumerate(match['teams']) for i, f in enumerate(column)),
+                  key=lambda row: row[0])
+
+
+def team_problems(match, spec=False):
+    """[text] for the team fields of a spec (spec=True: with its layout version) or of a lobby match; [] for an
+    ordinary two-team one, which holds none of them."""
+    count = match.get('team_count')
+    rows = placed(match)
+    if count is None:
+        if any(f.get('team') is not None for _, f in rows) or match.get('squad_layout') is not None:
+            return ['team fields without a number of teams']
+        return []
+    if type(count) is not int or not TEAMS_MIN <= count <= TEAMS_MAX:
+        return [f'{count!r} teams: two to five can be played']
+    if match.get('mode') != 'teams' or match.get('type', TYPE) != TYPE:
+        return ['three to five teams are a Team Battle started from the menu']
+    policy = squad_policy()
+    if policy is None:
+        return ['this Tag Team Mod cannot play three to five teams (update it)']
+    if spec and match.get('squad_layout') != policy.SQUAD_LAYOUT:
+        return [f'the team layout is version {match.get("squad_layout")!r}, this Tag Team Mod lays teams out as version '
+                f'{policy.SQUAD_LAYOUT} (both PCs need the same Tag Team Mod version)']
+    if any(type(f.get('team')) is not int or not 0 <= f['team'] < count for _, f in rows):
+        return ['a fighter has no team']
+    sizes = [sum(1 for _, f in rows if f['team'] == t) for t in range(count)]
+    found = team_sizes_problems(sizes)
+    if found:
+        return found
+    layout = policy.squad_layout(tuple(sizes))
+    if layout.present() != sum(1 << i for i, _ in rows) or any(layout.team_of[i] != f['team'] for i, f in rows):
+        return ['the fighters do not stand where the team layout puts them']
+    return []
+
+
+def squads(match):
+    """battle_mode_policy.Squads of a valid spec / lobby match with three to five teams, else None."""
+    count = match.get('team_count')
+    if not count:
+        return None
+    rows = placed(match)
+    return squad_policy().squad_layout(tuple(sum(1 for _, f in rows if f['team'] == t) for t in range(count)))
+
+
+def team_members(match):
+    """[[(column, index), ...] per team]: the fighters of each team in physical order. Two teams: the columns."""
+    count = match.get('team_count')
+    if not count:
+        return [[(c, i) for i in range(len(column))] for c, column in enumerate(match['teams'])]
+    out = [[] for _ in range(count)]
+    for physical, f in placed(match):
+        if type(f.get('team')) is int and 0 <= f['team'] < count:
+            out[f['team']].append((physical & 1, physical >> 1))
+    return out
+
+
+_FLAVOUR = __import__('threading').RLock()
+
+
+class flavour:
+    """with flavour(spec): everything the mod's modules emit or recognise inside is built for this spec's match -
+    its teams when it has three to five (battle_mode_policy.building_squads), the ordinary build otherwise,
+    whatever another thread is doing: the scope is serialized."""
+
+    def __init__(self, spec):
+        self.spec = spec or {}
+        self.scope = None
+
+    def __enter__(self):
+        _FLAVOUR.acquire()
+        try:
+            policy = squad_policy()
+            if policy is not None:
+                self.scope = policy.building_squads(squads(self.spec))
+                self.scope.__enter__()
+        except BaseException:
+            _FLAVOUR.release()
+            raise
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            if self.scope is not None:
+                self.scope.__exit__(*exc)
+        finally:
+            _FLAVOUR.release()
+        return False
+
+
+def fixup_code(spec):
+    """netplay_fixups.fixed_sha256() of this spec's match (the takeover prompt code differs with three to five
+    teams)."""
+    import netplay_fixups
+    with flavour(spec):
+        return netplay_fixups.fixed_sha256()
 
 
 def fighter_problems(member, catalog, where):
@@ -214,6 +359,7 @@ def problems(spec, catalog, allowed_services=()):
             out += fighter_problems(f, catalog, f'team {t + 1} fighter {i + 1}')
     if not out:
         out += human_problems(spec)
+        out += team_problems(spec, spec=True)
     if spec.get('stage') not in STAGE_IDS:
         out.append(f'stage {spec.get("stage")} is not 0..{len(STAGE_IDS) - 1}')
     if not bgm_ok(spec.get('bgm')):
@@ -293,6 +439,10 @@ def title(spec, catalog):
     if spec['mode'] == 'ffa':
         names = [catalog.name(f['character']) for team in spec['teams'] for f in team]
         return f'{" / ".join(names)} (free-for-all), {catalog.stage_name(spec["stage"])}'
+    if spec.get('team_count'):
+        teams = [' + '.join(catalog.name(spec['teams'][c][i]['character']) for c, i in members)
+                 for members in team_members(spec)]
+        return f'{" vs ".join(teams)}, {catalog.stage_name(spec["stage"])}'
     teams = [' + '.join(catalog.name(f['character']) for f in t) for t in spec['teams']]
     return f'{teams[0]} vs {teams[1]}, {catalog.stage_name(spec["stage"])}'
 

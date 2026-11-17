@@ -19,32 +19,37 @@ import textwrap
 
 WIDTH = 78
 CODES = {
-    'TTM-NET-01': ('THE TWO KITS ARE DIFFERENT VERSIONS',
-                   'The other PC runs a different version of the online kit (protocol {theirs}; this PC: {mine}).',
-                   'Both players must use the same "TTM Online Kit.zip". Ask the host which one they use and '
-                   'extract that ZIP into a new folder.'),
-    'TTM-NET-02': ('THE NETPLAY CODE IS DIFFERENT',
-                   'The netplay files of the two kits are not identical (this PC {mine}, the other PC {theirs}). '
-                   'Someone changed, added or removed a file in the kit\'s netplay folder.',
-                   'Both players: extract the same "TTM Online Kit.zip" again into a new folder and start from '
-                   'there. Do not edit the files in the netplay folder.'),
+    'TTM-NET-01': ('THE TWO PCS HAVE DIFFERENT ONLINE VERSIONS',
+                   'The other PC runs a different version of online play (protocol {theirs}; this PC: {mine}).',
+                   'Both players: update Tag Team Mod with the same updater (or installer) download, then close '
+                   'and reopen Play online. Everyone in a room needs the same Tag Team Mod version.'),
+    'TTM-NET-02': ('THE ONLINE FILES ARE DIFFERENT',
+                   'The online files of the two PCs are not identical (this PC {mine}, the other PC {theirs}): the '
+                   'two installations are different Tag Team Mod versions, or a file in the online\\netplay folder '
+                   'of one of them was changed, added or removed.',
+                   'Both players: update Tag Team Mod with the same updater (or installer) download, then close '
+                   'and reopen Play online. Do not edit the files in the online folder.'),
     'TTM-NET-03': ('THE TWO PCSX2 BUILDS CANNOT PLAY TOGETHER',
                    'The PCSX2 builds of the two PCs are not a tested pair (this PC {mine}, the other PC {theirs}). '
-                   'Lockstep only uses builds that were tested to keep both games identical: PCSX2 2.8.2 (the '
-                   'kit\'s own on Windows, the official AppImage on Linux) and 2.8.0.',
-                   'Use the PCSX2 that comes inside the kit (the pcsx2 folder) on Windows, or the official PCSX2 '
-                   '2.8.2 x64 AppImage on Linux. Extract the same ZIP again if a file in the pcsx2 folder was '
-                   'replaced or updated.'),
+                   'Online play keeps every game identical only with the same PCSX2 on every PC, or with two '
+                   'builds that were tested together: PCSX2 2.8.2 (Windows, or the official x64 AppImage on '
+                   'Linux) and 2.8.0.',
+                   'Use PCSX2 2.8.2 on every PC: download it from pcsx2.net, run the Tag Team Mod installer again '
+                   'with it on the PC that has another build, and reopen Play online. If a PC already uses 2.8.2, '
+                   'a file in its PCSX2 folder was replaced or added (a DLL, GameIndex.yaml or patches.zip): '
+                   'reinstall there too.'),
     'TTM-NET-04': ('THE GAME PATCHES ARE DIFFERENT',
-                   'The active Tag Team Mod patch file (pnach) differs between the two installations (this PC {mine}, the other PC '
-                   '{theirs}).',
-                   'Update both installations using the same installer or updater download, then close and reopen '
-                   'Play online on both PCs. If this continues, keep the latest online/runs logs from both PCs.'),
+                   'The Tag Team Mod patch file (pnach) differs between the two PCs (this PC {mine}, the other PC '
+                   '{theirs}) and one of them cannot take the host\'s.',
+                   'Both players: update Tag Team Mod with the same updater (or installer) download, then close '
+                   'and reopen Play online. If it continues, keep the newest online\\runs folder of both PCs for '
+                   'the mod author.'),
     'TTM-NET-05': ('THE EMULATION SETTINGS ARE DIFFERENT',
                    'Settings that change how the game runs differ between the two PCs: {keys}.',
-                   'The kit writes the same emulation settings on both PCs on every start, from its own files. '
-                   'Extract the same ZIP again on the PC that changed them. Graphics, sound, frame limiter and '
-                   'controller settings may differ; they are not compared.'),
+                   'Online play writes the same emulation settings on every PC at every start, from its own '
+                   'files. Both players: update (or reinstall) Tag Team Mod with the same download and reopen Play '
+                   'online. Graphics, sound, frame limiter and controller settings may differ; they are not '
+                   'compared.'),
     'TTM-NET-06': ('THE TWO GAME DISCS ARE DIFFERENT',
                    'The game ISOs of the two players do not match: {what}.',
                    'All players need identical supported disc contents. Select the matching installed disc in '
@@ -77,9 +82,10 @@ CODES = {
                    'Nothing to do: the kit re-synchronizes both games from the host\'s game by itself (a short '
                    'pause). If that fails three times, the fight ends as No contest. Please keep the folder {logs} '
                    'on both PCs and send it to the mod author: it shows what differed.'),
-    'TTM-NET-13': ('THE OTHER PLAYER LEFT',
-                   'The other PC ended the session ({why}).',
-                   'You are back in the lobby (or on the Start screen). Host or join again for another match.'),
+    'TTM-NET-13': ('THE CONNECTION TO THE OTHER PC ENDED',
+                   'The other PC ended the session, or the connection to it was lost ({why}).',
+                   'You are back in the lobby (or on the Start screen). Press Retry to join the same room again, or '
+                   'host or join another one.'),
     'TTM-NET-14': ('THE PORT IS ALREADY IN USE',
                    'This PC cannot listen on {what} port {port}: another program (or another copy of the kit) '
                    'uses it.',
@@ -100,9 +106,11 @@ CODES = {
                    'The fight ends as No contest.',
                    'Choose Retry or Return to lobby to play on. If it keeps happening, please send the runs folder of '
                    'both PCs to the mod author.'),
-    'TTM-NET-19': ('THE OTHER PC DID NOT COME BACK',
-                   'The connection to the other PC was lost and it did not reconnect within {seconds} s.',
-                   'Check both PCs\' network, then host or join again from the Start screen.'),
+    'TTM-NET-19': ('THE CONNECTION WAS LOST',
+                   'The connection to the host was lost, and joining the room again did not work for {seconds} s.',
+                   'Check this PC\'s network and ask the host whether its room is still open, then press Retry (or '
+                   'join again from the Start screen). Coming back within a few minutes gives you your name and '
+                   'fighter back.'),
     'TTM-NET-20': ('THE GAME ISO CANNOT BE USED',
                    '{what}',
                    'Select a reviewed BT3 USA/Europe/Japan or BT4 B14 REV2 disc in Mod settings > Game disc, then reopen Play online.'),
@@ -119,26 +127,25 @@ CODES = {
     'TTM-NET-24': ('THE TAG TEAM MOD INSTALLATION CANNOT BE USED',
                    '{what}',
                    'Use a complete installation of the same Tag Team Mod release on every PC. Reinstall if the installation check fails.'),
-    'TTM-NET-25': ('A KIT FILE IS MISSING',
+    'TTM-NET-25': ('AN ONLINE FILE IS MISSING OR DAMAGED',
                    '{what}',
-                   'Extract the whole "TTM Online Kit.zip" again into a new folder (do not run it from inside the '
-                   'ZIP).'),
+                   'Close Play online, run the Tag Team Mod updater (or installer) again on this PC so its files '
+                   'are complete, then reopen Play online.'),
     # Shown by Play online.cmd / relay.cmd themselves (no Python to run this module); listed here for the README.
     'TTM-NET-26': ('PYTHON 3.9 OR NEWER IS NEEDED',
                    'No Python 3.9 or newer was found on this PC.',
                    'Install Python 3 from python.org (tick "Add python.exe to PATH"), or start the kit once from a '
                    'Tag Team Mod folder\'s own Python (see the README). The kit uses only Python\'s standard '
                    'library.'),
-    'TTM-NET-27': ('THE KIT\'S PCSX2 HAS EXTRA PATCHES OR PER-GAME SETTINGS',
+    'TTM-NET-27': ('THE ONLINE PCSX2 HAS EXTRA PATCHES OR PER-GAME SETTINGS',
                    '{what}',
-                   'Remove the files named above from the kit\'s PCSX2 folders (the kit installs the only patch it '
-                   'needs by itself, and per-game settings would override the settings both PCs must share), or '
-                   'extract the kit again into a new folder.'),
+                   'Remove the files named above (online play installs the only patch it needs by itself, and '
+                   'per-game settings would override the settings every PC must share), then reopen Play online.'),
     'TTM-NET-28': ('THIS PCSX2 BUILD WAS NOT TESTED FOR ONLINE PLAY',
                    'This PC would run {build}. Online play only uses PCSX2 builds that were tested to keep two PCs '
                    'identical: {tested}.',
-                   'On Windows use the PCSX2 inside the kit (extract the kit again if its pcsx2 folder was changed or '
-                   'updated); on Linux choose the official PCSX2 2.8.2 x64 AppImage in Start > PCSX2 AppImage.'),
+                   'Download PCSX2 2.8.2 from pcsx2.net (Windows: the x64 Qt build; Linux: the official x64 '
+                   'AppImage), run the Tag Team Mod installer again with it, and reopen Play online.'),
     'TTM-NET-29': ('THAT CHOICE CANNOT BE PLAYED',
                    '{what}',
                    'Choose another fighter, colour or setting. Your last valid team was kept.'),
@@ -146,7 +153,8 @@ CODES = {
                    '{what}',
                    'The host presses START MATCH again: its game prepares the match once more (it restarts first '
                    'when it failed). If the same fighters fail again, change one of them. When the host\'s Tag Team '
-                   'Mod installation was refused (TTM-NET-24), the host chooses another one on the Start screen.'),
+                   'Mod installation was refused (TTM-NET-24), the host updates or reinstalls Tag Team Mod and '
+                   'reopens Play online.'),
     'TTM-NET-31': ('THE PREPARED MATCH DOES NOT MATCH THE LOBBY',
                    '{what}',
                    'Press Ready again: the host prepares the match once more. If it happens every time, send the '
@@ -158,35 +166,46 @@ CODES = {
     'TTM-NET-33': ('THE FIGHTER LIST COULD NOT BE READ FROM YOUR ISO',
                    '{what}',
                    'Select a reviewed BT3 USA/Europe/Japan or BT4 B14 REV2 disc in Mod settings > Game disc, then reopen Play online.'),
+    'TTM-NET-34': ('THE TWO PCS HAVE DIFFERENT TAG TEAM MOD VERSIONS',
+                   'This PC has Tag Team Mod {mine}, the other PC has {theirs}. Everyone in an online room needs '
+                   'the same version.',
+                   'The player with the older version runs the newest Tag Team Mod updater (saves and settings are '
+                   'kept), then both close and reopen Play online.'),
 }
 
 CODES_ES = {
-    'TTM-NET-01': ('LOS DOS KITS SON VERSIONES DISTINTAS',
-                   'El otro PC usa otra versión del kit en línea (protocolo {theirs}; este PC: {mine}).',
-                   'Los dos jugadores deben usar el mismo "TTM Online Kit.zip". Pregunta al anfitrión cuál usa y '
-                   'extrae ese ZIP en una carpeta nueva.'),
-    'TTM-NET-02': ('EL CÓDIGO DE RED ES DISTINTO',
-                   'Los archivos netplay de los dos kits no son idénticos (este PC {mine}, el otro PC {theirs}). '
-                   'Alguien cambió, añadió o borró un archivo de la carpeta netplay del kit.',
-                   'Los dos jugadores: extraed otra vez el mismo "TTM Online Kit.zip" en una carpeta nueva y empezad '
-                   'desde ahí. No editéis los archivos de la carpeta netplay.'),
+    'TTM-NET-01': ('LOS DOS PC TIENEN VERSIONES EN LÍNEA DISTINTAS',
+                   'El otro PC usa otra versión del juego en línea (protocolo {theirs}; este PC: {mine}).',
+                   'Los dos jugadores: actualizad Tag Team Mod con la misma descarga del actualizador (o '
+                   'instalador) y volved a abrir Play online. Todos en una sala necesitan la misma versión de Tag '
+                   'Team Mod.'),
+    'TTM-NET-02': ('LOS ARCHIVOS EN LÍNEA SON DISTINTOS',
+                   'Los archivos en línea de los dos PC no son idénticos (este PC {mine}, el otro PC {theirs}): las '
+                   'dos instalaciones son versiones distintas de Tag Team Mod, o se cambió, añadió o borró un '
+                   'archivo de la carpeta online\\netplay de una de ellas.',
+                   'Los dos jugadores: actualizad Tag Team Mod con la misma descarga del actualizador (o '
+                   'instalador) y volved a abrir Play online. No editéis los archivos de la carpeta online.'),
     'TTM-NET-03': ('LAS DOS VERSIONES DE PCSX2 NO PUEDEN JUGAR JUNTAS',
                    'Las versiones de PCSX2 de los dos PC no son una pareja probada (este PC {mine}, el otro PC '
-                   '{theirs}). El juego sincronizado solo usa versiones probadas: PCSX2 2.8.2 (la del kit en '
-                   'Windows, la AppImage oficial en Linux) y 2.8.0.',
-                   'Usa el PCSX2 que viene dentro del kit (la carpeta pcsx2) en Windows, o la AppImage oficial de '
-                   'PCSX2 2.8.2 x64 en Linux. Extrae otra vez el mismo ZIP si se cambió algún archivo de la carpeta '
-                   'pcsx2.'),
+                   '{theirs}). El juego en línea solo mantiene todas las partidas idénticas con el mismo PCSX2 en '
+                   'todos los PC, o con dos versiones probadas juntas: PCSX2 2.8.2 (Windows, o la AppImage oficial '
+                   'x64 en Linux) y 2.8.0.',
+                   'Usad PCSX2 2.8.2 en todos los PC: descárgalo de pcsx2.net, ejecuta otra vez el instalador de '
+                   'Tag Team Mod con él en el PC que tiene otra versión y vuelve a abrir Play online. Si un PC ya '
+                   'usa 2.8.2, se cambió o añadió un archivo en su carpeta de PCSX2 (una DLL, GameIndex.yaml o '
+                   'patches.zip): reinstala también ahí.'),
     'TTM-NET-04': ('LOS PARCHES DEL JUEGO SON DISTINTOS',
-                   'El archivo de parches activo de Tag Team Mod (pnach) es distinto en las dos instalaciones (este PC {mine}, el '
-                   'otro PC {theirs}).',
-                   'Actualiza ambas instalaciones con la misma descarga del instalador o actualizador y vuelve a '
-                   'abrir Play online en los dos PC. Si continúa, guarda los últimos registros de online/runs de ambos PC.'),
+                   'El archivo de parches de Tag Team Mod (pnach) es distinto en los dos PC (este PC {mine}, el '
+                   'otro PC {theirs}) y uno de ellos no puede recibir el del anfitrión.',
+                   'Los dos jugadores: actualizad Tag Team Mod con la misma descarga del actualizador (o '
+                   'instalador) y volved a abrir Play online. Si continúa, guardad la carpeta online\\runs más '
+                   'reciente de los dos PC para el autor del mod.'),
     'TTM-NET-05': ('LOS AJUSTES DE EMULACIÓN SON DISTINTOS',
                    'Hay ajustes que cambian cómo funciona el juego y son distintos en los dos PC: {keys}.',
-                   'El kit escribe los mismos ajustes de emulación en los dos PC cada vez que empieza, desde sus '
-                   'propios archivos. Extrae otra vez el mismo ZIP en el PC que los cambió. Los gráficos, el sonido, '
-                   'el limitador de fotogramas y los mandos pueden ser distintos; no se comparan.'),
+                   'El juego en línea escribe los mismos ajustes de emulación en todos los PC cada vez que empieza, '
+                   'desde sus propios archivos. Los dos jugadores: actualizad (o reinstalad) Tag Team Mod con la '
+                   'misma descarga y volved a abrir Play online. Los gráficos, el sonido, el limitador de '
+                   'fotogramas y los mandos pueden ser distintos; no se comparan.'),
     'TTM-NET-06': ('LOS DOS DISCOS DEL JUEGO SON DISTINTOS',
                    'Las ISO de los dos jugadores no coinciden: {what}.',
                    'Todos los jugadores necesitan discos compatibles idénticos. Elige el mismo disco instalado en '
@@ -219,10 +238,10 @@ CODES_ES = {
                    'No hay que hacer nada: el kit vuelve a sincronizar las dos partidas desde la del anfitrión (una '
                    'pausa corta). Si falla tres veces, el combate termina sin resultado. Guarda la carpeta {logs} '
                    'de los dos PC y envíala al autor del mod: muestra qué cambió.'),
-    'TTM-NET-13': ('EL OTRO JUGADOR SE FUE',
-                   'El otro PC terminó la sesión ({why}).',
-                   'Has vuelto a la sala (o a la pantalla de inicio). Crea o únete a una partida para jugar otra '
-                   'vez.'),
+    'TTM-NET-13': ('LA CONEXIÓN CON EL OTRO PC TERMINÓ',
+                   'El otro PC terminó la sesión, o se perdió la conexión con él ({why}).',
+                   'Has vuelto a la sala (o a la pantalla de inicio). Pulsa Reintentar para entrar otra vez en la '
+                   'misma sala, o crea o únete a otra.'),
     'TTM-NET-14': ('EL PUERTO YA ESTÁ EN USO',
                    'Este PC no puede escuchar en el puerto {what} {port}: otro programa (u otra copia del kit) lo '
                    'usa.',
@@ -243,10 +262,11 @@ CODES_ES = {
                    '({why}). El combate termina sin resultado.',
                    'Elige Repetir o Volver a la sala para seguir jugando. Si se repite, envía la carpeta runs de los '
                    'dos PC al autor del mod.'),
-    'TTM-NET-19': ('EL OTRO PC NO VOLVIÓ',
-                   'Se perdió la conexión con el otro PC y no se reconectó en {seconds} s.',
-                   'Comprueba la red de los dos PC y vuelve a crear o unirte a una partida desde la pantalla de '
-                   'inicio.'),
+    'TTM-NET-19': ('SE PERDIÓ LA CONEXIÓN',
+                   'Se perdió la conexión con el anfitrión y no se pudo volver a entrar en la sala en {seconds} s.',
+                   'Comprueba la red de este PC y pregunta al anfitrión si su sala sigue abierta; después pulsa '
+                   'Reintentar (o entra otra vez desde la pantalla de inicio). Si vuelves en pocos minutos '
+                   'recuperas tu nombre y tu luchador.'),
     'TTM-NET-20': ('NO SE PUEDE USAR LA ISO DEL JUEGO',
                    '{what}',
                    'Elige un disco revisado de BT3 USA/Europa/Japón o BT4 B14 REV2 en Mod settings > Disco del juego y vuelve a abrir Play online.'),
@@ -263,26 +283,25 @@ CODES_ES = {
     'TTM-NET-24': ('NO SE PUEDE USAR LA INSTALACIÓN DE TAG TEAM MOD',
                    '{what}',
                    'Usa la misma versión completa de Tag Team Mod en todos los PC. Reinstala si falla la comprobación de instalación.'),
-    'TTM-NET-25': ('FALTA UN ARCHIVO DEL KIT',
+    'TTM-NET-25': ('FALTA UN ARCHIVO EN LÍNEA O ESTÁ DAÑADO',
                    '{what}',
-                   'Extrae otra vez todo "TTM Online Kit.zip" en una carpeta nueva (no lo ejecutes desde dentro del '
-                   'ZIP).'),
+                   'Cierra Play online, ejecuta otra vez el actualizador (o instalador) de Tag Team Mod en este PC '
+                   'para que sus archivos estén completos y vuelve a abrir Play online.'),
     'TTM-NET-26': ('SE NECESITA PYTHON 3.9 O MÁS NUEVO',
                    'No se encontró Python 3.9 o más nuevo en este PC.',
                    'Instala Python 3 desde python.org (marca "Add python.exe to PATH"), o inicia el kit una vez con '
                    'el Python propio de una carpeta de Tag Team Mod (mira el LEAME). El kit solo usa la biblioteca '
                    'estándar de Python.'),
-    'TTM-NET-27': ('EL PCSX2 DEL KIT TIENE PARCHES O AJUSTES POR JUEGO DE MÁS',
+    'TTM-NET-27': ('EL PCSX2 EN LÍNEA TIENE PARCHES O AJUSTES POR JUEGO DE MÁS',
                    '{what}',
-                   'Quita los archivos indicados de las carpetas de PCSX2 del kit (el kit instala él mismo el único '
-                   'parche que necesita, y los ajustes por juego cambiarían los ajustes que los dos PC deben '
-                   'compartir), o extrae el kit otra vez en una carpeta nueva.'),
+                   'Quita los archivos indicados (el juego en línea instala él mismo el único parche que necesita, '
+                   'y los ajustes por juego cambiarían los ajustes que todos los PC deben compartir) y vuelve a '
+                   'abrir Play online.'),
     'TTM-NET-28': ('ESTA VERSIÓN DE PCSX2 NO SE PROBÓ PARA JUGAR EN LÍNEA',
                    'Este PC usaría {build}. El juego en línea solo usa versiones de PCSX2 probadas para mantener '
                    'dos PC idénticos: {tested}.',
-                   'En Windows usa el PCSX2 de dentro del kit (extrae el kit otra vez si se cambió o actualizó su '
-                   'carpeta pcsx2); en Linux elige la AppImage oficial de PCSX2 2.8.2 x64 en Inicio > AppImage de '
-                   'PCSX2.'),
+                   'Descarga PCSX2 2.8.2 de pcsx2.net (Windows: la versión x64 Qt; Linux: la AppImage oficial '
+                   'x64), ejecuta otra vez el instalador de Tag Team Mod con él y vuelve a abrir Play online.'),
     'TTM-NET-29': ('ESA ELECCIÓN NO SE PUEDE JUGAR',
                    '{what}',
                    'Elige otro luchador, color o ajuste. Se conservó tu último equipo válido.'),
@@ -290,8 +309,8 @@ CODES_ES = {
                    '{what}',
                    'El anfitrión pulsa EMPEZAR COMBATE otra vez: su juego prepara el combate de nuevo (antes se '
                    'reinicia si falló). Si los mismos luchadores vuelven a fallar, cambia uno. Si se rechazó la '
-                   'instalación de Tag Team Mod del anfitrión (TTM-NET-24), el anfitrión elige otra en la pantalla de '
-                   'inicio.'),
+                   'instalación de Tag Team Mod del anfitrión (TTM-NET-24), el anfitrión actualiza o reinstala Tag '
+                   'Team Mod y vuelve a abrir Play online.'),
     'TTM-NET-31': ('EL COMBATE PREPARADO NO COINCIDE CON LA SALA',
                    '{what}',
                    'Pulsa Listo otra vez: el anfitrión prepara el combate de nuevo. Si pasa siempre, envía la '
@@ -302,13 +321,20 @@ CODES_ES = {
     'TTM-NET-33': ('NO SE PUDO LEER LA LISTA DE LUCHADORES DE TU ISO',
                    '{what}',
                    'Elige un disco revisado de BT3 USA/Europa/Japón o BT4 B14 REV2 en Mod settings > Disco del juego y vuelve a abrir Play online.'),
+    'TTM-NET-34': ('LOS DOS PC TIENEN VERSIONES DISTINTAS DE TAG TEAM MOD',
+                   'Este PC tiene Tag Team Mod {mine} y el otro PC tiene {theirs}. Todos en una sala en línea '
+                   'necesitan la misma versión.',
+                   'El jugador con la versión más antigua ejecuta el actualizador más reciente de Tag Team Mod (se '
+                   'conservan las partidas guardadas y los ajustes) y después los dos cierran y vuelven a abrir '
+                   'Play online.'),
 }
 
 # Dialog buttons per code (kit_lobby_ui): retry, advanced, choose_iso, choose_bios, compare_files, logs.
 REMEDIES = {
     'TTM-NET-06': ('choose_iso', 'compare_files', 'logs'), 'TTM-NET-07': ('choose_bios', 'retry'),
     'TTM-NET-08': ('retry', 'advanced'), 'TTM-NET-09': ('retry', 'logs'), 'TTM-NET-10': ('retry', 'advanced'),
-    'TTM-NET-11': ('retry', 'advanced'), 'TTM-NET-12': ('logs',), 'TTM-NET-14': ('advanced', 'retry'),
+    'TTM-NET-11': ('retry', 'advanced'), 'TTM-NET-12': ('logs',), 'TTM-NET-13': ('retry',),
+    'TTM-NET-14': ('advanced', 'retry'),
     'TTM-NET-15': ('retry',), 'TTM-NET-16': ('advanced', 'retry'), 'TTM-NET-18': ('logs',),
     'TTM-NET-19': ('retry', 'logs'), 'TTM-NET-20': ('choose_iso',), 'TTM-NET-21': ('choose_bios',),
     'TTM-NET-22': ('retry', 'logs'), 'TTM-NET-24': ('logs',), 'TTM-NET-27': ('logs',), 'TTM-NET-28': ('logs',),

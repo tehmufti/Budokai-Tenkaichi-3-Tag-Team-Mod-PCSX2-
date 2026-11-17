@@ -569,6 +569,7 @@ class PrivateBuilderServiceGuards(unittest.TestCase):
                          team_assignment=SimpleNamespace(Controller=lambda: object()),
                          tag_tournament=SimpleNamespace(Controller=lambda: object()),
                          gauntlet_mode=SimpleNamespace(Controller=lambda: object()),
+                         squad_setup=SimpleNamespace(Controller=lambda: object()),
                          scenario_menu=SimpleNamespace(Controller=lambda settings: object()))
         with patch.dict(sys.modules, {'native_menu_texture': None}):
             exec(compile(ast.Module(body=[controller], type_ignores=[]), '<private menu>', 'exec'), namespace)

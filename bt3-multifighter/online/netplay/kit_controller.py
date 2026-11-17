@@ -16,6 +16,7 @@ attaches later gets a 'snapshot' first. One loop: the IPC, the TCP channels (sel
 lockstep session (every 1 ms while a fight runs) and the phase's own steps; anything that blocks runs in a Job thread.
 The fight half lives in kit_fight.FightMixin.
 """
+import base64
 import json
 import os
 import re
@@ -24,6 +25,7 @@ import struct
 import threading
 import time
 import traceback
+import zlib
 from pathlib import Path
 
 import kit_paths
@@ -55,10 +57,16 @@ DEFAULT_PINE = 28460
 RENDERERS = {'auto': -1, 'd3d11': 3, 'opengl': 12, 'software': 13, 'vulkan': 14, 'd3d12': 15}
 PING_LOBBY, PING_FIGHT = 5.0, 2.0
 SILENCE = 30.0
+LOOP_GAP = 5.0                       # a loop pass that took longer: the silence clocks are stale, not the members
+SUSPEND_RETRY = 10.0
 PREAMBLE_WAIT, HELLO_WAIT = 10.0, 20.0
 MAX_DELAY = 12
 SHA256_HEX = re.compile(r'[0-9a-f]{64}')
 UI_GONE = 120.0
+PATCH_PART = 48 * 1024              # compressed bytes of the host's patch per PATCH message
+PATCH_WAIT = 30.0                   # a guest waits this long for a patch it asked the host for
+REJOIN_TRIES, REJOIN_EVERY = 4, 4.0  # a guest whose connection dropped joins again by itself
+REJOIN_KEEP = 180.0                 # host: seconds a member that left can still get its name and fighter back
 SERIALS = {'SLUS_216.78': None, 'SLES_549.45': 'europe', 'SLPS_258.15': 'japan', 'SLPS_258.16': 'japan'}
 SETTINGS_FILE = 'settings.json'
 SETTINGS_KEYS = ('lang', 'port', 'delay', 'renderer', 'pad', 'keyboard_bindings', 'fullscreen', 'host_address', 'audio', 'room_name', 'listed', 'directory', 'drop_load_failures')
@@ -151,6 +159,11 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.room_salt, self.room_key = kit_browser.challenge('')
         self.join_password = ''
         self.advertiser = None
+        self.host_patch = None               # guest: the patch (sha256) the host's identity names
+        self.rejoin = None                   # guest: {address, token} of the room it is (or was) in
+        self.auto_rejoin = None              # guest: {address, tries, at, since} while it joins again by itself
+        self.recent_left = {}                # host: token -> {name, seat, at} of members that left
+        self.patch_wanted = None             # guest: {sha, since, then: 'preboot'|'load'|None, parts: {}}
         self.init_fight()
         self.init_transfers()
         self.init_prebuild()
@@ -245,7 +258,8 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         if self.role == 'guest' and self.net:
             host = dict(name=self.net.get('name'), rtt_ms=self.net.get('rtt_ms'),
                         connected=not self.net['channel'].closed)
-        return dict(phase=self.phase, role=self.role, me=self.me, lang=self.lang, settings=self.cfg,
+        return dict(phase=self.phase, role=self.role, last_role=getattr(self, 'last_role', None), me=self.me,
+                    lang=self.lang, settings=self.cfg,
                     profile=dict(name=self.profile.get('name'), local=self.profile.get('local') or {}),
                     checks=self.checks, lobby=lob, joinwith=self.joinwith, host=host, catalog=catalog,
                     progress=self.progress, status=self.fight_status(), results=self.results, vote=self.vote_view(),
@@ -312,10 +326,10 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
                 self.fail(error)
             except Exception:  # noqa: BLE001 - a bad command must not end the session
                 self.say('command failed: ' + traceback.format_exc())
-        self.poll_jobs()
-        self.tick_prep()
+        self.guarded(self.poll_jobs)
+        self.guarded(self.tick_prep)
         if self.listener is not None:
-            self.accept()
+            self.guarded(self.accept)
         for ident, ch in self.channels():
             for kind, payload in ch.poll_frames():
                 try:
@@ -324,17 +338,35 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
                     self.fail(error)
                 except Exception:  # noqa: BLE001
                     self.say('message failed: ' + traceback.format_exc())
-        self.liveness()
+        self.guarded(self.liveness)
+        self.guarded(self.tick_patch)
+        self.guarded(self.tick_rejoin)
         if self.udp is not None and self.session is None:
-            self.udp_idle()
+            self.guarded(self.udp_idle)
         try:
             busy = self.tick_phase()
         except Exception:  # noqa: BLE001 - a bug in one step must not end the process (and PCSX2 with it)
             busy = False
             self.step_failed(traceback.format_exc())
         self.ui_lifetime()
-        self.flush_state()
+        self.guarded(self.flush_state)
         return busy
+
+    def guarded(self, stage):
+        """One stage of the loop: a bug in it is logged (once per minute per text), it never ends the session
+        (and with it the room, the fight and PCSX2)."""
+        try:
+            return stage()
+        except KitError as error:
+            self.fail(error)
+        except Exception:  # noqa: BLE001
+            text = f'{getattr(stage, "__name__", "step")} failed: ' + traceback.format_exc()
+            t = now()
+            last = getattr(self, 'last_stage_error', None)
+            if last is None or last[0] != text or t - last[1] > 60:
+                self.last_stage_error = (text, t)
+                self.say(text)
+        return None
 
     def channels(self):
         """[(member id, channel)]: every guest's (host), or the host's (guest: member 1)."""
@@ -374,6 +406,11 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
                 self.fail(error)
             except Exception:  # noqa: BLE001
                 self.say(f'{job.name} follow-up failed: ' + traceback.format_exc())
+                if self.phase == 'check' and job.name in ('setup', 'connect'):
+                    # nothing else ever leaves this phase: back to the Start screen with the reason
+                    self.role = None
+                    self.fail(KitError('TTM-NET-22', what=f'{job.name} could not finish (see the log)',
+                                       logs=str(self.run_dir)), phase='start')
 
     def job(self, name, fn, *args, then=None, fail=None):
         j = Job(name, fn, *args, then=then, fail=fail)
@@ -420,6 +457,8 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
                 self.cfg[key] = c[key]
         if c.get('lang') in ('en', 'es'):
             self.lang = c['lang']
+        if c.get('disc_check') in ('full', 'quick'):         # the error window's "Compare game files only"
+            self.args.disc_check = c['disc_check']
         if 'name' in c:
             self.profile['name'] = kit_settings.clean_name(c['name'])
             self.save_profile()
@@ -438,6 +477,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.dirty = True
 
     def cmd_dismiss(self, c):
+        self.auto_rejoin = None
         self.error = None
         self.dirty = True
 
@@ -492,6 +532,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
     def cmd_host(self, c):
         if self.phase != 'start' or self.busy('setup'):
             return
+        self.auto_rejoin = None                          # the player chose something else
         self.cmd_setup(c)
         problem = self.network_problem()
         if problem:
@@ -509,6 +550,8 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
     def cmd_join(self, c):
         if self.phase != 'start' or self.busy('setup'):
             return
+        if not c.get('auto'):
+            self.auto_rejoin = None                      # typed by the player: not the kit's own retry
         self.cmd_setup(c)
         address = (c.get('address') or self.cfg.get('host_address') or '').strip()
         if not address:
@@ -526,11 +569,12 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             pass
         self.save_settings()
         self.join_password = str(c.get('password') or '')[:128]
+        self.rejoin_password = self.join_password        # memory only: an automatic rejoin needs it again
         self.begin('guest')
 
     # ---- this PC ----------------------------------------------------------------------------------------------------------
     def begin(self, role):
-        self.role = role
+        self.role = self.last_role = role
         self.error = None
         kit_paths.RUNS.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime('%Y%m%d-%H%M%S')
@@ -543,6 +587,12 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.summary = dict(role=role, kit=kit_ident.KIT_VERSION, started=time.strftime('%Y-%m-%d %H:%M:%S'),
                             args={k: v for k, v in vars(self.args).items()}, fights=[])
         self.set_phase('check')
+        try:
+            removed = kit_match.prune_states(self.states)
+            if removed:
+                self.say(f'Removed {len(removed)} old match file(s) from the states folder.')
+        except OSError:
+            pass
         self.checks = [dict(key=k, ok=None) for k in ('iso', 'catalog', 'disc', 'bios', 'pcsx2', 'settings', 'kit')]
         self.job('setup', self.local_setup, then=self.after_setup, fail=self.setup_failed)
 
@@ -621,7 +671,9 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.check('settings', True, None)
         identity = kit_ident.local_identity(disc=disc, bios=bios_id, ini_text=ini, pcsx2=build,
                                             bios_policy=a.bios_check, disc_policy=a.disc_check,
-                                            name=self.profile.get('name') or self.role)
+                                            name=self.profile.get('name') or self.role,
+                                            mod_version=(install or {}).get('version') if kit_paths.INTEGRATED
+                                            else None)
         self.check('kit', True, kit_text.t('check.kit_note', self.lang, kit=kit_ident.KIT_VERSION,
                                            protocol=kit_ident.PROTOCOL))
         (self.run_dir / 'identity.json').write_text(json.dumps(identity, indent=1), encoding='utf-8')
@@ -629,7 +681,8 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         old_wire = (self.local or {}).get('wire')
         if old_wire:
             old_wire.close()
-        wire = kit_wire.Manager(iso, disc.get('sha256'), kit_paths.ADAPTER, self.states, self.say)
+        wire = kit_wire.Manager(iso, disc.get('sha256'), kit_paths.ADAPTER, self.states, self.say,
+                                known=kit_ident.cached_stamp(iso, kit_paths.DATA / 'disc-cache.json'))
         return dict(iso=iso, bios=bios, install=install, identity=identity, catalog=catalog, view=view, emulator=em, wire=wire,
                     prep_why=prep_why)
 
@@ -645,19 +698,21 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
     def after_setup(self, local):
         self.local = local
         self.emulator = local['emulator']
-        self.preboot_game()
         if self.role == 'host':
+            self.preboot_game()
             self.start_host()
-        else:
-            self.start_guest()
+        elif self.role == 'guest':
+            self.start_guest()                       # its idle PCSX2 starts after the handshake (after_connect)
+        else:                                        # the player left while this PC was being checked
+            self.set_phase('start')
 
-    def preboot_game(self):
+    def preboot_game(self, patch=None):
         # Windows can keep an idle VM paused. Linux starts running immediately,
         # so it retains the established statefile startup rather than exposing
         # unowned gameplay while the room is being configured.
         if self.quit or os.name != 'nt' or not kit_paths.INTEGRATED or self.emulator.alive() or self.busy('preboot'):
             return
-        patch = kit_install.installation_pnach()
+        patch = patch or kit_install.installation_pnach()
         if patch is None:
             return
         self.emulator.install_pnach(patch)
@@ -717,7 +772,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         with self.preboot_lock:
             if not self.preboot_current(owner):
                 return dict(cancelled=True)
-        problems = kit_ident.runtime_problems(info)
+        problems = kit_ident.runtime_problems(info, build=((owner['local'] or {}).get('identity') or {}).get('pcsx2'))
         if problems:
             code, what = problems[0]
             raise KitError(code, what=what, build=info.get('version'), tested=', '.join(kit_ident.TESTED_PINE))
@@ -771,14 +826,15 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         name = self.profile.get('name') or 'Player 1'
         self.lobby = kit_lobby.Lobby(host_name=name, catalog=view, rules=self.profile.get('rules'), lang=self.lang)
         self.lobby.room['drop_load_failures'] = self.cfg.get('drop_load_failures') is True
-        self.setup_prep()
         try:
-            self.listen()
+            self.listen()                                # first: without a room nothing else may start
         except KitError as error:
+            self.invalidate_preboot()                    # the idle game started for this room
             self.fail(error, phase='start')
             self.lobby = None
             self.role = None
             return
+        self.setup_prep()
         if self.cfg.get('room_name'):
             self.lobby.room['name'] = str(self.cfg['room_name'])[:64]
         self.lobby.bump()
@@ -797,8 +853,12 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             tcp.close()
             raise KitError('TTM-NET-14', what='TCP', port=port, details=str(error)) from None
         tcp.setblocking(False)
+        try:
+            self.udp = kit_net.HubSocket((self.args.bind, port), impairment=self.impairment())
+        except BaseException:
+            tcp.close()                              # else every later Host failed on this PC's own listener
+            raise
         self.listener = tcp
-        self.udp = kit_net.HubSocket((self.args.bind, port), impairment=self.impairment())
         main_ip, others = kit_win.lan_addresses()
         self.joinwith = dict(main=main_ip, others=others, port=port, default_port=port == DEFAULT_PORT)
         self.say(f'Room open on TCP and UDP port {port} ({main_ip}).')
@@ -849,8 +909,16 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
                     wire=manager.capability() if manager else None,
                     request=dict(delay=self.cfg.get('delay') or None),
                     lobby=dict(v=2, name=self.profile.get('name') or '', lang=self.lang, ui=self.args.ui or 'tk',
+                               rejoin=self.rejoin_token(),
                                catalog=dict(family=cat['family'], disc=cat['disc'],
                                             tables_sha256=cat['tables_sha256'])))
+
+    def rejoin_token(self):
+        """Guest: the token the host gave this PC when it last joined this same address (None: a first join)."""
+        r = getattr(self, 'rejoin', None)
+        if self.role == 'guest' and r and r.get('address') == self.cfg.get('host_address'):
+            return r.get('token')
+        return None
 
     def host_handshake(self, ch, source):
         a = self.args
@@ -896,11 +964,11 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         end = time.time() + a.timeout + 15
         rtt = None
         while rtt is None:
+            if time.time() > end:                        # also when frames keep arriving
+                raise KitError('TTM-NET-09', seconds=int(a.timeout), step='measuring the connection')
             try:
                 kind, message = ch.receive(1.0)
             except TimeoutError:
-                if time.time() > end:
-                    raise KitError('TTM-NET-09', seconds=int(a.timeout), step='measuring the connection') from None
                 continue
             except (ConnectionError, OSError) as error:
                 raise KitError('TTM-NET-13', why=f'the connection closed while measuring ({error})') from None
@@ -939,11 +1007,16 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             if level != 'refuse':
                 self.say(kit_ident.note_line(code, values))
         lob = hello.get('lobby') or {}
-        ident = self.lobby.join(lob.get('name') or '', lang=lob.get('lang') or 'en') if self.lobby else None
+        back = self.returning_member(lob.get('rejoin'))
+        ident = self.lobby.join((back or {}).get('name') or lob.get('name') or '',
+                                lang=lob.get('lang') or 'en') if self.lobby else None
         if ident is None:
             ch.try_send(type='REFUSE', codes=['TTM-NET-15'], **kit_codes.payload('TTM-NET-15'))
             ch.close_soon()
             return
+        if back and back.get('seat') is not None and self.lobby.phase == 'lobby' and \
+                self.lobby.owner_of(*back['seat']) is None and not self.lobby.claim(ident, *back['seat']):
+            self.say(f'{self.lobby.members[ident]["name"]} is back and plays its fighter again.')
         requested = None
         try:
             d = (hello.get('request') or {}).get('delay')
@@ -961,6 +1034,21 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.summary.setdefault('members', []).append(dict(id=ident, ip=ip, rtt=rtt, at=time.strftime('%H:%M:%S')))
         self.broadcast()
         self.member_joined_during_match(ident)
+
+    def returning_member(self, token):
+        """Host: {name, seat} when `token` is the one this room gave to a member that is still listed (its old
+        connection has not timed out yet: that ghost leaves now) or that left less than REJOIN_KEEP s ago."""
+        if not isinstance(token, str) or len(token) != 32 or not self.lobby:
+            return None
+        for old, m in list(self.members.items()):
+            if m.get('token') == token:
+                name = self.lobby.members.get(old, {}).get('name', old)
+                self.member_gone(old, said=f'{name} reconnected: its old connection is closed.')
+                break
+        t = now()
+        for key in [k for k, row in self.recent_left.items() if t - row['at'] > REJOIN_KEEP]:
+            del self.recent_left[key]
+        return self.recent_left.pop(token, None)
 
     # ---- guest: join ------------------------------------------------------------------------------------------------------
     def start_guest(self):
@@ -993,16 +1081,28 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
     def guest_handshake(self, ch, udp):
         a = self.args
         ch.send_preamble(kit_ident.PROTOCOL)
+        wait = min(a.timeout, HELLO_WAIT)                # a host that is there answers each step at once
         try:
-            theirs = ch.read_preamble(a.timeout)
+            theirs = ch.read_preamble(min(wait, PREAMBLE_WAIT))
         except TimeoutError:
-            raise KitError('TTM-NET-09', seconds=int(a.timeout), step='hello') from None
+            raise KitError('TTM-NET-09', seconds=int(min(wait, PREAMBLE_WAIT)), step='hello') from None
         except (ConnectionError, OSError) as error:
             raise KitError('TTM-NET-13', why=f'the connection closed during the hello ({error})') from None
         if theirs != kit_ident.PROTOCOL:
             ch.try_send(type='REFUSE', codes=['TTM-NET-01'])
             raise KitError('TTM-NET-01', mine=kit_ident.PROTOCOL, theirs=theirs)
-        hello = ch.expect('HELLO', a.timeout, 'hello')
+        hello = ch.expect('HELLO', wait, 'hello')
+        # judge the host's identity here, before sending ours: the refusal is then worded from THIS PC's side
+        # (the host's text, shown verbatim, said 'this PC' about the host)
+        early = kit_ident.compare(self.local['identity'], hello.get('identity') or {})
+        cat = ((hello.get('lobby') or {}).get('catalog') or {})
+        if cat.get('tables_sha256') and cat.get('tables_sha256') != self.local['catalog']['tables_sha256']:
+            early.append(('TTM-NET-06', 'refuse', dict(what='the fighter tables read from the two ISOs differ')))
+        refusals = [f for f in early if f[1] == 'refuse']
+        if refusals:
+            code, _, values = refusals[0]
+            ch.try_send(type='REFUSE', codes=[c for c, _, _ in refusals], code=code)   # the host stops waiting
+            raise KitError(code, **values)
         body = self.hello_body()
         auth = hello.get('auth') or {}
         if auth.get('required'):
@@ -1013,20 +1113,35 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             body['password_proof'] = kit_browser.proof(kit_browser.password_key(self.join_password, salt), nonce)
         self.join_password = ''
         ch.send_json(**body)
-        accept = ch.expect('ACCEPT', a.timeout, 'the host\'s answer')
+        accept = ch.expect('ACCEPT', wait, 'the host\'s answer')
         findings = kit_ident.compare(self.local['identity'], hello.get('identity') or {})
         rtt = kit_net.measure_rtt(udp, seconds=3.0, first_answer=min(10.0, a.timeout))
         if rtt is None:
             ch.try_send(type='UDPFAIL', seconds=10)
             raise KitError('TTM-NET-11', address=ch.peer_text, seconds=10, port=self.cfg.get('port'))
         ch.send_json(type='RTT', rtt=rtt)
-        welcome = ch.expect('WELCOME', a.timeout, 'the room')
+        welcome = ch.expect('WELCOME', wait, 'the room')
         return dict(channel=ch, udp=udp, hello=hello, accept=accept, rtt=rtt, findings=findings, welcome=welcome)
 
     def connect_failed(self, error):
+        if self.role != 'guest' or self.phase != 'check':    # the player cancelled meanwhile
+            return
+        if self.auto_rejoin and self.auto_rejoin['tries'] < REJOIN_TRIES and \
+                not isinstance(error, kit_net.RemoteRefusal):
+            self.say(f'Joining again did not work yet ({getattr(error, "code", type(error).__name__)}).')
+            self.role = None
+            self.set_phase('start')
+            self.note('notice.rejoining')
+            return
+        rejoin, self.auto_rejoin = self.auto_rejoin, None
+        if rejoin and not isinstance(error, kit_net.RemoteRefusal):
+            # the last try of the automatic rejoin: what happened to the room, not how to open a port
+            error = KitError('TTM-NET-19', seconds=int(now() - rejoin['since']))
         if isinstance(error, kit_net.RemoteRefusal):
             m = error.message
             code = (m.get('codes') or ['TTM-NET-17'])[0]
+            if code not in kit_codes.CODES:              # a newer host's code: never a KeyError here
+                code = 'TTM-NET-13'
             if m.get('en'):
                 self.error = dict(code=code, en=m.get('en'), es=m.get('es') or m.get('en'),
                                   remedies=list(kit_codes.REMEDIES.get(code, ())))
@@ -1040,6 +1155,12 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.role = None
 
     def after_connect(self, r):
+        if self.role != 'guest' or self.phase != 'check':
+            # the player cancelled while the handshake ran: do not enter the room after all
+            r['channel'].try_send(type='BYE', why='leave')
+            r['channel'].close_soon()
+            r['udp'].close()
+            return
         hello = r['hello']
         for code, level, values in r['findings']:
             if level != 'refuse':
@@ -1050,12 +1171,116 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.net = dict(channel=r['channel'].blocking(), name=kit_lobby.chat_text(lob.get('name') or 'host')[:32],
                         rtt=r['rtt'], rtt_ms=r['rtt'].get('median'), token=r['accept'].get('token'), last_ping=0.0,
                         wire=hello.get('wire'))
+        self.rejoin = dict(address=self.cfg.get('host_address'), token=r['accept'].get('token'))
+        if self.auto_rejoin:
+            self.say('Back in the room.')
+            self.auto_rejoin = None
         self.lobby = None
         self.say(f'Joined the room of {self.net["name"] or "the host"} as {r["welcome"].get("name")} (round trip '
                  f'{r["rtt"]["median"]} ms).')
         self.summary.update(host=self.net['name'], rtt=r['rtt'], me=self.me,
                             findings=[dict(code=c, level=lvl) for c, lvl, _ in r['findings']])
         self.set_phase('lobby')
+        # the patch every PC of this room runs is the host's: have it before the first match, and start this
+        # PC's idle PCSX2 with it
+        named = ((hello.get('identity') or {}).get('patches') or {}).get('pnach_sha256') or []
+        self.host_patch = named[0] if len(named) == 1 and SHA256_HEX.fullmatch(str(named[0])) else None
+        if self.host_patch and self.host_patch not in kit_ident.pnach_files():
+            self.want_patch(self.host_patch, then='preboot')
+        else:
+            self.preboot_game(self.host_patch)
+
+    # ---- the room's runtime patch (the host's) -----------------------------------------------------------------------
+    def want_patch(self, sha, then=None):
+        """Guest: ask the host for the patch file `sha` (once); then: what waits for it ('preboot', 'load')."""
+        if not SHA256_HEX.fullmatch(str(sha)):
+            return False
+        w = self.patch_wanted
+        if w is not None and w['sha'] == sha:
+            if then == 'load' or w['then'] is None:
+                w['then'] = then
+            return True
+        self.patch_wanted = dict(sha=sha, since=now(), then=then, parts={}, count=None)
+        self.say(f'Asking the host for the room\'s game patch ({sha[:12]}).')
+        return self.send(type='PATCH_WANT', sha256=sha)
+
+    def msg_PATCH_WANT(self, ident, m):
+        """Host: a guest lacks a patch this PC owns (its own installation's): send it, compressed, in parts."""
+        sha = str(m.get('sha256'))
+        if self.role != 'host' or ident not in self.members or not SHA256_HEX.fullmatch(sha):
+            return
+        path = kit_ident.pnach_files().get(sha)
+        if path is None or self.busy(f'patch-{ident}'):
+            if path is None:
+                self.send_to(ident, type='PATCH', sha256=sha, missing=True)
+            return
+        channel = self.members[ident]['channel']
+
+        def work():
+            data = path.read_bytes()
+            found = kit_ident.patch_problem(data, sha)
+            if found:
+                raise ValueError(f'{path.name}: {found}')
+            packed = zlib.compress(data, 6)
+            parts = [packed[i:i + PATCH_PART] for i in range(0, len(packed), PATCH_PART)]
+            for index, part in enumerate(parts):
+                channel.send_json(type='PATCH', sha256=sha, index=index, count=len(parts), size=len(data),
+                                  data=base64.b64encode(part).decode('ascii'))
+            return len(packed)
+        self.job(f'patch-{ident}', work,
+                 then=lambda n: self.say(f'Sent this room\'s game patch to member {ident} ({n / 1024:.0f} KB).'),
+                 fail=lambda error: self.say(f'The game patch could not be sent to member {ident}: {error}'))
+
+    def msg_PATCH(self, ident, m):
+        """Guest: one part of the patch it asked for; the whole file is checked before it is kept."""
+        w = self.patch_wanted
+        if self.role != 'guest' or w is None or m.get('sha256') != w['sha']:
+            return
+        if m.get('missing'):
+            self.patch_failed('the host does not have that patch file')
+            return
+        try:
+            index, count, size = int(m['index']), int(m['count']), int(m['size'])
+            if not 0 < count <= 4096 or not 0 <= index < count or not 0 < size <= kit_ident.PATCH_MAX or \
+                    (w['count'] is not None and w['count'] != count):
+                raise ValueError('a field is out of range')
+            part = base64.b64decode(m['data'], validate=True)
+            if not 0 < len(part) <= 2 * PATCH_PART:
+                raise ValueError('a part has the wrong size')
+        except (KeyError, TypeError, ValueError) as error:
+            self.patch_failed(f'the host sent a malformed part ({error})')
+            return
+        w['count'] = count
+        w['parts'][index] = part
+        if len(w['parts']) < count:
+            return
+        try:
+            inflater = zlib.decompressobj()
+            data = inflater.decompress(b''.join(w['parts'][i] for i in range(count)), size + 1)
+            if len(data) != size or inflater.unconsumed_tail or not inflater.eof:
+                raise ValueError('it does not unpack to the announced size')
+            kit_ident.store_patch(data, w['sha'])
+        except (zlib.error, ValueError, OSError, KitError) as error:
+            self.patch_failed(error.values.get('what') if isinstance(error, KitError) else str(error))
+            return
+        self.patch_wanted = None
+        self.say(f'Got the room\'s game patch from the host ({size / 1e6:.1f} MB, {w["sha"][:12]}).')
+        if w['then'] == 'load' and self.match and self.phase in ('sending', 'loading'):
+            self.load_match()
+        elif w['then'] == 'preboot' and self.phase in ('lobby', 'check') and self.role == 'guest':
+            self.preboot_game(w['sha'])
+
+    def patch_failed(self, why):
+        w, self.patch_wanted = self.patch_wanted, None
+        self.say(f'The room\'s game patch did not arrive: {why}.')
+        if w and w['then'] == 'load' and self.match and self.phase in ('sending', 'loading'):
+            self.load_failed(KitError('TTM-NET-24', what=f'The game patch this room uses ({w["sha"][:12]}) could '
+                                                         f'not be fetched from the host: {why}.'))
+
+    def tick_patch(self):
+        w = self.patch_wanted
+        if w is not None and now() - w['since'] > PATCH_WAIT:
+            self.patch_failed(f'nothing came in {int(PATCH_WAIT)} s')
 
     # ---- liveness ----------------------------------------------------------------------------------------------------------
     def send(self, **message):
@@ -1075,6 +1300,8 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
 
     def liveness(self):
         t = now()
+        last, self.last_liveness = getattr(self, 'last_liveness', t), t
+        held_up = t - last > LOOP_GAP                # this loop was busy: what arrived meanwhile is unread
         every = PING_LOBBY if self.phase in ('lobby', 'start', 'check') else PING_FIGHT
         for ident, ch in self.channels():
             entry = self.members.get(ident) if self.role == 'host' else self.net
@@ -1083,11 +1310,14 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             if not ch.closed and t - entry.get('last_ping', 0) >= every and not ch.transfers:
                 entry['last_ping'] = t
                 ch.try_send(type='PING', t=time.time())
+            if held_up and not ch.closed:
+                ch.last_rx = max(ch.last_rx, t - SILENCE / 2)   # give it half the limit to show life again
+                continue
             if ch.closed or ch.silent(t) > SILENCE:
                 if self.role == 'host':
                     self.member_gone(ident, KitError('TTM-NET-13', why='its connection was lost'))
                 else:
-                    self.host_gone(KitError('TTM-NET-13', why='the connection to the host was lost'))
+                    self.host_gone(KitError('TTM-NET-13', why='the connection to the host was lost'), lost=True)
 
     def udp_idle(self):
         if self.role == 'host':
@@ -1109,20 +1339,33 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             return
         self.cancel_transfers(ident)
         name = self.lobby.members.get(ident, {}).get('name', f'member {ident}') if self.lobby else str(ident)
+        if self.lobby and m.get('token'):                # it may come back: its name and fighter wait for it
+            self.recent_left[m['token']] = dict(name=name, seat=self.lobby.slot_of(ident), at=now())
         self.say(said or f'{name} left the room{"" if error is None else f" ({error})"}.')
         try:
             m['channel'].close_soon()
         except OSError:
             pass
         self.udp.forget(ident)
-        self.member_left_match(ident)
+        try:
+            self.member_left_match(ident)
+        except Exception:  # noqa: BLE001 - the member still leaves the room (it stayed listed, unreachable)
+            self.say(f'Taking {name} out of the match failed: ' + traceback.format_exc())
         if self.lobby:
             self.lobby.leave(ident)
             self.broadcast()
 
-    def host_gone(self, error, said=None):
-        """Guest: the host closed the room (BYE) or the connection was lost: back to Start."""
+    def host_gone(self, error, said=None, lost=False):
+        """Guest: the host closed the room (BYE) or the connection was lost: back to Start. lost: nobody chose
+        this (the connection dropped): the kit joins the same room again by itself (tick_rejoin)."""
+        address = self.cfg.get('host_address')
+        if lost and address and self.role == 'guest' and not self.quit:
+            self.auto_rejoin = dict(address=address, tries=0, at=now() + 1.5, since=now())
+        elif not lost:
+            self.auto_rejoin = None                      # the host closed, a kick, or the player left
         self.invalidate_preboot()
+        self.patch_wanted = None
+        self.host_patch = None
         self.say(said or str(error))
         if self.phase in ('fight', 'loading') and self.session is not None:
             self.abort_game()
@@ -1138,7 +1381,32 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             self.udp = None
         self.role = None
         self.error = error.payload() if isinstance(error, KitError) else None
+        if self.auto_rejoin:
+            self.error = None                            # not a failure yet: the kit is on its way back
+            self.say('The connection to the host was lost: joining the room again...')
         self.set_phase('start')
+        if self.auto_rejoin:
+            self.note('notice.rejoining')
+
+    def tick_rejoin(self):
+        """Guest: join the room again after a lost connection (a few tries), then say so plainly."""
+        r = self.auto_rejoin
+        if r is None or self.phase != 'start' or self.busy('setup') or self.busy('connect') or now() < r['at']:
+            return
+        if r['tries'] >= REJOIN_TRIES:
+            self.auto_rejoin = None
+            self.fail(KitError('TTM-NET-19', seconds=int(now() - r['since'])))
+            return
+        r['tries'] += 1
+        r['at'] = now() + REJOIN_EVERY
+        self.say(f'Joining {r["address"]} again (try {r["tries"]} of {REJOIN_TRIES}).')
+        self.cmd_join(dict(address=r['address'], password=getattr(self, 'rejoin_password', ''), auto=True))
+
+    def cmd_test_drop(self, c):
+        """Test only (--test-hooks): this guest's connection to the host breaks (the socket is closed)."""
+        if self.args.test_hooks and self.role == 'guest' and self.net:
+            self.say('TEST: closing the connection to the host abruptly')
+            self.net['channel'].close()
 
     # ---- messages ----------------------------------------------------------------------------------------------------------
     def on_frame(self, ident, kind, payload):
@@ -1289,6 +1557,22 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             self.lobby.bump(dict(code='TTM-NET-29', key='notice.claim_refused', args=dict(what=found[0])))
         self.broadcast()
 
+    def cmd_claim_team(self, c):
+        """A member joins a team: it plays that team's first free fighter."""
+        self.request('CLAIM_TEAM', team=c.get('team'))
+
+    def msg_CLAIM_TEAM(self, ident, m):
+        if self.role != 'host' or not self.lobby or self.lobby.phase != 'lobby':
+            return
+        try:
+            team = int(m.get('team'))
+        except (TypeError, ValueError):
+            return
+        found = self.lobby.claim_team(ident, team)
+        if found:
+            self.lobby.bump(dict(code='TTM-NET-29', key='notice.claim_refused', args=dict(what=found[0])))
+        self.broadcast()
+
     def cmd_lock(self, c):
         """Host: lock (or unlock) a fighter: nobody may claim it, it stays a CPU."""
         if not self.host_edit():
@@ -1393,11 +1677,26 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             self.engine_changed()
         self.broadcast()
 
+    def cmd_teams(self, c):
+        """Host: the number of teams (2..5)."""
+        if not self.host_edit():
+            return
+        count = c.get('count')
+        found = self.lobby.set_team_count(count, self.local['view']) if type(count) is int else \
+            ['two to five teams can be played']
+        if found:
+            self.lobby.bump(dict(code='TTM-NET-29', key='notice.invalid_rule', args=dict(what=found[0])))
+        else:
+            self.keep_rules()
+            self.engine_changed()
+        self.broadcast()
+
     def cmd_sizes(self, c):
         if not self.host_edit():
             return
         sizes = c.get('sizes')
-        if isinstance(sizes, list) and len(sizes) == 2 and all(isinstance(n, int) for n in sizes):
+        if isinstance(sizes, list) and len(sizes) == self.lobby.team_count() and \
+                all(type(n) is int for n in sizes):
             self.lobby.set_sizes(sizes, self.local['view'])
             self.engine_changed()
             self.broadcast()
@@ -1432,6 +1731,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         self.dirty = True
 
     def cmd_leave(self, c):
+        self.auto_rejoin = None
         self.say('Leaving.')
         if self.role == 'guest':
             self.send(type='BYE', why='leave')
@@ -1513,6 +1813,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             self.prep.verified_iso = getattr(self.local.get('wire'), 'iso', None)
             self.prep.engine = self.wanted_engine()
             self.prep.progress = self.on_prep_progress
+            self.prep.lang = self.lang                   # its own log lines in this PC's language
         self.say(f'Matches are made by this PC\'s Tag Team Mod {install["version"]} ({install["build"]} build), in a '
                  f'private copy on PINE {self.prep.slot}.')
         self.start_warm()
@@ -1520,6 +1821,9 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
     def start_warm(self):
         if self.prep is None or any(self.busy(n) for n in ('warm', 'prep', 'prebuild')):
             return
+        closer = getattr(self, 'prep_closer', None)
+        if closer is not None and closer.is_alive():
+            return                                   # the previous room's copy is still closing (rewarm_if_cold retries)
         self.lobby.warm = dict(state='warming', eta_s=sum(kit_prepare_auto.ETA[k] for k in
                                                         kit_prepare_auto.WARM_STEPS), why=None)
         self.dirty = True
@@ -1625,7 +1929,11 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         idle_ready = self.phase == 'lobby' and self.prefetch_meta is not None and \
             self._prefetch_meta_current(self.prefetch_meta)
         if self.role == 'host' and (self.phase in ('loading', 'fight', 'results') or idle_ready) and self.prep is not None and \
-                self.prep.state == 'warm' and not any(self.busy(n) for n in ('warm', 'prep', 'prebuild', 'suspend')):
+                self.prep.state == 'warm' and not any(self.busy(n) for n in ('warm', 'prep', 'prebuild', 'suspend')) and \
+                now() - getattr(self, 'last_suspend_try', 0.0) >= SUSPEND_RETRY:
+            # a copy that cannot be suspended (it has no process, or this platform cannot) stays 'warm': without
+            # the pause this started a thread on every pass of the loop for the whole fight
+            self.last_suspend_try = now()
             self.job('suspend', self.prep.suspend, then=self.prep_suspended, fail=lambda e: None)
         p = self.prep_progress
         if self.role != 'host' or p is None or p is self.prep_sent:
@@ -1664,15 +1972,28 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             self.say(f'The match-making copy is paused until it is needed ({len(pids)} processes).')
         self.sync_warm()
 
-    def close_prep(self):
+    def close_prep(self, wait=0.0):
+        """Close the match-making copy without holding the session's loop: its own lock may be held by a warm-up
+        or a preparation for a long time (Leave froze the window until that ended). wait: seconds the caller is
+        willing to wait (shutdown); the copy's processes are ended first either way."""
         self.cancel_prebuild(cancel_running=True)
-        if self.prep is not None:
-            self.prep.cancel.set()
+        prep = self.prep
+        if prep is None:
+            return
+        self.prep_gen += 1                           # a Start still waiting for the copy belongs to the old room
+        prep.cancel.set()
+
+        def work():
             try:
-                self.prep.close()
+                prep.close(final=True)
             except Exception:  # noqa: BLE001 - closing on the way out
                 pass
-            self.say('Closed the match-making copy.')
+        closer = threading.Thread(target=work, daemon=True, name='prep-close')
+        closer.start()
+        self.prep_closer = closer
+        if wait:
+            closer.join(wait)
+        self.say('Closed the match-making copy.')
 
     def cmd_test_prep(self, c):
         """Test only (--test-hooks): options of the next preparation ({"ko": true}: team 2 starts nearly beaten)."""
@@ -1682,6 +2003,9 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             if c.get('ko') and isinstance(divisor, int) and not isinstance(divisor, bool) and 2 <= divisor <= 64 and \
                     divisor != 8:
                 self.test_prep['ko_divisor'] = divisor
+            keep = c.get('ko_keep')
+            if c.get('ko') and type(keep) is int and 0 < keep < 5:
+                self.test_prep['ko_keep'] = keep          # three to five teams: the team that stays healthy
             if c.get('bad_costume'):
                 self.test_prep['bad_costume'] = True
             if c.get('leaders') and not c.get('ko'):
@@ -1689,6 +2013,18 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
             if c.get('ki'):
                 self.test_prep['test_ki'] = True
             self.say(f'TEST: preparation options {self.test_prep}')
+
+    def cmd_test_net(self, c):
+        """Test only (--test-hooks): this PC's UDP impairment while it runs ({"loss": 1.0} cuts UDP alone)."""
+        if not self.args.test_hooks or self.udp is None:
+            return
+        impair = self.udp.impair
+        for key in ('loss', 'latency', 'jitter'):
+            if isinstance(c.get(key), (int, float)) and not isinstance(c.get(key), bool):
+                setattr(impair, key, float(c[key]))
+        impair.active = bool(impair.latency or impair.jitter or impair.loss)
+        self.say(f'TEST: UDP impairment now latency {impair.latency} ms, jitter {impair.jitter} ms, loss '
+                 f'{impair.loss}')
 
     # ---- overlay ----------------------------------------------------------------------------------------------------------
     def show_overlay(self, key, **args):
@@ -1709,6 +2045,11 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
 
     # ---- shutdown -----------------------------------------------------------------------------------------------------------
     def shutdown(self, reason=''):
+        try:
+            # a Play online started from now on waits for this process to end instead of attaching to it
+            self.ipc.write_info(kit_paths.DATA / 'session.json', closing=True)
+        except OSError:
+            pass
         self.invalidate_preboot()
         self.cancel_transfers()
         self.stop_prefetch_receive()
@@ -1727,7 +2068,7 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
         if self.emulator is not None and self.emulator.pid:
             if self.emulator.stop():
                 self.say('Closed the game window this session started.')
-        self.close_prep()
+        self.close_prep(wait=20.0)
         manager = (self.local or {}).get('wire')
         if manager:
             manager.close()
@@ -1752,5 +2093,6 @@ class Controller(kit_hub.HubMixin, kit_transfer.TransferMixin, kit_prebuild.Preb
 
 # messages only the host sends (a host ignores them from a guest)
 HOST_ONLY = ('BULK', 'LOBBY', 'WELCOME', 'PREPARE', 'PROGRESS', 'PREP_FAILED', 'MATCH', 'GO', 'RESYNC', 'RESULT', 'VOTE_STATE',
+             'PATCH',
              'RETRY', 'TO_LOBBY', 'JOINFIGHT', 'END_FIGHT', 'PREFETCH', 'PREFETCH_END', 'PREFETCH_ABORT',
              'TRANSFER_OFFER', 'TRANSFER_END', 'TRANSFER_ABORT')

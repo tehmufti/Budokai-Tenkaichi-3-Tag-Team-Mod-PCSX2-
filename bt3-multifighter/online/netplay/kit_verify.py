@@ -24,6 +24,10 @@ FULL words (verify_sha = sha256 of their canonical JSON):
   netplay                netplay_core and netplay_view magic / layout words; (kit 2.1) the seat table (slot s plays
                          physical s for every human), every fighter's human / CPU flag at the start, the human
                          extras' special-move admission bits (extra_specials CONTROL+20)
+  squads                 ONLY in a match with three to five teams (battle_mode_policy's SQUAD block 0x0712F100):
+                         teams, count, the team of each of the twelve engine slots, the layout version, the five
+                         member masks and the human mask. A match without the table has no such word, so its
+                         words (and verify_sha) are what they always were.
   clock (FULL only)      battle object +272 (elapsed seconds and milliseconds): 0, so the fight gets the full time
 Native addresses are translated by the installation's reviewed disc adapter before validation.
 """
@@ -51,6 +55,7 @@ SPECIALS_HUMANS = 0x0744F000 + 20          # extra_specials CONTROL+20: the huma
 START_GATE = 0x073E1C00                    # team_start_gate.CONTROL (+0x40 + 4i: fighter i's CPU flag at the start)
 COM_CODES = (0, 6, 13, 21, 29)
 HUB_CONTROL, HUB_MAGIC = 0x06406000, 0x31425548   # hub_mode.CONTROL ('HUB1'): a 'hub' match has it installed
+SQUAD, SQUAD_MAGIC, ABSENT = 0x0712F100, 0x31445153, 0xFF   # battle_mode_policy.SQUAD ('SQD1'): three to five teams
 import kit_adapter
 ROSTER_COUNT = kit_adapter.roster_count()
 AVAILABLE_BYTES = (ROSTER_COUNT + 63) // 64 * 8
@@ -98,7 +103,7 @@ def words(ram, static=False):
             [(START_GATE + 0x80, 4 * n)] + [(SEAT_CONTROL, 8), (SEAT_CONTROL + 0x10, 40), (SPECIALS_HUMANS, 4)] + \
             [(d, 4) for d in DORMANT] + [(NETPLAY_CONTROL, 4), (NETPLAY_CONTROL + 0x74, 4), (VIEW_CONTROL, 16)] + \
             [(NETPLAY_CONTROL + 0x1C, 4), (NETPLAY_CONTROL + 0x78, 4), (NETPLAY_CONTROL + 0xF4, 8)] + \
-            [(HUB_CONTROL, 4)]
+            [(HUB_CONTROL, 4), (SQUAD, 0x40)]
     if not static and ok(battle_ptr):
         extra.append((battle_ptr + 272, 4))
     got = iter(ram.read_ranges(extra))
@@ -117,6 +122,7 @@ def words(ram, static=False):
     nc_mask, nc_end_rule = _u(next(got)), _u(next(got))
     nc_end_state, nc_options = struct.unpack('<2I', next(got))
     hub_magic = _u(next(got))
+    squad = next(got)
     # a leader is human when its CPU flag is 0: the start gate's table while the gate holds that fighter, else the
     # fighter's own flag
     human = []
@@ -151,6 +157,10 @@ def words(ram, static=False):
                             seats=seats if list(seat_head) == [SEAT_MAGIC, 1] else None,
                             specials_humans=specials_humans),
                hub=hub_magic == HUB_MAGIC)
+    if _u(squad) == SQUAD_MAGIC:                      # three to five teams (no key at all otherwise)
+        out['squads'] = dict(teams=_u(squad, 8), count=_u(squad, 12), team_of=list(squad[16:28]),
+                             layout=_u(squad, 28), members=list(struct.unpack_from('<5I', squad, 32)),
+                             humans=_u(squad, 52))
     if not static:
         out['clock'] = _u(next(got)) if ok(battle_ptr) else None
     return out
@@ -257,6 +267,21 @@ def problems(w, spec, fixup_code=None, level='full'):
     mask = kit_spec.slot_mask(spec) or 1
     if w['netplay'].get('mask') != mask:
         out.append(f'netplay slot mask {w["netplay"].get("mask")} (expected {mask})')
+    table = w.get('squads')
+    if spec.get('team_count'):
+        placed = sorted((2 * j + s, f.get('team')) for s, team in enumerate(spec['teams'])
+                        for j, f in enumerate(team))
+        team_of = [ABSENT] * 12
+        for i, team in placed:
+            team_of[i] = team
+        want = dict(teams=spec['team_count'], count=engine_count(spec), team_of=team_of,
+                    layout=spec.get('squad_layout'),
+                    members=[sum(1 << i for i, team in placed if team == k) for k in range(5)],
+                    humans=kit_spec.slot_mask(spec))
+        if table != want:
+            out.append(f'the team table is {table} (expected {want})')
+    elif table is not None:
+        out.append('a team table is installed in a match without teams')
     if w.get('hub') != (spec.get('type') == 'hub'):
         out.append('the in-level hub is ' + ('missing' if spec.get('type') == 'hub' else 'installed in a versus match'))
     if 'clock' in w and w['clock'] not in (0, None):

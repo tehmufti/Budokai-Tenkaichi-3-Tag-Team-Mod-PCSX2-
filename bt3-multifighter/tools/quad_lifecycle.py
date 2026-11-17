@@ -66,13 +66,24 @@ def frame(previous):
     a.r(0x2B,8,11,25);a.branch(4,8,0,'next');a.addiu(11,11,1);a.sw(11,19,F['held']);a.jump('next')
     a.label('released');a.sw(0,19,F['held']);a.r(0x2B,8,11,25);a.branch(5,8,0,'next')
     a.move(26,0);a.jump('scan_start')
-    a.label('auto_scan');a.addiu(26,0,1)
+    # Three to five teams: the automatic choice makes one lap over the seat's own team (k0 = 2), then the usual
+    # lap over everyone (k0 = 1).
+    team=modes.squad_feature('successor')
+    a.label('auto_scan');a.addiu(26,0,2 if team else 1)
     a.label('scan_start');a.move(23,0);a.move(27,24)
-    a.label('scan');a.addiu(23,23,1);a.r(0x2B,8,17,23);a.branch(5,8,0,'next')
+    a.label('scan');a.addiu(23,23,1);a.r(0x2B,8,17,23)
+    if team:
+        a.branch(4,8,0,'lap');a.addiu(8,0,2);a.branch(5,26,8,'next')
+        a.addiu(26,0,1);a.move(23,0);a.move(24,27);a.jump('scan')
+        a.label('lap')
+    else:a.branch(5,8,0,'next')
     a.addiu(24,24,1);a.r(0x2B,8,24,17);a.branch(5,8,0,'candidate');a.move(24,0)
     a.label('candidate');a.move(4,24);a.call(spectator.LOOKUP);a.branch(4,3,0,'scan')
     a.branch(4,26,0,'publish')
     a.li(8,feed.CONTROL+spec.DEAD);a.r(0,9,0,24,2);a.r(0x2D,8,8,9);a.lw(8,8);a.branch(5,8,0,'scan')
+    if team:
+        a.addiu(8,0,2);a.branch(5,26,8,'publish')
+        modes.emit_team(a,8,24);modes.emit_team(a,9,22);a.branch(5,8,9,'scan')
     a.label('publish');a.li(8,views.SUBJECTS);a.r(0,9,0,18,2);a.r(0x2D,8,8,9);a.sw(24,8)
     a.label('next');a.addiu(18,18,1);a.addiu(8,0,4);a.branch(5,18,8,'seat')
     # Legacy camera/HUD helpers still consume the first two subjects.

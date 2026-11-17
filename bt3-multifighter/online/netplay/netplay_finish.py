@@ -81,7 +81,10 @@ def blocks(ram, spec, view_blocks):
         raise ValueError('Online view hook changed')
     row['data_hex'] = struct.pack('<I', nv.jal(CODE)).hex()
     roster_mask = sum(1 << (2*j+t) for t,team in enumerate(spec['teams']) for j in range(len(team)))
-    terminal_teams = int(spec.get('mode') == 'teams' and spec.get('type', 'versus') == 'versus')
+    # three to five teams run on the free-for-all engine: one native row without a living fighter is not the end
+    # while two teams share the other row, so such a match ends like a free-for-all
+    terminal_teams = int(spec.get('mode') == 'teams' and spec.get('type', 'versus') == 'versus' and
+                         not spec.get('team_count'))
     return [dict(address=p, expected_hex=bytes(ram[p:p+len(d)]).hex(), data_hex=d.hex(),
                  purpose='Park unequal online matches after the final winner hash')
             for p, d in [(CODE, code()), (CONTROL, struct.pack('<4I', MAGIC, 0, roster_mask, terminal_teams))]]

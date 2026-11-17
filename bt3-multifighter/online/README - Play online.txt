@@ -24,6 +24,14 @@ fighters are CPU. The host selects characters, costumes, stage, music and rules
 and starts after the players are ready. Each PC shows its own fighter's view.
 Either team may have one to five fighters, independently (2v1, 5v3, etc.), with
 at most ten fighters and ten human players. Free-for-all supports 2-10 fighters.
+Team Battle can have two to five teams: the host picks "Teams 2 3 4 5" and the
+size of each team (one to five fighters, ten in all). With three to five teams
+each team has its own colour and number on every PC; press "Join this team" to
+play a free fighter of that team (or claim a fighter directly). Teammates cannot
+hurt or lock on to each other, CPU fighters attack every other team, and the
+last team standing wins: the result names the winning team. Going back to two
+teams keeps every player in a fighter. Everyone in the room needs the same Tag
+Team Mod version (an older one is refused when it joins).
 A room holds up to sixteen members, including spectators. A departing player's
 fighter becomes a CPU, so the match can continue.
 
@@ -91,13 +99,24 @@ the guest enters it in the Join dialog. Passwords are not saved in the profile
 or logs. Server-browser, room-listing and directory controls are hidden for now;
 rooms opened from the player window are not advertised. Join by address.
 
+IF A PLAYER DROPS
+A player whose PC stops answering during a fight (its game hangs, it sleeps, its
+connection dies) is taken out after about twelve seconds: the fighter becomes a
+CPU and everyone else plays on. A guest that loses the connection joins the same
+room again by itself (four tries); coming back within three minutes gives it
+its name and, in the match room, its fighter back. Joining while a fight runs
+watches that fight. If the host's own game closes, the fight ends as No contest
+and the room stays open. The mod's menu language may differ between players:
+every PC then shows the host's in-game mod texts for that match.
+
 CONNECTIVITY AND TROUBLESHOOTING
 Allow Python through the firewall. For direct internet hosting, forward the
 chosen game port (default 47400), BOTH TCP and UDP, or use a VPN such as Tailscale,
 ZeroTier or Radmin VPN. TCP carries rooms/checkpoints; UDP carries frame inputs.
 A directory listing alone does not make a host reachable through NAT.
 
-TTM-NET-01/02: install the same release on all PCs. TTM-NET-06: use identical
+TTM-NET-01/02/34: install the same release on all PCs (34 names both versions:
+the older one runs the updater). TTM-NET-06: use identical
 disc contents. TTM-NET-17: correct the room password or the indicated rule.
 TTM-NET-10/11: check address, firewall and both port protocols. TTM-NET-23/31:
 retry preparation; if it repeats, preserve the run report. A desync is reported

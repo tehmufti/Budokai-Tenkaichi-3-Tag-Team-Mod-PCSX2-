@@ -729,6 +729,13 @@ def subject(enhanced=True):
     a.label('ffa');a.li(9,result.RESULT);a.lw(9,9);a.branch(4,9,0,'check')
     a.lw(9,8,44);a.r(0x2B,10,9,18);a.branch(4,10,0,'check');a.move(19,9)
     a.label('check');a.move(4,19);a.call(continuity.LOOKUP);a.branch(5,3,0,'publish')
+    if modes.squad_feature('successor'):
+        # Three to five teams: a living fighter of this view's own team (the team of its row's first fighter)
+        # before anyone else.
+        a.move(20,0)
+        a.label('team_scan');modes.emit_team(a,8,20);modes.emit_team(a,9,16);a.branch(5,8,9,'team_next')
+        a.move(4,20);a.call(continuity.LOOKUP);a.branch(5,3,0,'found')
+        a.label('team_next');a.addiu(20,20,1);a.branch(5,20,18,'team_scan')
     a.move(20,0)
     a.label('scan');a.addiu(8,0,modes.COOP);a.branch(5,17,8,'candidate');a.i(12,8,20,1);a.branch(5,8,0,'next')
     a.label('candidate');a.move(4,20);a.call(continuity.LOOKUP);a.branch(5,3,0,'found')

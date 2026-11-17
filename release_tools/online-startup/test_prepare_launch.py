@@ -71,9 +71,21 @@ class LaunchTests(unittest.TestCase):
         kit_win.launch.assert_not_called()
 
     def test_occupied_port_refuses_before_start_and_does_not_kill_owner(self):
+        # another program serves the port: refused, and that program is left alone
         kit_win.listener_pid.side_effect = None; kit_win.listener_pid.return_value = 333
+        kit_win.process_path.return_value = str(self.root / 'somebody-else/pcsx2-qt.exe')
         with self.assertRaises(Exception): launch.launch(self.copy, self.ident)
         kit_win.launch.assert_not_called(); kit_win.kill_tree.assert_not_called()
+
+    def test_a_leftover_private_copy_on_the_port_is_ended_and_the_launch_goes_on(self):
+        # the copy of a session that was killed still runs hidden: it is this kit's own executable
+        kit_win.listener_pid.side_effect = [333, None, None, 222]
+        with patch.object(kit_win, 'resume_pids'), patch.object(kit_win, 'same_path',
+                                                                side_effect=lambda a, b: Path(a) == Path(b)):
+            self.assertEqual(launch.launch(self.copy, self.ident), 222)
+        self.assertEqual(kit_win.kill_tree.call_args_list[0].args, (333,))
+        self.assertEqual(kit_win.kill_tree.call_args_list[0].kwargs['exe'], self.dest / 'game/runtime28/pcsx2-qt.exe')
+        self.assertEqual(len(kit_win.kill_tree.call_args_list), 1)
 
     def test_changed_immutable_identity_refuses_before_launch(self):
         cache.identity.return_value = {'changed': True}

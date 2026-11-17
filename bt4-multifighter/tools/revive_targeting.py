@@ -45,7 +45,11 @@ def eligible_code():
     a=Assembler(ELIGIBLE)
     # Enemy targets are the common per-update path. They need no native call
     # or stack traffic from this additional eligibility check.
-    a.branch(4,4,5,'no_leaf');a.r(0x26,2,4,5);a.i(12,2,2,1);a.branch(5,2,0,'no_leaf')
+    if policy.squad_feature('revive_lockon'):
+        # Three to five teams: an ally is a fighter of the same team. t0/t1 are saved by every caller (emit_check).
+        policy.emit_ally(a,4,5,'no_leaf',t0=8,t1=9)
+    else:
+        a.branch(4,4,5,'no_leaf');a.r(0x26,2,4,5);a.i(12,2,2,1);a.branch(5,2,0,'no_leaf')
     a.addiu(29,29,-0xC0)
     for i,reg in enumerate(saved):a.i(63,reg,29,i*8)
     a.move(16,4);a.move(17,5)
@@ -112,7 +116,7 @@ def build_memory(ram,settings=None,source='<prepared>'):
     manager,count=u(core.ACTORS),u(core.MODE+4)
     if (u(revive.CONTROL+4),u(revive.CONTROL+8))!=(manager,count):
         raise ValueError('Revival targeting belongs to another match')
-    if u(revive.CONTROL+12)==policy.FFA:return dict(blocks=[])
+    if u(revive.CONTROL+12)==policy.FFA and not policy.squad_feature('revive_lockon'):return dict(blocks=[])
     if count not in policy.ACTOR_COUNTS:raise ValueError('Invalid revival targeting actor count')
     code=eligible_code();dead=dead_target_code();control=struct.pack('<4I',MAGIC,VERSION,manager,count)
     original=death_call(A(0x1DA9D0));hook=death_call(DEAD_TARGET)

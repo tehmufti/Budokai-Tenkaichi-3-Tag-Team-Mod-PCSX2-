@@ -1,4 +1,5 @@
-"""Savestate files with the Python standard library only (zipfile + zlib).
+"""Savestate files with the Python standard library (zipfile + zlib), plus `zstandard` when a state that PCSX2
+itself saved has to be read (PCSX2 2.8 writes Zstandard entries, ZIP method 93, which zipfile cannot read).
 
 A netplay match differs between input delays (and stall limits) in one netplay_core CONTROL word each, so the kit
 ships / prepares one netplay state per match (input delay 1) and makes the state for any other delay by rewriting
@@ -8,10 +9,14 @@ back; only eeMemory.bin may change, and only in those words). PCSX2 reads the De
 import hashlib
 import struct
 import zipfile
+import zlib
 from pathlib import Path
 
 MEMORY = 'eeMemory.bin'
 EE_SIZE = 0x8000000
+ZIP_ZSTANDARD = 93                # what PCSX2 2.8 writes with SavestateCompressionType = 2
+READABLE = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED, ZIP_ZSTANDARD)
+MAX_ENTRY = 256 << 20             # no savestate entry is larger (eeMemory.bin has 128 MiB)
 _MEMORY_TOKEN = object()
 
 
@@ -57,14 +62,52 @@ def decoded_memory(path, decoded):
     return value
 
 
+def read_entry(archive, info):
+    """The bytes of one entry of an open ZipFile: stored and Deflate through zipfile, Zstandard (a state PCSX2
+    saved itself) through the zstandard module, with the same size and CRC-32 checks zipfile makes."""
+    if isinstance(info, str):
+        info = archive.getinfo(info)
+    if info.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+        return archive.read(info)
+    if info.compress_type != ZIP_ZSTANDARD:
+        raise ValueError(f'entry {info.filename} uses compression method {info.compress_type} (the kit reads '
+                         'stored, Deflate and Zstandard savestates)')
+    if info.flag_bits & 0x1 or not 0 <= info.file_size <= MAX_ENTRY or not 0 < info.compress_size <= MAX_ENTRY:
+        raise ValueError(f'entry {info.filename} cannot be a savestate entry')
+    try:
+        import zstandard
+    except ImportError:
+        raise ValueError('this savestate is Zstandard-compressed and this Python has no zstandard module (the '
+                         'Tag Team Mod installation\'s own Python has it)') from None
+    stream = archive.fp
+    stream.seek(info.header_offset)
+    header = stream.read(30)
+    if len(header) != 30 or header[:4] != b'PK\x03\x04':
+        raise ValueError(f'entry {info.filename} has no local file header')
+    name_size, extra_size = struct.unpack_from('<HH', header, 26)
+    stream.seek(info.header_offset + 30 + name_size + extra_size)
+    packed = stream.read(info.compress_size)
+    if len(packed) != info.compress_size:
+        raise ValueError(f'entry {info.filename} is cut short')
+    try:
+        # one shot into a buffer of the entry's own size: PCSX2's frames carry no content size, and growing a
+        # buffer chunk by chunk took 8 s for eeMemory.bin (40 ms this way)
+        data = zstandard.ZstdDecompressor().decompress(packed, max_output_size=max(1, info.file_size))
+    except zstandard.ZstdError as error:
+        raise ValueError(f'entry {info.filename} is damaged ({error})') from None
+    if len(data) != info.file_size or zlib.crc32(data) & 0xFFFFFFFF != info.CRC:
+        raise ValueError(f'entry {info.filename} is damaged (size or CRC-32)')
+    return data
+
+
 def _read_all(path):
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
         for info in infos:
-            if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            if info.compress_type not in READABLE:
                 raise ValueError(f'{Path(path).name}: entry {info.filename} uses compression method '
-                                 f'{info.compress_type} (only Deflate states can be changed here)')
-        return infos, {info.filename: archive.read(info.filename) for info in infos}, archive.comment
+                                 f'{info.compress_type} (the kit reads stored, Deflate and Zstandard states)')
+        return infos, {info.filename: read_entry(archive, info) for info in infos}, archive.comment
 
 
 class StateArchive:
@@ -112,14 +155,14 @@ def _verify_all(path, infos, payloads, comment):
 def read_words(path, addresses):
     """{address: u32} of eeMemory.bin words of a Deflate (or stored) state."""
     with zipfile.ZipFile(path) as archive:
-        data = archive.read(MEMORY)
+        data = read_entry(archive, MEMORY)
     return {a: struct.unpack_from('<I', data, a)[0] for a in addresses}
 
 
 def read_memory(path):
     """The whole eeMemory.bin (128 MiB) of a Deflate (or stored) state."""
     with zipfile.ZipFile(path) as archive:
-        data = archive.read(MEMORY)
+        data = read_entry(archive, MEMORY)
     if len(data) != EE_SIZE:
         raise ValueError(f'{Path(path).name} has no 128 MiB eeMemory.bin')
     return data
@@ -127,7 +170,7 @@ def read_memory(path):
 
 def read_bytes(path, address, length):
     with zipfile.ZipFile(path) as archive:
-        data = archive.read(MEMORY)
+        data = read_entry(archive, MEMORY)
     return bytes(data[address:address + length])
 
 

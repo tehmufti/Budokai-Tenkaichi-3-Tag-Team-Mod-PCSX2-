@@ -86,7 +86,12 @@ def gate():
     a.li(8,A(0x333700));a.lw(9,8);a.branch(5,9,0,'no')
     a.li(8,A(0x2FEB38));a.lw(12,8);pointer(a,12,0x108,'no')
     a.lw(9,12);a.addiu(11,0,3);a.branch(5,9,11,'no')
-    a.li(8,CONTROL);a.lw(9,8,12);a.addiu(11,0,policy.FFA);a.branch(4,9,11,'no')
+    if policy.squad_feature('revive'):
+        # Three to five teams run on the free-for-all engine: the live team table stands in for the mode test.
+        a.li(8,policy.SQUAD);a.lw(9,8);a.li(11,policy.SQUAD_MAGIC);a.branch(5,9,11,'no')
+        a.lw(9,8,policy.SQUAD_FIELDS['manager']);a.lw(11,28,-22364);a.branch(5,9,11,'no')
+    else:
+        a.li(8,CONTROL);a.lw(9,8,12);a.addiu(11,0,policy.FFA);a.branch(4,9,11,'no')
     a.addiu(2,0,1);a.jr();a.label('no');a.move(2,0);a.jr();return a.finish()
 
 def actor():
@@ -233,8 +238,12 @@ def tick(waves=True,quad_support=False,mobile=True,guarding=True):
     # Find a retained teammate in reach; first physical ID is deterministic if
     # several bodies overlap. The HP write prevents a second ally double-charge.
     a.move(22,0)
-    a.label('body');a.branch(4,22,18,'next_body');a.r(0x26,8,22,18);a.i(12,8,8,1)
-    a.branch(5,8,0,'next_body');a.move(4,22);a.call(ACTOR);a.branch(4,2,0,'next_body')
+    if policy.squad_feature('revive'):
+        a.label('body');policy.emit_ally(a,22,18,'next_body',t0=8,t1=9)       # a teammate by the team table
+    else:
+        a.label('body');a.branch(4,22,18,'next_body');a.r(0x26,8,22,18);a.i(12,8,8,1)
+        a.branch(5,8,0,'next_body')
+    a.move(4,22);a.call(ACTOR);a.branch(4,2,0,'next_body')
     a.move(23,2);a.move(24,3);a.lw(8,24);a.branch(7,8,0,'next_body')
     a.lw(8,24,4);a.branch(6,8,0,'next_body');eligible(a,23,22,True,'next_body')
     close(a,20,23,'next_body');a.jump('candidate')
@@ -410,7 +419,8 @@ def validate_memory(ram):
     if (u(CONTROL+4),u(CONTROL+8))!=(manager,count) or count not in policy.ACTOR_COUNTS:
         raise ValueError('Revival capture identity mismatch')
     mode=u(policy.CONTROL+12) if u(policy.CONTROL)==policy.MAGIC else policy.TEAMS
-    if u(CONTROL+12)!=mode or mode not in (policy.TEAMS,policy.COOP):raise ValueError('Revival mode changed')
+    squads=mode==policy.FFA and policy.squad_feature('revive')      # three to five teams (free-for-all engine)
+    if u(CONTROL+12)!=mode or (mode not in (policy.TEAMS,policy.COOP) and not squads):raise ValueError('Revival mode changed')
     if u(CONTROL+16)>10000000 or u(CONTROL+16)%100000 or not 8<=u(CONTROL+20)<=1800:
         raise ValueError('Invalid revival preference values')
     radius,radius2=struct.unpack_from('<2f',ram,CONTROL+CFG['radius'])
@@ -477,7 +487,8 @@ def build_memory(ram,settings=None,source='<prepared>'):
     if len(ram)!=0x8000000:raise ValueError('Revival requires original 128MiB BT3 RAM')
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     mode=u(policy.CONTROL+12) if u(policy.CONTROL)==policy.MAGIC else policy.TEAMS
-    if mode==policy.FFA:return dict(source=str(source),blocks=[],status='REVIVAL NOT USED IN FREE FOR ALL')
+    if mode==policy.FFA and not policy.squad_feature('revive'):
+        return dict(source=str(source),blocks=[],status='REVIVAL NOT USED IN FREE FOR ALL')
     cost=options[preferences.REVIVE_COST_KEY]*100000
     channel=max(1,math.ceil(options[preferences.REVIVE_CHANNEL_KEY]*ACTOR_HZ))
     radius=struct.unpack('<f',struct.pack('<f',options['revive_radius']))[0]

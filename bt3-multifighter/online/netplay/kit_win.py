@@ -96,9 +96,42 @@ def process_path(pid):
         kernel32.CloseHandle(handle)
 
 
-def kill_tree(pid):
-    """End process `pid` and its children (taskkill /T /F). Only ever called with PIDs this kit started."""
+def same_path(a, b):
+    """True when two paths name the same file (case and separators as the OS compares them)."""
+    if not a or not b:
+        return False
+    try:
+        return os.path.normcase(os.path.realpath(str(a))) == os.path.normcase(os.path.realpath(str(b)))
+    except OSError:
+        return False
+
+
+def process_created(pid):
+    """The creation time of process `pid` (Windows FILETIME ticks; None when it cannot be read or not on Windows):
+    together with the PID it names ONE process, which a reused PID does not match."""
+    if not WINDOWS or not pid:
+        return None
+    handle = kernel32.OpenProcess(0x1000, False, int(pid))
+    if not handle:
+        return None
+    try:
+        times = [wt.FILETIME() for _ in range(4)]
+        if not kernel32.GetProcessTimes(wt.HANDLE(handle), *[ctypes.byref(t) for t in times]):
+            return None
+        return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def kill_tree(pid, exe=None, created=None):
+    """End process `pid` and its children (taskkill /T /F). Only ever called with PIDs this kit started; on
+    Windows `exe` (its executable) and / or `created` (process_created at launch) make sure the PID still is that
+    process: Windows gives a finished process's PID to the next program, which must never be ended."""
     if not pid or not pid_alive(pid):
+        return False
+    if WINDOWS and exe is not None and not same_path(process_path(pid), exe):
+        return False
+    if WINDOWS and created is not None and process_created(pid) != created:
         return False
     if not WINDOWS:
         import psutil

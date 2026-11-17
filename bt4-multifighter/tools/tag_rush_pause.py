@@ -26,7 +26,10 @@ def code():
     core.gate(a,'c203')
     a.li(16,tag.CONTROL);a.lw(17,16,tag.C['count'])
     a.lw(8,16,tag.C['ready']);a.branch(4,8,0,'c204')
-    a.li(8,modes.CONTROL);a.lw(8,8,12);a.li(9,modes.FFA);a.branch(4,8,9,'c205')
+    if modes.squad_feature('tag_attacks'):
+        a.li(8,modes.SQUAD);a.lw(9,8);a.li(10,modes.SQUAD_MAGIC);a.branch(5,9,10,'c205')
+    else:
+        a.li(8,modes.CONTROL);a.lw(8,8,12);a.li(9,modes.FFA);a.branch(4,8,9,'c205')
     a.li(8,preparation.CONTROL);a.lw(9,8);a.li(10,preparation.MAGIC)
     a.branch(5,9,10,'not_quiet');a.lw(9,8,16);a.branch(4,9,0,'not_quiet')
     a.lw(9,8,24);a.lw(10,16,tag.C['manager']);a.branch(5,9,10,'c206');a.jump('hold')

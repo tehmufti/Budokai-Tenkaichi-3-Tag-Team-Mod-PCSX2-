@@ -68,14 +68,20 @@ def design(teams=(), mode='teams', humans=1):
                 role=f'PLAYER {player}' if player else 'CPU'
             cards.append(dict(info=character_info(cid), side=side, slot=slot,
                               physical=physical, role=role))
-    if mode=='ffa' and humans>=3:
+            if isinstance(fighter,dict) and 'team' in fighter:
+                team=fighter['team']
+                if type(team)is not int or not 0<=team<=4:raise ValueError('Invalid loading team')
+                cards[-1]['team']=team
+    # Team Battle with three to five teams is drawn on the free-for-all grid: every fighter carries its team.
+    squads=mode=='ffa' and bool(cards) and all('team' in card for card in cards)
+    if mode=='ffa' and humans>=3 and not squads:
         for i,card in enumerate(sorted(cards,key=lambda c:(c['side'],c['slot']))):
             card['role']=f'PLAYER {i+1}' if i<humans else 'CPU'
     accent = ACCENTS[mode]
     columns = []
     vs_y, vs_span = None, None
     if mode == 'ffa':
-        cards.sort(key=lambda c: c['physical'])
+        cards.sort(key=lambda c: (c.get('team',0), c['physical']))
         count = len(cards)
         if count <= 6:
             per_row, width, height, gap, step, portrait, small = 3, 144, 106, 12, 118, 56, False
@@ -89,7 +95,7 @@ def design(teams=(), mode='teams', humans=1):
             row_count = min(per_row, count-row*per_row)
             card.update(x=(512-(row_count*width+(row_count-1)*gap))//2+col*(width+gap),
                         y=top+row*step, width=width, height=height, accent=accent,
-                        compact=True, small=small, portrait=portrait, number=i+1)
+                        compact=True, small=small, portrait=portrait, number=card['team']+1 if squads else i+1)
         if count:
             full = min(count, per_row)
             left = (512-(full*width+(full-1)*gap))//2
@@ -102,6 +108,9 @@ def design(teams=(), mode='teams', humans=1):
         detail = (f'{count} FIGHTERS / ALL CPU' if humans == 0
                   else f'{count} FIGHTERS / {humans} PLAYER' + ('S' if humans > 1 else ''))
         footer = 'LAST FIGHTER STANDING WINS'
+        if squads:
+            teams_shown = len({card['team'] for card in cards})
+            heading, subtitle, footer = 'TEAM BATTLE', f'{teams_shown} TEAMS', 'LAST TEAM STANDING WINS'
     else:
         labels = ((('ALLIES', accent), ('OPPONENTS', (246, 164, 93))) if mode in ('coop','training_coop')
                   else (('TEAM 1', (68, 179, 246)), ('TEAM 2', (245, 116, 97))))

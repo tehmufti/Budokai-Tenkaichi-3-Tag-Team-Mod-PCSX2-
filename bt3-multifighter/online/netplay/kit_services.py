@@ -76,7 +76,7 @@ class Broker:
     """Host side: the service process's link into this session. ctl: the kit controller (link, session, members,
     send_to, say). poll() runs from the controller's loop; a seal that waits for guests answers later."""
 
-    def __init__(self, ctl, python, tools, w1, log_path=None, services=('cpu_transform',)):
+    def __init__(self, ctl, python, tools, w1, log_path=None, services=('cpu_transform',), squads=None):
         self.ctl = ctl
         self.token = secrets.token_hex(16)
         self.listener = socket.socket()
@@ -97,6 +97,8 @@ class Broker:
         here = Path(__file__).resolve().parent
         args = [str(python), '-B', str(here / 'kit_service.py'), '--port', str(self.port), '--token', self.token,
                 '--tools', str(tools), '--w1', f'{w1:#x}', '--services', ','.join(services)]
+        if squads:                        # three to five teams: the worker builds for the same team layout
+            args += ['--squads', ','.join(str(int(n)) for n in squads)]
         out = open(log_path, 'ab') if log_path else subprocess.DEVNULL
         self.process = subprocess.Popen(args, cwd=str(tools), stdin=subprocess.DEVNULL, stdout=out,
                                         stderr=subprocess.STDOUT,
@@ -205,8 +207,12 @@ class Broker:
         members = [k for k in self.ctl.session.members]
         message = dict(type='BULK', seq=self.bulk_seq, host_frame=frame,
                        writes=[[a, d.hex()] for a, d in bulk])
+        resyncing = getattr(self.ctl, 'resyncs', None) or {}
         for ident in members:
-            self.ctl.send_to(ident, **message)
+            if ident in resyncing:                             # its state is on its way: after it (resync_done)
+                self.__dict__.setdefault('deferred', {}).setdefault(ident, []).append(message)
+            else:
+                self.ctl.send_to(ident, **message)
         if members:
             self.acks[self.bulk_seq] = set(members)
         self.stats['bulk'] += 1
@@ -220,7 +226,15 @@ class Broker:
                 del self.acks[seq]
         self.check_pending()
 
+    def resync_done(self, ident, count):
+        """Member `ident` was sent a state that holds the packets up to `count` (None: unknown): the packets made
+        meanwhile follow it now."""
+        for message in self.__dict__.setdefault('deferred', {}).pop(ident, []):
+            if count is None or message['seq'] > count:
+                self.ctl.send_to(ident, **message)
+
     def member_gone(self, ident):
+        self.__dict__.setdefault('deferred', {}).pop(ident, None)
         for seq in list(self.acks):
             self.on_ack(ident, seq)
 
@@ -280,6 +294,12 @@ class GuestBulk:
 
     def ready(self, seq):
         return self.written >= seq
+
+    def loaded(self, count):
+        """This PC loads a state of the host that already holds the packets up to `count` (and the entries that
+        name them): they are never written again - their data may be in use there."""
+        self.waiting = [row for row in self.waiting if row[0] > count]
+        self.written = max(self.written, count)
 
     def add(self, m):
         try:

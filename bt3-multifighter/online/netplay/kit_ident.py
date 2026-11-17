@@ -36,7 +36,7 @@ from pathlib import Path
 import kit_paths
 from kit_codes import KitError
 
-KIT_VERSION = '2.3.0'
+KIT_VERSION = '2.4.0'
 # 3 (kit 1.2.0): the guest's window draws its own player's close-up effects (netplay_view VIEWER) and there is no
 # split screen any more (no --split, no 'split' in the HELLO request): an older kit is refused at the preamble.
 # 4 (kit 1.3.0): the online lobby (LOBBY/PICK/CHAT, PREPARE..PREPARED, votes, rematch, END_FIGHT, resync, reconnect)
@@ -237,7 +237,49 @@ def patches_identity(runtime=None, *, active=None):
             raise KitError('TTM-NET-25', what=f'{path} is damaged (its SHA-256 is not its name).')
     digest, _ = tree_digest(runtime, list(pnach.values()))
     cards_digest, _ = tree_digest(runtime, cards)
-    return dict(digest=digest, pnach_sha256=sorted(pnach), memcards=cards_digest)
+    # transfer: this kit can fetch the host's patch file from the room (and serve its own): two installations
+    # whose patches differ can still play, every PC with the host's
+    return dict(digest=digest, pnach_sha256=sorted(pnach), memcards=cards_digest, transfer=True)
+
+
+PATCH_MAX = 16 << 20
+PATCH_LINE = re.compile(rb'(?://[^\r\n]*|patch=[0-9A-Za-z,_ ]{1,96})?[ \t]*')
+
+
+def patch_problem(data, sha):
+    """None when `data` is the runtime patch `sha`: that SHA-256, a sane size, and nothing but comment and
+    'patch=' lines (the only two things the mod's generator writes): a text when it is anything else."""
+    if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha):
+        return 'its name is not a SHA-256'
+    if not 0 < len(data) <= PATCH_MAX:
+        return f'its size is {len(data)} bytes'
+    if hashlib.sha256(data).hexdigest() != sha:
+        return 'its SHA-256 is not the one that was asked for'
+    for number, line in enumerate(data.split(b'\n'), 1):
+        if not PATCH_LINE.fullmatch(line.rstrip(b'\r')):
+            return f'line {number} is not a patch line'
+    return None
+
+
+def store_patch(data, sha, runtime=None):
+    """Keep a checked patch file as match/runtime/pnach/<sha256>.pnach (atomic); returns its path."""
+    found = patch_problem(data, sha)
+    if found:
+        raise KitError('TTM-NET-25', what=f'The game patch the host sent cannot be used: {found}.')
+    folder = Path(runtime or kit_paths.RUNTIME) / 'pnach'
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f'{sha}.pnach'
+    if not target.is_file() or target.read_bytes() != data:
+        tmp = target.with_name(target.name + f'.{os.getpid()}.part')
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
+    return target
+
+
+def friendly_version(version):
+    """'0.1.0-beta.14.6' -> 'Version 14.6' (what the installer and the release pages call it)."""
+    found = re.fullmatch(r'0\.1\.0-beta\.(\d+(?:\.\d+)*)', str(version or ''))
+    return f'Version {found.group(1)}' if found else str(version)
 
 
 # ---- settings ------------------------------------------------------------------------------------------------------------
@@ -458,6 +500,21 @@ def cached_sha256(iso, cache_file=None, progress=None):
     return digest
 
 
+def cached_stamp(iso, cache_file):
+    """(sha256, size, mtime_ns) when `cache_file` holds the whole-ISO SHA-256 of exactly this file as it is now
+    (same path, size and modification time), else None: lets a second reader skip hashing 4 GB again."""
+    try:
+        iso = Path(iso).resolve()
+        st = iso.stat()
+        hit = json.loads(Path(cache_file).read_text(encoding='utf-8')).get(str(iso).lower())
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    if isinstance(hit, dict) and hit.get('size') == st.st_size and hit.get('mtime_ns') == st.st_mtime_ns and \
+            isinstance(hit.get('sha256'), str) and re.fullmatch('[0-9a-f]{64}', hit['sha256']):
+        return hit['sha256'], st.st_size, st.st_mtime_ns
+    return None
+
+
 def disc_identity(iso, full=True, progress=None, cache_file=None):
     """The identity of a BT3 ISO (dict); KitError TTM-NET-20 for an unreadable or unreviewed disc. With
     `full` the whole image's SHA-256 is part of it (an expanded-maps or otherwise rewritten copy keeps the same game
@@ -573,7 +630,8 @@ def bios_identity(path):
 
 
 # ---- this PC's identity and the comparison ----------------------------------------------------------------------------------
-def local_identity(*, disc, bios, ini_text, pcsx2=None, bios_policy='note', disc_policy='quick', name=''):
+def local_identity(*, disc, bios, ini_text, pcsx2=None, bios_policy='note', disc_policy='quick', name='',
+                   mod_version=None):
     """What this PC sends to the other one. File names and paths stay on this PC (only contents are described)."""
     # Preboot also needs this patch. Publish it before taking the handshake
     # snapshot, so the first connection and a later rejoin describe the same set.
@@ -589,7 +647,10 @@ def local_identity(*, disc, bios, ini_text, pcsx2=None, bios_policy='note', disc
                 patches=patches_identity(active=active) if active else patches_identity(), settings=settings_identity(ini_text),
                 disc={k: v for k, v in disc.items() if k not in private},
                 bios={k: v for k, v in bios.items() if k not in private},
-                bios_policy=bios_policy, disc_policy=disc_policy, name=name[:32])
+                bios_policy=bios_policy, disc_policy=disc_policy, name=name[:32],
+                # the Tag Team Mod this kit is part of: the game code a match is made of and the modules both
+                # kits patch it with come from the installation, not from the online folder `code` covers
+                mod=dict(version=str(mod_version) if mod_version else None, integrated=bool(kit_paths.INTEGRATED)))
 
 
 def _short(value):
@@ -610,10 +671,24 @@ def compare(mine, theirs):
     out = []
     if mine.get('protocol') != theirs.get('protocol'):
         return [('TTM-NET-01', 'refuse', dict(mine=mine.get('protocol'), theirs=theirs.get('protocol')))]
-    for key, code in (('code', 'TTM-NET-02'), ('patches', 'TTM-NET-04')):
-        a, b = mine.get(key, {}), theirs.get(key, {})
-        if a.get('digest') != b.get('digest'):
-            out.append((code, 'refuse', dict(mine=_short(a.get('digest')), theirs=_short(b.get('digest')))))
+    va, vb = (mine.get('mod') or {}).get('version'), (theirs.get('mod') or {}).get('version')
+    if va and vb and va != vb:
+        # first: the one finding the players can act on (the files below differ because of it)
+        out.append(('TTM-NET-34', 'refuse', dict(mine=friendly_version(va), theirs=friendly_version(vb))))
+    a, b = mine.get('code', {}), theirs.get('code', {})
+    if a.get('digest') != b.get('digest'):
+        out.append(('TTM-NET-02', 'refuse', dict(mine=_short(a.get('digest')), theirs=_short(b.get('digest')))))
+    a, b = mine.get('patches', {}), theirs.get('patches', {})
+    if a.get('digest') != b.get('digest'):
+        values = dict(mine=_short(a.get('digest')), theirs=_short(b.get('digest')))
+        if a.get('transfer') and b.get('transfer'):
+            # the installations generate different patch files (another menu language is enough): the room
+            # uses the host's on every PC, which a guest fetches from the host by its SHA-256
+            out.append(('TTM-NET-04', 'note', dict(values, what='the two installations generate different game '
+                                                   'patches (for example another mod language): every PC uses '
+                                                   'the host\'s')))
+        else:
+            out.append(('TTM-NET-04', 'refuse', values))
     pa, pb = mine.get('pcsx2', {}), theirs.get('pcsx2', {})
     if pa.get('digest') and pa.get('digest') == pb.get('digest') and not pa.get('tested'):
         # kit 2.1 (inside a Tag Team Mod installation): both PCs run the SAME build, one the tests did not run - the
@@ -696,10 +771,14 @@ def peer_runtime(mine, theirs):
     return []
 
 
-def runtime_problems(info, game=None):
-    """[(code, text)] for a running PCSX2's PINE info: an untested build or a different selected disc."""
+def runtime_problems(info, game=None, build=None):
+    """[(code, text)] for a running PCSX2's PINE info: an untested build or a different selected disc. build:
+    this PC's build identity; inside an installation an untested build is allowed when every PC runs the
+    identical one (compare(): TTM-NET-03 warn), so its PINE version cannot be on the tested list either - it
+    was refused here, at load, after the lobby had accepted it."""
     out = []
-    if info.get('version') not in TESTED_PINE:
+    allowed = kit_paths.INTEGRATED and isinstance(build, dict) and not build.get('tested')
+    if info.get('version') not in TESTED_PINE and not allowed:
         out.append(('TTM-NET-28', f'PCSX2 reports "{info.get("version")}"; tested: {", ".join(TESTED_PINE)}'))
     want = game or GAME
     got = {k: str(info.get(k) or '').lower() for k in want}

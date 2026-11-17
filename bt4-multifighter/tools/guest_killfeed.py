@@ -18,6 +18,7 @@ from camera_snapshot import read_ram
 import fresh_team_combat as core
 import guest_healthbars as bars
 from battle_mode_policy import ACTOR_COUNTS
+import battle_mode_policy as policy
 from regional import SCISSOR_Y1, Y_ORIGIN, screen_y
 from native_map import ticks
 
@@ -187,12 +188,13 @@ def record_code():
     for i in range(MAX_EVENTS-1,0,-1):
         for off in range(0,32,4):a.lw(8,19,(i-1)*32+off); a.sw(8,19,i*32+off)
     a.lw(8,18,12); a.sw(8,19); a.sw(20,19,4); a.sw(16,19,12)
-    a.i(12,8,16,1); a.sw(8,19,20); a.addiu(8,0,1); a.sw(8,19,28)
+    # The colour key of a name: the native side, or the team in a match of three to five teams.
+    policy.emit_team(a,8,16); a.sw(8,19,20); a.addiu(8,0,1); a.sw(8,19,28)
     a.lw(8,18,8); a.r(0x2B,9,17,8); a.branch(4,9,0,'unknown')
     a.branch(4,16,17,'unknown')
     a.r(0,8,0,17,2); a.li(9,core.POINTERS); a.r(0x2D,8,8,9); a.lw(4,8)
     a.call(ROW); a.branch(4,2,0,'unknown'); a.sw(3,19,8); a.sw(17,19,16)
-    a.i(12,8,17,1); a.sw(8,19,24); a.jump('count')
+    policy.emit_team(a,8,17); a.sw(8,19,24); a.jump('count')
     a.label('unknown'); a.addiu(8,0,-1)
     for off in (8,16,24):a.sw(8,19,off)
     a.lw(8,18,20); a.addiu(8,8,1); a.sw(8,18,20)
@@ -334,6 +336,12 @@ def draw_code(quad=False):
             a.lw(8,29,0x50);a.r(0,8,0,8,4);a.r(0x21,5,5,8)
             a.lw(8,29,0x54);a.addiu(8,8,screen_y(multiview_layout.FEED_Y)-screen_y(106));a.r(0,8,0,8,4);a.r(0x21,6,6,8)
         if shadow:a.move(7,20)
+        elif policy.emitted_squads() is not None:
+            # Three to five teams: the name takes its team's colour (the shared table, without its alpha byte).
+            a.li(7,0xEEEEEE); a.i(11,8,22,policy.MAX_TEAMS); a.branch(4,8,0,'color_ready')
+            a.r(0,8,0,22,2); a.li(7,policy.SQUAD+policy.SQUAD_FIELDS['colors']); a.r(0x2D,8,8,7); a.lw(7,8)
+            a.r(0,7,0,7,8); a.r(2,7,0,7,8)
+            a.label('color_ready'); a.r(0x25,7,7,20)
         else:
             a.li(7,0xEEEEEE); a.i(11,8,22,2); a.branch(4,8,0,'color_ready')
             a.r(0,8,0,22,2); a.r(0x2D,8,8,16); a.lw(7,8,0x80)

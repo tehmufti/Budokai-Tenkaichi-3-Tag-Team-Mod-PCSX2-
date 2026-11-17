@@ -58,8 +58,14 @@ class PatchIdentityTests(unittest.TestCase):
     def test_actual_active_patch_difference_still_refuses_both_directions(self):
         first=self.identity(self.installation('first',own=b'patch=1,EE,00100000,word,00000000\n'))
         other=self.identity(self.installation('other',own=b'patch=1,EE,00100000,word,00000001\n'))
-        self.assertEqual(self.refusals(first,other),['TTM-NET-04'])
-        self.assertEqual(self.refusals(other,first),['TTM-NET-04'])
+        # Two installations that can exchange the host's patch (another mod language generates another file)
+        # are noted, never refused: the guest fetches the host's file by its SHA-256.
+        self.assertEqual(self.refusals(first,other),[])
+        self.assertEqual([r[:2]for r in ident.compare(first,other)],[('TTM-NET-04','note')])
+        # A side that cannot fetch it is refused as before, in both directions.
+        old=dict(other,patches={k:v for k,v in other['patches'].items()if k!='transfer'})
+        self.assertEqual(self.refusals(first,old),['TTM-NET-04'])
+        self.assertEqual(self.refusals(old,first),['TTM-NET-04'])
 
     def test_missing_active_patch_never_falls_back_to_an_old_supported_cache(self):
         installation=self.installation('missing',own=None,old=(b'old runtime',))

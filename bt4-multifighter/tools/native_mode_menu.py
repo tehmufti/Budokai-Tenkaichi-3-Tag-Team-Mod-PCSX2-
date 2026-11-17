@@ -24,6 +24,8 @@ import player_slot_labels
 import scenario_menu
 import tag_tournament
 import gauntlet_mode
+import squad_setup
+import squad_select
 
 CODE,OFF,ON,CONTROL,END=0x07690000,0x076A0000,0x076C1000,0x076FF000,0x07700000
 ALT_OFF,ALT_ON=0x06C40000,0x06C61000
@@ -33,23 +35,49 @@ CHECKPOINT_WAIT,PENDING_CHOICE=0xD0,0xD4
 SELECTIONS=old.SELECTIONS+(('teams',2),('teams',0),('training',1),('training',2),('training_coop',2),('teams',4),('ffa',4),('coop',4),('training',4),('training_coop',4),('teams',3),('ffa',3),('coop',3),('training',3),('training_coop',3),('tournament',0),('gauntlet',0))
 # Root row 4 is the Tag Team Tournament (tag_tournament.CHOICE commits its setup panel, then Dragon World Tour).
 # Root row 5 is the Fighter Gauntlet (gauntlet_mode.CHOICE commits its setup panel, then Team Battle).
-PAGES=((0,1,2,3,4,5,6),(4,5,1,0,6,7),(4,5,1,0,6,7),(5,1,0,7),(4,5,1,0,7),(5,1,0,7),(0,1,2,3,4,5,6,7))
+PAGES=((0,1,2,3,4,5,6),(4,5,1,0,6,7),(4,5,1,0,6,7),(5,1,0,7),(4,5,1,0,7),(5,1,0,7),(0,1,2,3,4,5,6,7),(0,1,2,3,7))
+# Page 7, "How many teams?", comes between Team Battle and its players page: 2 / 3 / 4 / 5 Teams, Back, on its own
+# atlas pair. TEAMS keeps the chosen count while the players page is shown (0 or 2: the ordinary two teams; 3..5: the
+# team setup follows the players row). SQUAD_VALID / SQUAD_ROWS / SQUAD_TEAM_OF are that setup's receipt for the
+# selector code (squad_select) and the watcher: the committed choice, the fighters per row, each slot's team.
+TEAMS_PAGE=7
+TEAMS_OFF,TEAMS_ON=0x06600000,0x06621000
+TEAMS,SQUAD_VALID,SQUAD_ROWS,SQUAD_TEAM_OF=0x15C,0x160,0x164,0x168
+SQUAD_CHOICES=(1,7,8,12,17)      # Team Battle's rows: 1 Player, 2 Players, CPU Only, 4 Players, 3 Players
+assert services.TEAMS_PAGE==TEAMS_PAGE and TEAMS_PAGE==len(PAGES)-1
+assert (squad_setup.TEAMS,squad_setup.VALID,squad_setup.ROWS,squad_setup.TEAM_OF)==(TEAMS,SQUAD_VALID,SQUAD_ROWS,SQUAD_TEAM_OF)
+assert sorted(squad_setup.CHOICES)==sorted(SQUAD_CHOICES)
+assert (squad_select.VALID,squad_select.ROWS,squad_select.TEAM_OF)==(SQUAD_VALID,SQUAD_ROWS,SQUAD_TEAM_OF)
+assert TEAMS_ON+0x21000<=squad_select.GUARD and squad_select.END<=0x06660000
+assert squad_select.DRAW+len(squad_select.draw_code())<=0x06643F00 and 0x06643F00+16*8<=squad_select.DATA
+
+
+def page_atlases(page):
+    """(off, on) atlas descriptors a custom page binds."""
+    if page==0:return OFF,ON
+    if page==gauntlet_mode.PAGE:return gauntlet_mode.G_OFF,gauntlet_mode.G_ON
+    if page==TEAMS_PAGE:return TEAMS_OFF,TEAMS_ON
+    return ALT_OFF,ALT_ON
 # Page 6 is the Fighter Gauntlet picker (gauntlet_mode.PAGE): eight rows whose labels/descriptions the host keeps
 # filled as an endless list (gauntlet_mode.Pager); its own atlases and texts (gauntlet_mode.G_OFF/G_ON/GTEXT).
 # CONTROL: magic,state(1 armed/2 custom/3 committed/4 original),page,result,lease,owner,
 # epoch; snapshots: rows/count/cursor at100,scroll140,off144,on148,resource14c.
 
 
+# The (off, on) atlas descriptors of every page, read by the pager code (boot data, in the team-count page's block).
+ATLASES=0x06643F00
+
+
+def atlas_table():
+    return b''.join(struct.pack('<2I',*page_atlases(page)) for page in range(len(PAGES)))
+
+
 def owned_atlases(a,fail,tag):
-    # Page 0: the root atlases; page 6 (the gauntlet picker): its own; other pages: the submenu atlases. t5 scratch.
-    a.li(12,OFF);a.lw(10,8,8);a.branch(4,10,0,tag+'_off')
-    a.li(12,ALT_OFF);a.addiu(13,0,gauntlet_mode.PAGE);a.branch(5,10,13,tag+'_off')
-    a.li(12,gauntlet_mode.G_OFF)
-    a.label(tag+'_off');a.lw(10,11,0x60);a.branch(5,10,12,fail)
-    a.li(12,ON);a.lw(10,8,8);a.branch(4,10,0,tag+'_on')
-    a.li(12,ALT_ON);a.addiu(13,0,gauntlet_mode.PAGE);a.branch(5,10,13,tag+'_on')
-    a.li(12,gauntlet_mode.G_ON)
-    a.label(tag+'_on');a.lw(10,11,0x70);a.branch(5,10,12,fail)
+    # The page's own atlas pair (ATLASES) must still be bound to the menu object in t3. t2, t4 and t5 are scratch.
+    a.lw(10,8,8);a.i(11,12,10,len(PAGES));a.branch(4,12,0,fail)
+    a.r(0,10,0,10,3);a.li(12,ATLASES);a.r(0x21,12,12,10)
+    a.lw(13,12);a.lw(10,11,0x60);a.branch(5,10,13,fail)
+    a.lw(13,12,4);a.lw(10,11,0x70);a.branch(5,10,13,fail)
 
 
 def payload():
@@ -76,6 +104,8 @@ def payload():
     a.lw(4,29,services.STACK+0x18);a.call(coop_character_select.CODE)
     a.lw(4,29,services.STACK+0x18);a.call(cpu_difficulty_select.INPUT)
     a.lw(4,29,services.STACK+0x18);a.call(roster_selection_guard.CODE)
+    # Three to five teams: END needs exactly the planned fighters on the row (its own receipt check).
+    a.lw(4,29,services.STACK+0x18);a.call(squad_select.GUARD)
     a.li(8,CONTROL);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,'return')
     a.lw(9,8,4);a.branch(4,9,0,'return');a.addiu(10,0,3);a.branch(4,9,10,'return')
     a.lw(10,8,16);a.branch(4,10,0,'restore');a.addiu(10,10,-1);a.sw(10,8,16)
@@ -116,6 +146,11 @@ def payload():
     a.lw(14,8,8);a.branch(4,14,0,'root_choice')
     a.addiu(10,0,gauntlet_mode.PAGE);a.branch(4,14,10,'gauntlet_pick')
     a.addiu(10,0,7);a.branch(4,13,10,'back')
+    # How many teams? Rows 0..3 are 2..5 teams: remember the count and show the players page.
+    a.addiu(10,0,TEAMS_PAGE);a.branch(5,14,10,'players_row')
+    a.i(11,10,13,4);a.branch(4,10,0,'restore')
+    a.addiu(10,13,2);a.sw(10,8,TEAMS);a.addiu(14,0,1);a.jump('page')
+    a.label('players_row')
     # Submenu row 1 is the private Three Players label. Keep all existing
     # semantic choice IDs stable for saved selector-return receipts.
     a.addiu(10,0,1);a.branch(5,13,10,'existing_choice')
@@ -140,6 +175,8 @@ def payload():
     a.addiu(10,0,4);a.addiu(15,0,tag_tournament.CHOICE);a.branch(4,13,10,'commit')
     a.addiu(10,0,5);a.addiu(14,0,gauntlet_mode.PAGE);a.branch(4,13,10,'page')
     a.addiu(10,0,2);a.branch(4,13,10,'scenarios')
+    # Team Battle asks how many teams first; the count starts empty.
+    a.branch(5,13,0,'root_page');a.sw(0,8,TEAMS);a.addiu(14,0,TEAMS_PAGE);a.jump('page');a.label('root_page')
     a.i(11,10,13,4);a.branch(4,10,0,'restore');a.addiu(14,13,1);a.jump('page')
     # The gauntlet picker: the row's kind decides (Back or a gauntlet); the picked row is recorded for the host.
     a.label('gauntlet_pick');a.li(10,gauntlet_mode.GTABLE);a.lw(12,10);a.li(9,gauntlet_mode.GMAGIC)
@@ -154,7 +191,10 @@ def payload():
     a.label('settings');a.li(10,ingame_settings.CONTROL);a.li(12,ingame_settings.MAGIC);a.sw(12,10)
     a.addiu(12,0,1);a.sw(12,10,4);a.addiu(12,0,180);a.sw(12,10,8);a.sw(0,10,12)
     a.li(12,old.PAD);a.lw(12,12,0x150);a.sw(12,10,16);a.jump('consume')
-    a.label('back');a.lw(14,8,8);a.branch(4,14,0,'stock');a.addiu(10,0,5);a.branch(5,14,10,'root_back');a.addiu(14,0,4);a.jump('page');a.label('root_back');a.move(14,0);a.jump('page')
+    a.label('back');a.lw(14,8,8);a.branch(4,14,0,'stock');a.addiu(10,0,5);a.branch(5,14,10,'teams_back');a.addiu(14,0,4);a.jump('page')
+    # Team Battle's players page goes back to "How many teams?"; every way back to the root forgets the count.
+    a.label('teams_back');a.addiu(10,0,1);a.branch(5,14,10,'root_back');a.addiu(14,0,TEAMS_PAGE);a.jump('page')
+    a.label('root_back');a.sw(0,8,TEAMS);a.move(14,0);a.jump('page')
     a.label('arm');a.lw(14,8,64);a.branch(4,14,0,'arm_stock');a.i(11,15,14,len(PAGES)+1);a.branch(4,15,0,'arm_stock');a.addiu(14,14,-1);a.sw(14,8,68);a.jump('activate')
     a.label('arm_stock');a.sw(0,8,64);a.sw(0,8,60);a.addiu(10,0,6);a.sw(10,8,12);a.addiu(10,0,4);a.sw(10,8,4);a.jump('consume')
     a.label('toggle');a.addiu(10,0,2);a.branch(4,9,10,'stock')
@@ -165,12 +205,9 @@ def payload():
         a.lw(10,11,oo);a.sw(10,8,co)
     a.li(10,OFF);a.sw(10,11,0x60);a.li(10,ON);a.sw(10,11,0x70)
     a.addiu(10,0,2);a.sw(10,8,4);a.sw(0,8,12);a.lw(14,8,68);a.sw(0,8,68);a.sw(0,8,64)
-    a.label('page');a.sw(14,8,8)
-    a.li(10,OFF);a.li(12,ON);a.branch(4,14,0,'atlas_ready')
-    a.li(10,ALT_OFF);a.li(12,ALT_ON)
-    a.addiu(9,0,gauntlet_mode.PAGE);a.branch(5,14,9,'atlas_ready')
-    a.li(10,gauntlet_mode.G_OFF);a.li(12,gauntlet_mode.G_ON)
-    a.label('atlas_ready');a.sw(10,11,0x60);a.sw(12,11,0x70)
+    a.label('page');a.i(11,10,14,len(PAGES));a.branch(4,10,0,'restore');a.sw(14,8,8)
+    a.r(0,10,0,14,3);a.li(12,ATLASES);a.r(0x21,12,12,10);a.lw(10,12);a.lw(12,12,4)
+    a.sw(10,11,0x60);a.sw(12,11,0x70)
     for i in range(11):a.sw(0,11,0x118+i*4)
     for off in (0x10C,0x150,0x154,0x158):a.sw(0,11,off)
     for page,rows in enumerate(PAGES):
@@ -183,9 +220,13 @@ def payload():
     a.label('redraw');a.call(services.RESET)
     a.label('consume');a.li(12,old.PAD);a.lw(10,12,0x150);a.sw(10,8,28);a.sw(0,12,0x18C);a.sw(0,12,0x190);a.jump('return')
     a.label('stock');a.sw(0,8,64);a.sw(0,8,68);a.sw(0,8,60);a.addiu(10,0,4);a.sw(10,8,4);a.addiu(10,0,6);a.sw(10,8,12);a.jump('restore_owned')
-    a.label('commit');a.sw(0,8,team_assignment.VALID)
+    a.label('commit');a.sw(0,8,team_assignment.VALID);a.sw(0,8,SQUAD_VALID)
     for choice in tuple(team_assignment.CHOICES)+(tag_tournament.CHOICE,gauntlet_mode.CHOICE):
         a.addiu(10,0,choice);a.branch(4,15,10,'assign_teams')
+    # Three to five teams: 1 Player and CPU Only open the team setup as well (the other rows open it above).
+    a.lw(10,8,TEAMS);a.i(11,10,10,3);a.branch(5,10,0,'commit_ready')
+    for choice in SQUAD_CHOICES:
+        if choice not in team_assignment.CHOICES:a.addiu(10,0,choice);a.branch(4,15,10,'assign_teams')
     a.jump('commit_ready')
     a.label('assign_teams');a.sw(15,8,team_assignment.CHOICE);a.addiu(10,0,1);a.sw(10,8,team_assignment.STATE)
     a.addiu(10,0,180);a.sw(10,8,team_assignment.LEASE);a.sw(0,8,team_assignment.BUTTONS)
@@ -220,7 +261,8 @@ def payload():
     a.label('disown');a.sw(0,8,4);a.sw(0,8,12)
     a.label('return')
     services.restore(a);a.jump(old.CODE)
-    data=a.finish();assert len(data)<0x3000;return data
+    import native_menu_loading
+    data=a.finish();assert CODE+len(data)<=native_menu_loading.DECODE;return data
 
 
 def hook():return struct.pack('<2I',(2<<26)|(CODE>>2),0)
@@ -245,6 +287,9 @@ def _control(ram,obj,atlases,settings):
         struct.pack_into('<I',ctl,64,assets.u32(ram,CONTROL+64))
         struct.pack_into('<2I',ctl,40,1,600)
         struct.pack_into('<I',ctl,52,128)
+        # Returning to Team Battle's players page keeps the number of teams it was reached with.
+        if assets.u32(ram,CONTROL+64)==2 and 3<=assets.u32(ram,CONTROL+TEAMS)<=5:
+            struct.pack_into('<I',ctl,TEAMS,assets.u32(ram,CONTROL+TEAMS))
     ctl[0x100:0x134]=bytes(ram[obj+0x118:obj+0x14C])
     for off,value in ((0x140,assets.u32(ram,obj+0x10C)),(0x144,atlases['off'].descriptor),
                       (0x148,atlases['on'].descriptor),(0x14C,assets.u32(ram,obj+4)),
@@ -258,7 +303,8 @@ def _assets(ram,obj,atlases,settings):
     root=assets.LABELS[:4]+('Tag Team Tournament','Fighter Gauntlet')+assets.LABELS[6:]
     for name,dest,limit,labels in (('off',OFF,ON,root),('on',ON,services.TEXT,root),
             ('off',ALT_OFF,ALT_ON,('4 Players','3 Players')+assets.LABELS[2:6]+('CPU Only','Back')),
-            ('on',ALT_ON,ALT_ON+0x21000,('4 Players','3 Players')+assets.LABELS[2:6]+('CPU Only','Back'))):
+            ('on',ALT_ON,ALT_ON+0x21000,('4 Players','3 Players')+assets.LABELS[2:6]+('CPU Only','Back')),
+            ('off',TEAMS_OFF,TEAMS_ON,assets.TEAM_LABELS),('on',TEAMS_ON,TEAMS_ON+0x21000,assets.TEAM_LABELS)):
         blob=assets.clone(ram,atlases[name],dest,assets.compose_indices(ram,atlases[name],tuple(localization.tr(label,settings) for label in labels)))
         if dest+len(blob)>limit:raise ValueError('Owned atlas exceeds reservation')
         blocks.append((dest,blob))
@@ -291,7 +337,7 @@ def prepare(ram,settings=None):
 @lru_cache(maxsize=1)
 def code_pieces():
     """Include AFTER old.code_pieces in cold-boot/checkpoint construction."""
-    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+cpu_difficulty_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()
+    return [(CODE,payload()),(old.HOOK,hook()),(ATLASES,atlas_table())]+squad_select.code_pieces()+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+cpu_difficulty_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()
 
 
 class ReadOnlyMemory:
@@ -354,6 +400,8 @@ class Controller:
         self.fast=False      # the gauntlet picker page is shown: the watcher polls quickly (gauntlet_mode.Pager)
         self.settings_menu=ingame_settings.Controller()
         self.team_menu=team_assignment.Controller()
+        self.squad_menu=squad_setup.Controller()   # Team Battle with three to five teams: fighters per team
+        self.team_count=0                          # teams of the last committed Team Battle (0: the ordinary two)
         self.tournament=tag_tournament.Controller()
         self.gauntlet=gauntlet_mode.Controller()
         self.scenarios=scenario_menu.Controller(self.settings)
@@ -410,6 +458,8 @@ class Controller:
         if (p.read_u32(team_assignment.MENU)==team_assignment.MAGIC and p.read_u32(team_assignment.MENU+team_assignment.STATE)==1
                 and p.read_u32(team_assignment.MENU+team_assignment.CHOICE) in (gauntlet_mode.CHOICE,tag_tournament.CHOICE)):
             return None      # published just now: its own panel takes it on the next tick
+        self.squad_menu.settings=self.settings
+        if self.squad_menu.tick(p,self.team_menu):return None
         if self.team_menu.tick(p):return None
         settings=self.settings_menu.tick(p)
         if settings is not None:self.set_settings(settings)
@@ -446,6 +496,13 @@ class Controller:
             if self.tournament.drafting and choice+1!=tag_tournament.CHOICE:
                 # A Tag Team Tournament roster pick: its seats are tournament players (tag_tournament.pass_receipt).
                 result['mode']='draft'
+                return result
+            # Three to five teams: the team setup's receipt names every slot's team and the players' seats.
+            setup=squad_setup.selected(ReadOnlyMemory(p),choice+1,self.humans) if self.mode=='teams' else None
+            self.team_count=0 if setup is None else setup['squads'].teams
+            if setup is not None:
+                result['squads']=setup['squads']
+                if setup['seats'] is not None:result['assignment']=setup['seats']
                 return result
             assignment=team_assignment.selected(ReadOnlyMemory(p),self.mode,self.humans)
             if assignment is not None:result['assignment']=assignment
@@ -490,6 +547,9 @@ class Controller:
             struct.pack_into('<I',control,64,self.pending_return_page+1)
             struct.pack_into('<2I',control,40,1,600)
             struct.pack_into('<I',control,52,128)
+            # Back on Team Battle's players page after a match of three to five teams: the count is still chosen.
+            if self.pending_return_page==1 and 3<=self.team_count<=5:
+                struct.pack_into('<I',control,TEAMS,self.team_count)
         p.write_u32(CONTROL,0)
         p.write(CONTROL+4,control[4:])
         p.write_u32(CONTROL,MAGIC)
@@ -501,6 +561,7 @@ class Controller:
         # The guest restores ownership itself after at most 180 pad updates;
         # no detached process or fresh emulator connection is created here.
         self.team_menu.shutdown()
+        self.squad_menu.shutdown()
         self.tournament.panel.shutdown()
         self.scenarios.shutdown()
         self.closed=True;self.active=False

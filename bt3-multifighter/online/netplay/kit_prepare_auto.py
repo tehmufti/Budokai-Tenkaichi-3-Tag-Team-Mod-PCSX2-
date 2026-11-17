@@ -121,6 +121,7 @@ def held_receipt_owned(record, owner, emulator_pid):
 class PrepCopy(kit_prepare_drive.GuestDrive):
     """The host's warm match-making copy. Every public step runs in a worker thread of the session process; one at a
     time (self.lock)."""
+    closing = threading.Event()          # never set here: each copy gets its own in __init__ (close(final=True))
 
     def __init__(self, install, iso, slot, run_dir, say=print, test=False, capture_shots=False):
         self.install, self.iso, self.slot, self.say = install, iso, slot, say
@@ -137,6 +138,7 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         self.settings_written = None
         self.timeline = self.run_dir / 'prepare-auto.jsonl'
         self.cancel = threading.Event()
+        self.closing = threading.Event() # close(final=True): the room / session is going away (never cleared)
         self.warming = False             # a cancel stops a preparation, never the warm-up (check())
         self.progress = lambda step, pct=None, eta_s=None: None
         self.test = test
@@ -172,6 +174,8 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         return row
 
     def check(self):
+        if self.closing.is_set():        # even a warm-up stops when the room closes or the session ends
+            raise Cancelled()
         if self.reset_running and self.reset_token is None:
             raise Cancelled()
         if self.cancel.is_set() and not self.warming:   # the warm-up always finishes: the next Ready is fast
@@ -333,8 +337,13 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         return bool(self.selector_cache and self.selector_identity and engine in MODE_ROWS and
                     self.selector_cache.available(kit_selector_cache.BASE_ENGINE, self.selector_identity))
 
-    def restore_selector(self, engine):
-        """Load the neutral base and commit `engine` semantically; the guest pad is gone with the old RAM."""
+    def committed_squads(self):
+        """The team sizes the private watcher says it committed ([3, 2, 1]), None for an ordinary match."""
+        return (self.watcher().get('native_mode_receipt') or {}).get('squads')
+
+    def restore_selector(self, engine, squads=None):
+        """Load the neutral base and commit `engine` semantically; the guest pad is gone with the old RAM.
+        squads (battle_mode_policy.Squads): the commit carries the team setup of three to five teams."""
         import kit_selector_cache
         if self.selector_lease is None:
             self.selector_lease = kit_selector_cache.find_watcher(self)
@@ -343,11 +352,12 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         # load (an old loop word with the new scene's team word reads as Fight Again: live, 2 of 19 resets) is not
         # waited for: the caller starts a fresh private emulator from the base instead (about 3 s).
         result = self.selector_cache.restore(self, kit_selector_cache.BASE_ENGINE, self.selector_identity,
-                                             self.selector_lease, boot=boot, commit=engine,
+                                             self.selector_lease, boot=boot, commit=engine, squads=squads,
                                              timeout=45 if boot is not None else 8)
         self.selector_boot = None
         self.pad = None
-        self.event('selector restored', engine=engine, **result)
+        self.event('selector restored', engine=engine, **result,
+                   **({} if squads is None else {'teams': list(squads.sizes())}))
         return result
 
     def cache_selector(self):
@@ -423,8 +433,19 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         if not cached:
             self.wait(lambda s: s['scene'] is not None, 60, 'its first screen')
 
-    def close(self):
-        """Close the copy's Play session (by PID: its cmd.exe tree and its PCSX2)."""
+    def close(self, final=False):
+        """Close the copy's Play session (by PID: its cmd.exe tree and its PCSX2). final: the room or the session
+        is going away: nothing may start the copy again, and its processes are ended before waiting for the
+        lock, so whoever holds it (a warm-up, a preparation) stops at its next step instead of making the
+        caller wait until it is done."""
+        if final:
+            self.closing.set()
+            self.cancel.set()
+            try:
+                kit_win.resume_pids(list(self.suspended))
+                self.base.close()
+            except Exception:  # noqa: BLE001 - closed again below, under the lock
+                pass
         # Invalidate a pending reset before taking its lock. Its normal check()
         # then stops it, rather than sending keys to an emulator being closed.
         self.reset_token = None
@@ -513,6 +534,8 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
             self.warming = before
 
     def _warm_steps(self):
+        if self.closing.is_set():
+            raise Cancelled()
         self._finish_pending_reset()
         if self.state == 'suspended':
             self._resume_checked()
@@ -709,6 +732,7 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         """Write the spec, one guest-pad accept, and at loop == 1 the Duel Time and the transformation sets; returns
         what the game wrote into SCENE."""
         self.progress('prep.confirm', 0, ETA['confirm'])
+        self.leader_mark = len(self.watcher_lines())    # the copy's log lines from here on are this match's
         time_word = kit_spec.scene_time(spec['native']['time'])
         self.ensure_pad()                       # its own PINE connections, before this step holds one
         for attempt in range(5):
@@ -837,6 +861,7 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         attached, for a moment."""
         self.progress('prep.loading', 0, ETA['loading'])
         end = time.time() + timeout
+        leaders = dict(mark=getattr(self, 'leader_mark', 0), state=None, looked=0.0)
         live_since = None
         t0 = time.time()
         last = None
@@ -859,7 +884,8 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
                 last = key
                 self.event('loading', **s)
             pct = min(95, int((time.time() - t0) * 100 / ETA['loading']))
-            self.progress('prep.loading', pct, max(1, ETA['loading'] - (time.time() - t0)))
+            self.progress('prep.leaders' if self.leader_wait(leaders) == 'waiting' else 'prep.loading', pct,
+                          max(1, ETA['loading'] - (time.time() - t0)))
             in_fight = s['director'] == 3 and s['result'] == 0
             attached = (in_fight and s['mode'] == 1 and s['watcher'] == 'ACTIVE' and s['prep_magic'] == 0x42545032
                         and s['armed'] == 1 and s['hold'] == 0 and (s['worker'] == 1 or s['fighters'] <= 2))
@@ -879,6 +905,43 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         raise KitError('TTM-NET-23', what=f'The host\'s match did not start within {int(timeout)} s.',
                        fix='Press Ready again: the kit starts the copy again.',
                        what_es=f'El combate del anfitrión no empezó en {int(timeout)} s.', fix_es='Pulsa Listo otra vez: el kit vuelve a arrancar la copia.')
+
+    def watcher_lines(self):
+        """Every line of the copy's current watcher log."""
+        folder = self.base.dest / 'game' / 'analysis' / 'autopilot'
+        try:
+            runs = sorted((q for q in folder.iterdir() if q.is_dir()), key=lambda q: q.stat().st_mtime)
+            return (runs[-1] / 'watcher.log').read_text(encoding='utf-8', errors='replace').splitlines() \
+                if runs else []
+        except OSError:
+            return []
+
+    def leader_wait(self, seen, every=0.5):
+        """The mod's wait for the first fighters in THIS preparation (the log lines after seen['mark']): said once
+        when it ends, returned as 'waiting' / 'ready' / 'late' / None for the progress line."""
+        if time.monotonic() - seen['looked'] < every:     # (monotonic: never the wall clock the waits use)
+            return seen['state']
+        seen['looked'] = time.monotonic()
+        lines = self.watcher_lines()
+        if len(lines) < seen['mark']:                 # the copy was started again: its log is a new one
+            seen['mark'] = 0
+        found = kit_prepare.leader_wait(lines[seen['mark']:])
+        state = found and found['state']
+        if state != seen['state']:
+            seen['state'] = state
+            import kit_text
+            lang = getattr(self, 'lang', 'en')
+            if state == 'waiting':
+                self.event('leaders waiting')
+            elif state == 'ready':
+                self.event('leaders settled', seconds=found['seconds'], reads=found['reads'])
+                self.say(kit_text.t('prep.leaders_ready', lang, seconds=f"{found['seconds']:.1f}",
+                                    reads=found['reads']))
+            elif state == 'late':
+                self.event('leaders not settled', seconds=found['seconds'], reason=found['reason'])
+                self.say(kit_text.t('prep.leaders_late', lang, seconds=f"{found['seconds']:.1f}",
+                                    reason=found['reason']))
+        return state
 
     def newest_checkpoint(self):
         """The playable checkpoint the copy's watcher named last (kit_prepare.checkpoint_from_log), or None."""
@@ -946,6 +1009,7 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         """The mod's playable checkpoint of THIS match (a new 'Rematch checkpoint' line, its file written)."""
         self.progress('prep.loading', 0, ETA['loading'])
         end, t0 = time.time() + timeout, time.time()
+        leaders = dict(mark=getattr(self, 'leader_mark', 0), state=None, looked=0.0)
         while time.time() < end:
             self.check()
             failed = self.watcher_failed()
@@ -964,7 +1028,8 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
                 if path.stat().st_size == size and size > 0:
                     return path
             pct = min(95, int((time.time() - t0) * 100 / ETA['loading']))
-            self.progress('prep.loading', pct, max(1, ETA['loading'] - (time.time() - t0)))
+            self.progress('prep.leaders' if self.leader_wait(leaders) == 'waiting' else 'prep.loading', pct,
+                          max(1, ETA['loading'] - (time.time() - t0)))
             time.sleep(0.01)
         raise KitError('TTM-NET-23', what=f'The host\'s match was not ready within {int(timeout)} s.',
                        fix='Press Start again: the kit starts the copy again.',
@@ -1012,6 +1077,8 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
         if self.state == 'suspended':
             self._resume_checked()
         engine = kit_spec.engine_mode(spec)
+        squads = kit_spec.squads(spec)                   # three to five teams: the layout the copy must commit
+        teams = None if squads is None else list(squads.sizes())
         if engine != self.engine:
             self.switch_engine(engine)
             timings['engine'] = round(time.time() - t0, 1)
@@ -1026,6 +1093,15 @@ class PrepCopy(kit_prepare_drive.GuestDrive):
                 self.close()
                 self._warm()
             timings['warm'] = round(time.time() - t0, 1)
+        if self.committed_squads() != teams:
+            # the neutral base again, committed with this match's team setup (or, after a team match that did not
+            # reach its reset, without one): the watcher's own receipt decides, never a remembered state
+            t = time.time()
+            self.restore_selector(engine, squads)
+            timings['teams'] = round(time.time() - t, 1)
+            if self.committed_squads() != teams:
+                raise KitError('TTM-NET-23', what='The match-making copy did not take the team setup of this room.',
+                               fix='Start the match again.')
         self.state = 'busy'
         confirmed = False
         try:

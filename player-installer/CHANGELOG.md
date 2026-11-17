@@ -1,3 +1,15 @@
+## Version 14.7
+
+- Team Battle in Modded Modes now asks how many teams: two to five teams can fight at the same time, offline and online. Each fighter shows its team label and the winning team gets a banner.
+- Matches with three to five teams keep the team features: take over a CPU teammate after a knockout, revive a downed teammate, fuse with a CPU teammate (BT3 only), use tag attacks (offline only) and win by ring-out.
+- Online rooms are steadier. A player who stops responding is handed to the CPU after a few seconds instead of freezing everyone, a lost connection rejoins by itself and gives back your name and fighter, joining or rejoining in the middle of a fight no longer ends it, Retry works after someone closed the game, and guests can leave while a match is being prepared.
+- Fixed English and Spanish installations refusing each other online, and a room with a single local player failing to start.
+- Fixed a rare error when a match was being set up before the leaders' models had loaded.
+
+Already installed? Use the Windows or Linux Updater and choose your existing mod folder. Your saves and settings stay in place. For a fresh install, download the full installer for your system.
+
+Everyone in an online room should use Version 14.7.
+
 ## Version 14.6
 
 - Fixed losing control when locking onto a downed teammate. You can move, guard and revive them normally while keeping them targeted.

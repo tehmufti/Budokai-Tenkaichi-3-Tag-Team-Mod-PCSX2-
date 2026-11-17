@@ -6,10 +6,12 @@ commands. Commands:
   host | join ADDRESS | name TEXT | lang en|es | iso PATH | bios PATH | install PATH
   find NAME           fighters (id, name, colours)       stages     stage ids and names        show | help
   claim T [I]         play fighter I (1-based, default 1) of team T   spectate   give your slot up (watch)
+  team T              join team T: play its first free fighter
   fighter T I C:K     team T fighter I (1-based) is character C, colour K (1-based): your own (host: any)
   potaras T I IDs     equip comma-separated Potara IDs (or none) on that fighter
   ready | unready | chat TEXT | leave | leavematch (leave the running fight, stay in the room)
-  host only:  start | cancel | end | mode teams|ffa | sizes A B | stage N|random | music N|random | random
+  host only:  start | cancel | end | mode teams|ffa | teams 2..5 | sizes A B [C D E] (one per team)
+              stage N|random | music N|random | random
               lock T I | unlock T I (nobody may claim that fighter) | kick NAME (remove a member from the room)
               rule time 60|90|180|240|inf | rule com 0..4 | rule referee 0..6 | rule destructible on|off
               rule mod KEY VALUE (a gameplay rule; the keys: show), rule service cpu_transform on|off
@@ -42,6 +44,48 @@ def parse_fighter(text):
     return int(c), int(k or '1') - 1
 
 
+def team_members(match):
+    """[[(column, index), ...] per team] of a lobby match: with three to five teams every fighter names its team
+    and stands on one of the two native columns; two teams are the columns themselves."""
+    teams = (match or {}).get('teams') or []
+    count = (match or {}).get('team_count')
+    if not count:
+        return [[(c, i) for i in range(len(column))] for c, column in enumerate(teams)]
+    out = [[] for _ in range(count)]
+    rows = sorted(((2 * i + c, f.get('team')) for c, column in enumerate(teams) for i, f in enumerate(column)),
+                  key=lambda row: row[0])
+    for position, team in rows:
+        if type(team) is int and 0 <= team < count:
+            out[team].append((position & 1, position >> 1))
+    return out
+
+
+def team_of(match, column, index):
+    """The team (from 0) of the fighter at a column and index, as the players count the teams."""
+    for team, members in enumerate(team_members(match)):
+        if (column, index) in members:
+            return team
+    return None
+
+
+def label_of(match, column, index):
+    """(team, index) from 0 of the fighter at a native column and index, as the players number them."""
+    for team, members in enumerate(team_members(match)):
+        if (column, index) in members:
+            return team, members.index((column, index))
+    return column, index
+
+
+def physical(match, team, index):
+    """(column, index) of fighter `index` of team `team` (both from 0) as the players number them."""
+    if not (match or {}).get('team_count'):
+        return team, index
+    members = team_members(match)
+    if team not in range(len(members)) or index not in range(len(members[team])):
+        raise ValueError('No such fighter')
+    return members[team][index]
+
+
 def command(text, state):
     """One command line -> (ipc command name, fields) or ('local', what) or None."""
     parts = text.strip().split(None, 1)
@@ -62,10 +106,16 @@ def command(text, state):
         return 'setup', {word: rest}
     if word == 'claim':
         team, _, index = rest.partition(' ')
-        return 'claim', dict(team=int(team) - 1, index=int(index or '1') - 1)
+        team, index = physical(match, int(team) - 1, int(index or '1') - 1)
+        return 'claim', dict(team=team, index=index)
+    if word == 'team':
+        return 'claim_team', dict(team=int(rest) - 1)
+    if word == 'teams':
+        return 'teams', dict(count=int(rest))
     if word in ('lock', 'unlock'):
         team, index = rest.split()
-        return 'lock', dict(team=int(team) - 1, index=int(index) - 1, locked=word == 'lock')
+        team, index = physical(match, int(team) - 1, int(index) - 1)
+        return 'lock', dict(team=team, index=index, locked=word == 'lock')
     if word == 'kick':
         members = {m['name'].lower(): m['id'] for m in lob.get('members') or []}
         target = members.get(rest.strip().lower())
@@ -77,10 +127,11 @@ def command(text, state):
     if word == 'fighter':
         team, index, who = rest.split()
         c, k = parse_fighter(who)
-        return 'fighter', dict(team=int(team) - 1, index=int(index) - 1, character=c, costume=k)
+        team, index = physical(match, int(team) - 1, int(index) - 1)
+        return 'fighter', dict(team=team, index=index, character=c, costume=k)
     if word == 'potaras':
         team, index, items = rest.split()
-        t, i = int(team)-1, int(index)-1
+        t, i = physical(match, int(team)-1, int(index)-1)
         if t not in (0,1) or i < 0:
             raise ValueError('No such fighter')
         fighter = match['teams'][t][i]
@@ -131,8 +182,7 @@ def command(text, state):
     if word == 'backhub':
         return 'back_to_hub', {}
     if word == 'sizes':
-        a, b = rest.split()
-        return 'sizes', dict(sizes=[int(a), int(b)])
+        return 'sizes', dict(sizes=[int(n) for n in rest.split()])
     if word == 'stage':
         return 'rules', dict(stage='random' if rest.lower() == 'random' else int(rest))
     if word == 'music':
@@ -196,6 +246,11 @@ def command(text, state):
             return 'bots', dict(on=arg.strip() != 'off')
         if sub == 'prep':
             return 'test_prep', dict(ko='ko' in arg.split(), leaders='leaders' in arg.split(), ki='ki' in arg.split())
+        if sub == 'drop':
+            return 'test_drop', {}
+        if sub == 'net':
+            key, _, value = arg.strip().partition(' ')
+            return 'test_net', {key: float(value)}
     if word in ('find', 'stages', 'show', 'help'):
         return 'local', text.strip()
     return 'local', f'unknown command {word}'
@@ -240,12 +295,15 @@ def facts(state):
     me_id = s.get('me')
     me = members.get(me_id) or {}
     players = [k for k in members if slot_of(match, k) is not None]
+    mine = slot_of(match, me_id)
     res = s.get('results') or {}
     st = s.get('status') or {}
     vote = s.get('vote') or {}
     return Namespace(phase=s.get('phase'), role=s.get('role'), lobby=lob, me=me, me_id=me_id, members=members,
                      count=len(members), players=players, spectators=[k for k in members if k not in players],
-                     my_slot=slot_of(match, me_id), ready_me=bool(me.get('ready')),
+                     my_slot=mine, ready_me=bool(me.get('ready')),
+                     teams=len(team_members(match)), team_sizes=[len(x) for x in team_members(match)],
+                     my_team=None if mine is None else team_of(match, *mine),
                      all_ready=all(members[k].get('ready') for k in players if k != 1),
                      match=match, lobby_phase=lob.get('phase'), rev=lob.get('rev'), results=res, how=res.get('how'),
                      vote=vote, decision=vote.get('decision'), agreed=vote.get('agreed') or [],
@@ -297,7 +355,10 @@ class Script:
                 if time.time() - self.since < step['sleep']:
                     return
             elif 'do' in step:
-                parsed = resolve(command(step['do'], self.state))
+                try:
+                    parsed = resolve(command(step['do'], self.state))
+                except (ValueError, KeyError, IndexError, TypeError) as error:
+                    parsed = ('local', f'step not understood: {step["do"]!r} ({error})')
                 self.log(f'SCRIPT do: {step["do"]}')
                 if parsed and parsed[0] != 'local':
                     self.send(parsed[0], **parsed[1])
@@ -444,18 +505,25 @@ class Console:
         n = m['native']
         stage = 'Random' if m['stage'] == 'random' else (v.stage_name(m['stage']) if v else m['stage'])
         music = 'Random' if m['bgm'] == 'random' else m['bgm'] + 1
-        self.say(f'-- lobby rev {lob["rev"]} ({lob.get("phase")}): {m["mode"]}, stage {stage}, music {music}, time '
+        count = m.get('team_count')
+        self.say(f'-- lobby rev {lob["rev"]} ({lob.get("phase")}): {m["mode"]}{f" ({count} teams)" if count else ""}, '
+                 f'stage {stage}, music {music}, time '
                  f'{kit_text.TIME_LABELS.get(n["time"], n["time"])}, CPU {kit_text.COM_LABELS[n["com"]]}, referee '
                  f'{kit_text.REFEREES[self.lang][n["referee"]]}, destructible {"ON" if n["destructible"] else "OFF"}')
         members = {x['id']: x for x in lob.get('members') or []}
-        for t_, team in enumerate(m['teams']):
+        for t_, team in enumerate(team_members(m)):
             row = []
-            for i, f in enumerate(team):
+            for column, i in team:
+                f = m['teams'][column][i]
                 owner = members.get(f.get('owner'), {}).get('name')
                 row.append(f'{name(f["character"])} ({f["costume"] + 1})' + (f' [{owner}]' if owner else ' [CPU]'))
             self.say(f'   team {t_ + 1}: ' + ', '.join(row))
         for k, x in sorted(members.items()):
-            role = 'player' if slot_of(m, k) is not None else 'watching'
+            at = slot_of(m, k)
+            role = 'watching'
+            if at is not None:
+                team, index = label_of(m, *at)
+                role = f'player (team {team + 1}, fighter {index + 1})' if count else 'player'
             self.say(f'   {x["name"]}{" (host)" if k == 1 else ""}: {role}{" READY" if x.get("ready") else ""}'
                      + ('' if x.get('rtt_ms') is None else f' {x["rtt_ms"]} ms'))
         if force:
@@ -485,6 +553,13 @@ class Console:
                 self.say('   ' + t('lobby.joinwith', self.lang, addr=addr))
         if state.get('phase') in ('lobby', 'results'):
             self.show_lobby()
+        res = state.get('results') or {}
+        shown = (res.get('epoch'), res.get('frame'), res.get('how'), res.get('winner'), res.get('team'))
+        if state.get('phase') == 'results' and res.get('how') and shown != getattr(self, 'last_result', None):
+            self.last_result = shown
+            import kit_postmatch
+            self.say('   winner: ' + kit_postmatch.result_line(res.get('how'), res.get('winner'), res.get('teams'),
+                                                              res.get('team'), res.get('nocontest'))[8:])
         vote = state.get('vote')
         if state.get('phase') == 'results' and vote and vote != getattr(self, 'last_vote', None):
             self.last_vote = vote
@@ -529,7 +604,12 @@ class Console:
                 bot.tick(self.state)
             while not self.lines.empty():
                 text = self.lines.get().strip()
-                parsed = resolve(command(text, self.state))
+                try:
+                    parsed = resolve(command(text, self.state))
+                except (ValueError, KeyError, IndexError, TypeError):
+                    # a mistyped command ('claim x', 'sizes 3') ended the console lobby with a traceback
+                    self.say(f'Not understood: {text!r} (type help for the commands).')
+                    continue
                 if not parsed:
                     continue
                 if parsed[0] == 'local' and isinstance(parsed[1], dict):

@@ -88,7 +88,10 @@ def picker_stub(free_for_all=False, revive_targets=None):
         a.label(f"dead{i}")
     a.mem(43, 17, 16, 0x14)
     for i in range(N):
-        enemies = [j for j in range(N) if j != i and (free_for_all or j % 2 != i % 2)]
+        # Three to five teams run the free-for-all picker with each fighter's own team left out of its list.
+        squads = policy.emitted_squads() if free_for_all else None
+        enemies = [j for j in range(N) if j != i and (free_for_all or j % 2 != i % 2)
+                   and (squads is None or squads.team_of[j] != squads.team_of[i])]
         preferred = DEFAULTS[i]
         choices = [preferred] + [j for j in enemies if j != preferred]
         a.load_address(18, DESCRIPTORS[i])
@@ -98,7 +101,7 @@ def picker_stub(free_for_all=False, revive_targets=None):
         a.load_address(8, TARGETS + i * 4)
         a.mem(35, 9, 8, 0)
         a.move(10, 9)
-        if revive_targets and not free_for_all:
+        if revive_targets and (not free_for_all or policy.squad_feature('revive_lockon')):
             import revive_targeting
             a.addiu(11,0,i)
             revive_targeting.emit_check(a,11,9)

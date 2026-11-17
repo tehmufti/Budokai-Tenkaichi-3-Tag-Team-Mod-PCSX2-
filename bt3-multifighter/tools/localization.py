@@ -1141,6 +1141,9 @@ ES.update({
     # fresh_team_trainer.Session.wait_word: the preparation steps (reports keep the English step name)
     'Preparing expanded game memory...': 'Preparando la memoria ampliada del juego...',
     'Loading selected character resources...': 'Cargando los archivos de los personajes elegidos...',
+    # fresh_team_trainer.StreamingSession.settled_leaders: a stage image caught a leader's model being set up
+    'Waiting for the game to finish setting up the first fighters...':
+        'Esperando a que el juego termine de preparar a los primeros luchadores...',
     'Creating independent fighters...': 'Creando los luchadores independientes...',
     'Checking rendering...': 'Comprobando los gráficos...',
     'Expanding render object capacity...': 'Ampliando la capacidad de objetos en pantalla...',
@@ -1975,3 +1978,47 @@ ES.update({
     "Damage counter": "Contador de daño",
     "Button sequence for all clashes": "Secuencia de botones en todos los choques",
 })
+
+
+# Team Battle with three to five teams: the "How many teams?" page, Team Setup, Player Setup and the result banner.
+ES.update({
+    '2 Teams': '2 equipos', '3 Teams': '3 equipos', '4 Teams': '4 equipos', '5 Teams': '5 equipos',
+    'Two teams, as always.\nPick the fighters for each side.': 'Dos equipos, como siempre.\nElige los luchadores de cada lado.',
+    '3 teams fight at the same time.\nThe last team standing wins.\nUp to 10 fighters in total.':
+        '3 equipos luchan a la vez.\nGana el último equipo en pie.\nHasta 10 luchadores en total.',
+    '4 teams fight at the same time.\nThe last team standing wins.\nUp to 10 fighters in total.':
+        '4 equipos luchan a la vez.\nGana el último equipo en pie.\nHasta 10 luchadores en total.',
+    '5 teams fight at the same time.\nThe last team standing wins.\nUp to 10 fighters in total.':
+        '5 equipos luchan a la vez.\nGana el último equipo en pie.\nHasta 10 luchadores en total.',
+    'TEAM SETUP': 'EQUIPOS',
+    'How many fighters on each team? Up to 10 in total.': '¿Cuántos luchadores por equipo? Hasta 10 en total.',
+    '<  {n} FIGHTERS  >': '<  {n} LUCHADORES  >', '<  1 FIGHTER  >': '<  1 LUCHADOR  >',
+    '10 fighters at most: lower another team first.': 'Máximo 10 luchadores: reduce antes otro equipo.',
+    'Pick {left} fighters on the first row and {right} on the second.':
+        'Elige {left} luchadores en la primera fila y {right} en la segunda.',
+    'Team {team} gets the last slot of both rows.': 'El equipo {team} ocupa la última casilla de ambas filas.',
+    'Team {team} has no fighter left for another player.': 'Al equipo {team} no le quedan luchadores para otro jugador.',
+    'Player 1: Up/Down select · Left/Right fighters · Cross continue · Triangle back':
+        'Jugador 1: Arriba/abajo elegir · Izq./der. luchadores · Cruz continuar · Triángulo volver',
+    'Player 1: Up/Down select · Left/Right fighters · Circle continue · Cross back':
+        'Jugador 1: Arriba/abajo elegir · Izq./der. luchadores · Círculo continuar · Cruz volver',
+    'TEAM {team} WINS': 'GANA EL EQUIPO {team}',
+    'The selected fighters do not match the team setup: pick the planned number on each row':
+        'Los luchadores elegidos no coinciden con los equipos: elige en cada fila el número previsto',
+    '{count} teams': '{count} equipos',
+})
+
+
+# The loading screen of a Team Battle with three to five teams.
+ES.update({'LAST TEAM STANDING WINS': 'GANA EL ÚLTIMO EQUIPO EN PIE'})
+PATTERNS += ((r'(\d+) TEAMS', r'\1 EQUIPOS'),)
+
+
+# Team Battle with three to five teams: the team chip in the match and the winner banner (guest text).
+PATTERNS += ((r'TEAM (\d+) WINS', r'GANA EL EQUIPO \1'), (r'TEAM (\d+)', r'EQUIPO \1'))
+
+
+# fresh_team_trainer.StreamingSession.settled_leaders: how the wait for the first fighters ended (log lines).
+PATTERNS += ((r'First fighters ready after ([\d.]+) s \(memory read (\d+) times\)\.',
+              r'Primeros luchadores listos tras \1 s (memoria leída \2 veces).'),
+             (r'First fighters not ready after ([\d.]+) s: (.*)', r'Los primeros luchadores no están listos tras \1 s: \2'))

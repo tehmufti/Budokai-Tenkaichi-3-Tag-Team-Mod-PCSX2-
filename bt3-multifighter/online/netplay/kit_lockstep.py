@@ -31,9 +31,15 @@ import netproto as proto
 from pinelink import nc
 
 RESYNC_AFTER = 30
-WINDOW = 1900                     # a guest publishes at most this many frames ahead of its game (INCOMING: 2048)
+WINDOW = nc.IN_SLOTS - 64         # a guest publishes at most this many frames ahead of its game: the core's
+                                  # INCOMING ring holds IN_SLOTS frames per slot (512 since layout 4), and a
+                                  # frame written further ahead overwrites one the game has not read yet
 HISTORY = 6000                    # frames of inputs the host keeps (rejoin / late spectators load newer states)
 LIVE = (nc.RUNNING, nc.ABORTED, nc.DECIDED)
+# attach(): a game whose ONLY player is this PC's own needs nobody's input and may be past frame D when the
+# session attaches (a copy loaded unpaused). Its captures and hashes are read from the game's rings from the
+# first frame, so the attach is accepted while a quarter of the smaller ring is not used up.
+SOLO_LATE = min(nc.OUT_SLOTS, nc.HASH_SLOTS) // 4
 INTERACTIVE_POLL = 0.05            # diagnostic only, stopped after combat becomes playable
 INTERACTIVE_MOTION_WINDOW = 0.25   # tolerate a short lockstep wait after observing a moving battle clock
 PREPARATION_CONTROL, PREPARATION_MAGIC = 0x0768F000, 0x42545032
@@ -262,10 +268,13 @@ class _Base:
     # ---- this PC's game
     def attach(self):
         """Write this PC's per-machine words into the game waiting paused before the fight (or accept a late attach:
-        a per-machine copy loaded unpaused, waiting at a frame <= D). Returns CONTROL."""
+        a per-machine copy loaded unpaused, waiting at a frame <= D; or, when its only player is this PC's own,
+        running on its own at a frame <= SOLO_LATE). Returns CONTROL."""
         c = self.guest.control()
         want_slot = nc.NO_SLOT if self.slot is None else self.slot
-        late = (c['state'] == nc.RUNNING and 0 < c['frame'] <= self.delay and c['local_slot'] == want_slot
+        alone = (self.slot is not None and c['mask'] == self.mask == 1 << self.slot and c.get('self_feed') == 1)
+        reach = max(self.delay, SOLO_LATE) if alone else self.delay
+        late = (c['state'] == nc.RUNNING and 0 < c['frame'] <= reach and c['local_slot'] == want_slot
                 and c['magic'] == nc.MAGIC and c['layout'] == self.layout and c['mode'] == nc.LOCKSTEP
                 and c['enable'] and c['delay'] == self.delay)
         if not late:
@@ -284,7 +293,8 @@ class _Base:
                 raise RuntimeError('; '.join(problems))
             self.guest.configure(local_slot=want_slot, self_feed=0 if self.slot is None else 1)
         self.started_at = self.clock()
-        self.event('attach', late=late, slot=self.slot, mask=self.mask, session=self.session,
+        self.event('attach', late=late, alone=bool(late and alone and c['frame'] > self.delay), slot=self.slot,
+                   mask=self.mask, session=self.session,
                    control={k: c[k] for k in ('state', 'frame', 'delay', 'mask', 'mode', 'local_slot')})
         return c
 
@@ -338,6 +348,8 @@ class _Base:
         self.slot = s
         self.self_commit = True
         self.joined_at = start                    # the host's (neutral) inputs of this slot below it are still taken
+        if hasattr(self, 'hub_need'):
+            self.hub_need = max(self.hub_need, start)   # nothing of this slot exists below the join frame
         self.guest.configure(local_slot=s, self_feed=0)
         self.advance_have(s)
         self.event('became_player', slot=s, K=K, first_capture=self.local_next)
@@ -463,7 +475,9 @@ class Hub(_Base):
             f = c['frame'] if c['state'] in LIVE else 0
             K = f + self.delay + 2 + lead
             seq = len(self.sched_log)
-            if seq - min([m.sched_through for m in self.members.values()] + [seq]) >= nc.SCHED_ENTRIES - 1:
+            # a paused member (joining, resyncing) loads a state that holds every entry: it does not count
+            if seq - min([m.sched_through for m in self.members.values() if not m.paused] + [seq]) >= \
+                    nc.SCHED_ENTRIES - 1:
                 raise RuntimeError('the SCHED ring is full (a guest acknowledges nothing)')
             self.guest.write_sched(seq, K, chunk)
             self.sched_log.append((seq, K, chunk, bulk & 0xFFFF) if bulk else (seq, K, chunk))

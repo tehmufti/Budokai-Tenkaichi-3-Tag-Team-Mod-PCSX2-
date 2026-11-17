@@ -279,7 +279,7 @@ def _compose(ram, builders):
         expected_hex=ram[lo:hi].hex(), data_hex=current[lo:hi].hex()) for lo,hi in ranges])), current
 
 
-def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assignment=None):
+def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assignment=None, squads=None):
     u = lambda p: struct.unpack_from('<I', ram, p)[0]
     manager, n = u(A(0x2FEB14)), u(creation.HEADER+52)
     if n not in ACTOR_COUNTS or u(creation.HEADER) != 20 or u(creation.HEADER+8) != n-2:
@@ -288,7 +288,7 @@ def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assig
     if mode != 'Original':
         leaders = {'Player': [False, True], 'Cpu': [True, True], 'TwoPlayer': [False, False]}[mode]
     mask = (1 << n)-1 if selection is None else selection['participation_mask']
-    four_seats=battle_mode_policy.human_seats(battle_mode,humans,mask,assignment) if humans>=3 or assignment is not None else None
+    four_seats=battle_mode_policy.human_seats(battle_mode,humans,mask,assignment,squads) if humans>=3 or assignment is not None else None
     targets = team_participation.target_plan(n, mask)
     rows = []
     for i in range(n):
@@ -305,8 +305,14 @@ def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assig
 
 
 def final_team_manifest(ram, activation, source, play_intro=False, pause_others=True, pause_mode=None, present_mask=None,
-                        settings=None, battle_mode='teams', humans=1, assignment=None, mission=None, gauntlet=None):
-    """Compose all playability guards before exposing the first ready frame."""
+                        settings=None, battle_mode='teams', humans=1, assignment=None, mission=None, gauntlet=None,
+                        squads=None):
+    """Compose all playability guards before exposing the first ready frame.
+
+    squads (battle_mode_policy.Squads): three to five teams on the free-for-all engine. The caller composes inside
+    battle_mode_policy.building_squads(squads), so every builder below emits for those teams."""
+    if squads is not None and (battle_mode!='ffa' or mission is not None or gauntlet is not None):
+        raise ValueError('Three to five teams run on the free-for-all engine, without a mission')
     training=battle_mode in ('training','training_coop')
     if training:battle_mode='coop' if battle_mode=='training_coop' else 'teams'
     preferences=mod_settings.validate_settings(settings or dict(mod_settings.DEFAULTS))
@@ -317,7 +323,7 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # keeps the CPU-only rule, and every other extra keeps it in co-op too.
     # The seating itself lives in battle_mode_policy.COOP_HUMANS, which the
     # CPU-flag assignment and the pad routing read as well.
-    seats=battle_mode_policy.human_seats(battle_mode,humans,present_mask,assignment)
+    seats=battle_mode_policy.human_seats(battle_mode,humans,present_mask,assignment,squads)
     human_extras=sum(1<<i for i in seats if i>=2)
     builders = [lambda r: activation,
         lambda r: audio_effects.build_memory(r, source=source),
@@ -376,7 +382,8 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     builders.append(lambda r: battle_modes.build_memory(r, mode=battle_mode, humans=humans,
         fusion_controls=preferences[mod_settings.COOP_FUSION_KEY], source=source,
         show_fusion_owner=preferences['show_fusion_control_owner'],
-        show_fusion_countdown=preferences['show_fusion_control_countdown']))
+        show_fusion_countdown=preferences['show_fusion_control_countdown'],
+        squads=squads, seats=seats if squads is not None else None))
     if battle_mode!='ffa':
         # Free-for-all installs this policy with its own battle mode. Teams and
         # co-op NPCs get the same decisions here: damage memory, distance and
@@ -457,6 +464,10 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     if humans>=2:
         import split_borders
         builders.append(lambda r: split_borders.build_memory(r))
+    # Three to five teams: the team chip at each view's status panel and the winner banner (a no-op elsewhere).
+    # Right after the views: the builders below rebuild the per-view extension list from what is installed.
+    import squad_hud
+    builders.append(lambda r: squad_hud.build_memory(r, source=source))
     import tournament_ringout
     builders.append(lambda r: tournament_ringout.build_memory(r, settings=preferences, source=source))
     import rush_cinematics
@@ -560,7 +571,7 @@ def warm_preparation(settings, battle_mode):
 
 
 class Session:
-    def __init__(self, mode='Original', progress=None, play_intro=False, settings=None, battle_mode='teams', humans=1, assignment=None):
+    def __init__(self, mode='Original', progress=None, play_intro=False, settings=None, battle_mode='teams', humans=1, assignment=None, squads=None):
         if mode not in ('Original', 'Player', 'Cpu', 'TwoPlayer'): raise ValueError('Unknown controller mode')
         # Snapshot once, before claiming files or touching the emulator. An
         # edit in the settings window applies to the next prepared match.
@@ -575,7 +586,13 @@ class Session:
                      else 'Cpu' if humans==0
                      else 'Player' if battle_mode in ('ffa','training') else mode)
         self.battle_mode,self.humans=battle_mode,humans
-        self.assignment=None if assignment is None else battle_mode_policy.human_seats(battle_mode,humans,assignment=assignment)
+        # Three to five teams (battle_mode_policy.Squads) run on the free-for-all engine; the seats come with them.
+        if squads is not None and (not isinstance(squads,battle_mode_policy.Squads) or battle_mode!='ffa'):
+            raise ValueError('Three to five teams run on the free-for-all engine')
+        self.assignment=None if assignment is None else battle_mode_policy.human_seats(battle_mode,humans,assignment=assignment,squads=squads)
+        # The layout carries the players' seats: every module that asks for the seats of this match gets them.
+        self.squads=None if squads is None else squads.with_seats(
+            self.assignment if self.assignment is not None else tuple(range(humans)))
         self.progress_callback = progress
         self.play_intro = bool(play_intro)
         self.prepared = ROOT/'analysis/prepared-states'
@@ -858,6 +875,7 @@ class Session:
             time.sleep(POLL)
         raise TimeoutError(f'{label}: the game did not finish this step within {timeout} seconds')
 
+    @battle_mode_policy.session_build     # built for this match's teams (None: the ordinary build)
     def prepare(self):
         self.progress('Preparing team battle', 0)
         if not isinstance(self, StreamingSession):   # the native-frame path needs the game running
@@ -877,11 +895,14 @@ class Session:
             self.settings=mod_settings.validate_settings(gauntlet_mode.settings_for(self.settings))
         # Host work every preparation repeats runs while the guest loads the fighters (warm_preparation).
         warm_preparation(self.settings, self.battle_mode)
-        if self.battle_mode in ('coop','training_coop') or self.humans>=3 or self.assignment is not None:
+        if self.squads is None and (self.battle_mode in ('coop','training_coop') or self.humans>=3 or self.assignment is not None):
             battle_mode_policy.validate_roster('coop' if self.battle_mode=='training_coop' else 'teams' if self.battle_mode=='training' else self.battle_mode,2*selection['members_per_side'],
                                                selection['participation_mask'],self.humans,self.assignment)
         if not 2 <= selection['members_per_side'] <= battle_mode_policy.TEAM_CAPACITY:
             raise ValueError(f'Select up to {battle_mode_policy.TEAM_CAPACITY} fighters on each team, with at least one extra fighter')
+        if self.squads is not None:
+            battle_mode_policy.validate_roster('ffa',2*selection['members_per_side'],selection['participation_mask'],
+                                               self.humans,self.assignment,self.squads)
         capture_path = write_json(self.run/'selection.json', selection)
         self.progress('Loading fighters', 1)
         self.install(fresh_memory.build(self.source), 'memory', require_running=False)
@@ -910,7 +931,7 @@ class Session:
         self.wait_word(packets.CONTROL, 5, 'Expanding graphics buffers...')
         ram = self.snapshot('render-ready')
         self.progress('Preparing arena', 4)
-        config = actor_config(ram, self.mode, selection, battle_mode=self.battle_mode,humans=self.humans,assignment=self.assignment)
+        config = actor_config(ram, self.mode, selection, battle_mode=self.battle_mode,humans=self.humans,assignment=self.assignment,squads=self.squads)
         write_json(self.run/'team-config.json', config)
         core = combat.build(self.source, config)
         guards = safety.build(self.source, config)
@@ -935,7 +956,7 @@ class Session:
         final = final_team_manifest(ram, activation, self.source, play_intro=self.play_intro,
             pause_mode=self.settings[mod_settings.MODE_KEY], present_mask=selection['participation_mask'],
             settings=self.settings, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,mission=mission,
-            gauntlet=gauntlet)
+            gauntlet=gauntlet, squads=self.squads)
         self.install(final, 'complete-team')
         if mission is not None:
             write_json(self.run/'mission.json',mission)
@@ -1175,6 +1196,12 @@ class PlayableExport:
         self.session.source = self.output
 
 
+# The stage images selected_team_capture.capture reads, and the bounds of the wait for the native leaders' models
+# (settled_leaders): running time in seconds, further reads of the game memory, equal looks in a row.
+LEADER_STAGES = ('original-selected-match', 'heap-ready', 'resources-ready')
+LEADER_WAIT, LEADER_READS, LEADER_LOOKS = 8.0, 4, 3
+
+
 class StreamingSession(Session):
     # The rematch archive is written while the uncovered match starts (PlayableExport).
     background_export = True
@@ -1199,6 +1226,7 @@ class StreamingSession(Session):
                 tournament['original']=tag_tournament.save_original(self,p,tournament['token'])
             if label!='ready-held':
                 ram=native.read_ram(p)
+                if label in LEADER_STAGES:ram=self.settled_leaders(p,ram)
         if label=='ready-held':
             # One final checkpoint, under the still-animated cover, supplies
             # native GS/IO state for rematches. It is never loaded during setup.
@@ -1217,6 +1245,41 @@ class StreamingSession(Session):
         # Normal runs reuse scratch; optional diagnostics retain every stage.
         self.index+=1;self.source=target;self.ram_path=target
         return ram
+
+    def settled_leaders(self,p,ram):
+        """The stage image once both native leaders' models are in place.
+
+        The game completes a leader's model-table entry, its model and its resource record a moment after a battle
+        loads, and the stage images are read while the game keeps running under the combat hold. An image read in
+        such a moment made selected_team_capture.capture stop the setup (TTM-MATCH-08 "Leader0 model pointer is
+        outside valid aligned game RAM", about once in a hundred preparations). That image is not used: wait - in
+        running time; a paused emulator is waited for - until the running game shows both entries valid,
+        initialized and unchanged over LEADER_LOOKS looks, read the memory again and check the new image. Bounded
+        by LEADER_WAIT seconds of running time and LEADER_READS further reads; when the leaders never settle the
+        last image is returned and capture() reports what is wrong, as it always did.
+        """
+        import native_preparation as native
+        from selected_team_capture import leader_models_pending,leader_models_live
+        reason=leader_models_pending(ram)
+        if reason is None:return ram
+        import localization
+        print(localization.tr('Waiting for the game to finish setting up the first fighters...'),flush=True)
+        budget=ActiveRuntimeBudget(LEADER_WAIT);reads=0;looks=0;last=None
+        while True:
+            running=budget.observe(p.status())
+            models=leader_models_live(p.read_u32)
+            looks=looks+1 if models is not None and models==last else int(models is not None)
+            last=models
+            if running and looks>=LEADER_LOOKS:
+                ram=native.read_ram(p);reads+=1;looks=0;last=None
+                reason=leader_models_pending(ram)
+                if reason is None:
+                    print(localization.tr(f'First fighters ready after {budget.elapsed:.1f} s (memory read {reads+1} times).'),flush=True)
+                    return ram
+            if budget.expired or reads>=LEADER_READS:
+                print(localization.tr(f'First fighters not ready after {budget.elapsed:.1f} s: {reason}'),flush=True)
+                return ram
+            time.sleep(.05)
 
     def publish_image(self,path,ram):
         data=ram if type(ram) is bytes else bytes(ram)

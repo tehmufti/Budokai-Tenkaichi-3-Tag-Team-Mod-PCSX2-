@@ -115,7 +115,14 @@ def draw_code(hide_view_subject=False, visibility_filter=None, entry=None):
     a.label('y_min'); a.lw(8, 19, 524); a.addiu(8, 8, Y_ORIGIN-HEIGHT); a.r(0, 8, 0, 8, 4)
     a.r(0x2A, 9, 8, 10); a.branch(4, 9, 0, 'y_max'); a.move(10, 8)
     a.label('y_max'); a.sw(10, 29, 0x64)
-    a.lw(8, 20, 8); a.i(12, 8, 8, 1); a.r(0, 8, 0, 8, 2); a.r(0x2D, 8, 16, 8); a.lw(8, 8, 0x30); a.sw(8, 29, 0x6C)
+    import battle_mode_policy as policy
+    if policy.emitted_squads() is not None:
+        # Three to five teams: the bar takes its team's colour (s2 is the physical fighter being drawn).
+        a.li(8, policy.SQUAD+policy.SQUAD_FIELDS['team_of']); a.r(0x21, 8, 8, 18); a.i(36, 8, 8, 0)
+        a.i(12, 8, 8, 7); a.r(0, 8, 0, 8, 2)
+        a.li(9, policy.SQUAD+policy.SQUAD_FIELDS['colors']); a.r(0x2D, 8, 9, 8); a.lw(8, 8); a.sw(8, 29, 0x6C)
+    else:
+        a.lw(8, 20, 8); a.i(12, 8, 8, 1); a.r(0, 8, 0, 8, 2); a.r(0x2D, 8, 16, 8); a.lw(8, 8, 0x30); a.sw(8, 29, 0x6C)
     # floor(HP*48/max), bounded to 48 iterations with no hardware division.
     a.r(0, 8, 0, 21, 5); a.r(0, 9, 0, 21, 4); a.r(0x2D, 8, 8, 9); a.move(10, 0)
     a.label('ratio'); a.r(0x2B, 9, 8, 22); a.branch(5, 9, 0, 'ratio_done')

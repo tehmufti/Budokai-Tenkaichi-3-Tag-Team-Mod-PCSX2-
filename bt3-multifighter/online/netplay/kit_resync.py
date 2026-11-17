@@ -31,7 +31,7 @@ MARGIN = 4
 MAX_RESYNCS = 3
 NEUTRAL_AFTER = 2.0
 TOKEN_WORD = nc.CONTROL + 0xF0
-STATE_NAME = 'SLUS-21678 (428113C2).{slot}.p2s'
+STATE_NAME = __import__('kit_adapter').state_name('{slot}')   # PCSX2's slot file of the disc that runs
 SLOT = 240
 JOIN_SLOT = 242
 
@@ -128,6 +128,7 @@ class HostResync:
         self.ctx, self.targets, self.reason, self.epoch, self.hold = ctx, list(targets), reason, epoch, hold
         self.state, self.K, self.table, self.token = 'start', None, None, None
         self.sched_count = None
+        self.bulk_count = None               # the host-service packets the saved state holds (GuestBulk.loaded)
         self.worker = None
         self.started = time.perf_counter() if now is None else now
         self.m = dict(reason=reason, targets=self.targets, hold=hold)
@@ -145,6 +146,7 @@ class HostResync:
                 self.token = secrets.randbits(31) | 1
                 self.state = 'save'
                 self.sched_count = hub.sched_count() if hasattr(hub, 'sched_count') else None
+                self.bulk_count = ctx.bulk_count() if hasattr(ctx, 'bulk_count') else None
                 self.worker = Worker(self._save)
                 return self.state
             c = hub.control or hub.guest.control()
@@ -174,6 +176,7 @@ class HostResync:
                 self.m['hold_s'] = round(now - self.t_hold, 3)
                 self.state = 'save'
                 self.sched_count = hub.sched_count() if hasattr(hub, 'sched_count') else None
+                self.bulk_count = ctx.bulk_count() if hasattr(ctx, 'bulk_count') else None
                 self.worker = Worker(self._save)
             elif now - self.t_hold > 30:
                 return self.fail('the games did not stop at the resync frame')
@@ -183,9 +186,9 @@ class HostResync:
                 return self.state
             if self.worker.error:
                 return self.fail(f'saving the state failed: {self.worker.error}')
-            path, sha, size = self.worker.value
+            path, sha, size, frame = self.worker.value
             if not self.hold:
-                self.K = state_frame(path)
+                self.K = frame
                 self.table = None
             self.m.update(size=size, sha256=sha, K=self.K)
             for t in self.targets:
@@ -227,13 +230,17 @@ class HostResync:
             before = mtime(path)
             ctx.link.save_state(SLOT)
             wait_file(path, before, alive=ctx.alive)
-        return path, sha256(path), path.stat().st_size
+        # a join (no hold) continues from the frame the state holds: read here, in the worker, so the session's
+        # loop (and with it every game) never waits for the 128 MiB decode
+        frame = None if self.hold else state_frame(path)
+        return path, sha256(path), path.stat().st_size, frame
 
     def _send(self, path, sha, size):
         ctx, hub = self.ctx, self.ctx.hub
         message = dict(type='RESYNC', epoch=self.epoch, K=self.K, token=self.token, hold=self.hold,
                        table=encode_table(self.table, self.K, hub.delay) if self.table else None, sha256=sha,
-                       size=size, reason=self.reason, delay=hub.delay, sched=self.sched_count)
+                       size=size, reason=self.reason, delay=hub.delay, sched=self.sched_count,
+                       bulk=self.bulk_count)
         for t in self.targets:
             ctx.send(t, message)
             ctx.send_file(t, path)

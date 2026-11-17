@@ -83,6 +83,10 @@ THEMES = {
     'training': dict(sides=(((190, 255, 200), (116, 222, 132)), ((160, 240, 235), (70, 200, 190))), centre=(50, 150, 110), glow=(90, 220, 150)),
 }
 THEMES['training_coop'] = THEMES['training']
+# Team Battle with three to five teams: each card in its team's colour (bright, deep), the same five colours as in
+# the menus and the match.
+import battle_mode_policy
+TEAM_PALETTES = tuple((tuple(min(255, int(v+(255-v)*0.35)) for v in color), color) for color in battle_mode_policy.TEAM_RGB)
 # entrance timing in frames (the JS ENT seconds x 60) and slide distances in design px
 ENT = dict(header=3, banners=9, cards=13, step=5.4, footer=25, vs=61)
 SLIDE = dict(header=-18, banners=26, cards=48, footer=14)
@@ -359,6 +363,7 @@ def state_for(view, message):
         info = c['info']
         cards.append(dict(id=info['character_id'], base=info['base_name'], form=info['form'] or '', side=c['side'],
                           slot=c['slot'], physical=c['physical'], role=tr(c['role']), human=c['role'].startswith('PLAYER'), number=c['slot']+1))
+        if 'team' in c: cards[-1]['team'] = c['team']       # Team Battle with three to five teams
     side_names = [tr(g['label']) for g in view['groups']] or [tr('TEAM 1'), tr('TEAM 2')]
     return dict(mode=view['mode'], humans=view['humans'], cards=cards, heading=heading, subtitle=subtitle,
                 footer=footer, message=tr(message), detail=tr(view['detail']) if view['detail'] else None, side_names=side_names)
@@ -369,7 +374,8 @@ def layout(s):
     mode = s['mode']
     items, strips = [], []
     if mode == 'ffa':
-        cards = sorted(s['cards'], key=lambda c: c['physical'])
+        # Three to five teams: the fighters of a team stand together, numbered and coloured by their team.
+        cards = sorted(s['cards'], key=lambda c: (c.get('team', 0), c['physical']))
         n = len(cards)
         cols, w, h, gx, gy = (3, 180, 120, 14, 14) if n <= 6 else (4, 135, 92, 6, 4)
         rows_n = (n+cols-1)//cols
@@ -380,8 +386,9 @@ def layout(s):
             r, k = divmod(i, cols)
             in_row = min(cols, n-r*cols)
             x = 320-(in_row*w+(in_row-1)*gx)/2+k*(w+gx); y = round(y0+r*(h+gy))
-            c = dict(c, number=i+1)   # contestants are numbered in physical order, not per side
+            c = dict(c, number=c['team']+1 if 'team' in c else i+1)   # contestants are numbered in physical order, not per side
             items.append(dict(card=c, side=c['physical'] % 2, compact=n > 6, grid=n <= 6, x=x, y=y, w=w, h=h, mirror=False, row=r))
+            if 'team' in c: items[-1]['palette'] = TEAM_PALETTES[c['team']]
             rows.append((r, y, h))
         rows = sorted(set(rows))
         for j, (r, y, hh) in enumerate(rows):
@@ -678,6 +685,7 @@ def name_lines(cv, it, T, tx, y_name, y_form, max_w, name_size, form_size, align
 def card(cv, it, theme, rec, idx):
     T = theme['sides'][it['side']] if it['side'] in (0, 1) else theme['sides'][0]
     if theme is THEMES['ffa']: T = theme['sides'][0]
+    if it.get('palette'): T = it['palette']
     c = it['card']; x, y, w, h = it['x'], it['y'], it['w'], it['h']
     tag_T = GOLD if c.get('human',False) else T
     panel(cv, it, T)
@@ -952,6 +960,7 @@ def lights_for(s, lay, mode, theme, table):
     ticks = []
     for it in lay['items'][:12]:
         T = theme['sides'][it['side']] if mode != 'ffa' else theme['sides'][0]
+        if it.get('palette'): T = it['palette']
         hx = it['hex']; rr = hx['R']+(8 if it['compact'] else 9)
         box = it['boxes'][0] if it['boxes'] else (0, 0, 0, 0)
         ticks.append(dict(cx=nx(hx['cx']), cy=ny(hx['cy']), rx=nx(rr), ry=ny(rr), n=16 if it['compact'] else 24,

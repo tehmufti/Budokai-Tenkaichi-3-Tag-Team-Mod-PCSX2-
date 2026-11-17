@@ -828,10 +828,10 @@ class Hub:
         with self._locked():
             for name, value in values.items():setattr(sink, name, value)
 
-    def open_setup(self, humans, team_mode, *, mode=None, keep=None):
+    def open_setup(self, humans, team_mode, *, mode=None, keep=None, teams=2):
         with self._locked():
             self.setup_open = True; self.notice = None
-            return self.checkin.open(humans, team_mode, self.clock(), self.devices, mode=mode, keep=keep).copy()
+            return self.checkin.open(humans, team_mode, self.clock(), self.devices, mode=mode, keep=keep, teams=teams).copy()
 
     def close_setup(self, commit):
         """Continue (commit=True) keeps the roster for the match and later ones; Back drops the draft. Returns the
@@ -841,7 +841,7 @@ class Hub:
             roster = self.checkin.roster
             if commit and roster is not None and self.state != 'ready':
                 # No reader: connection order (beta.36), the teams Player 1 chose kept.
-                fallback = checkin.Roster(roster.humans, 'connection_order', roster.team_mode)
+                fallback = checkin.Roster(roster.humans, 'connection_order', roster.team_mode, roster.teams)
                 for seat, old in zip(fallback.seats, roster.seats):seat.team = old.team
                 self.checkin.roster = fallback
             line = checkin.roster_line(self.checkin.roster, self.devices) if commit and self.checkin.roster else None

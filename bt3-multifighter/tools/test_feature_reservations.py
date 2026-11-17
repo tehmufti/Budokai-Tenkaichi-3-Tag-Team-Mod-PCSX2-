@@ -76,5 +76,60 @@ class FeatureReservations(unittest.TestCase):
             clash.build_memory(ram,{clash.KEY:True})
 
 
+class TeamBattleReservations(unittest.TestCase):
+    """Three to five teams: the menu block 0x06600000..0x06660000 and the free part of the battle-mode
+    reservation, 0x07121000..0x0712F200 (the team table sits at its end, behind the mode control)."""
+    MENU = (0x06600000, 0x06660000)
+    MODE = (0x07121000, 0x0712F200)
+    OWNERS = {'native_mode_menu.py', 'squad_select.py', 'battle_mode_policy.py', 'battle_modes.py', 'squad_hud.py'}
+
+    def test_the_menu_block_holds_the_team_pages_and_nothing_else_does(self):
+        import native_mode_menu as menu
+        import squad_select as select
+        lo, hi = self.MENU
+        pieces = [(menu.TEAMS_OFF, menu.TEAMS_ON), (menu.TEAMS_ON, select.GUARD), (select.GUARD, select.DRAW),
+                  (select.DRAW, menu.ATLASES), (menu.ATLASES, select.DATA), (select.DATA, select.END)]
+        self.assertEqual((pieces[0][0], pieces[-1][1]), (lo, hi))
+        self.assertTrue(all(a < b for a, b in pieces))
+        for p, data in menu.code_pieces():
+            if lo <= p < hi:
+                owner = next((a, b) for a, b in pieces if a <= p < b)
+                self.assertLessEqual(p+len(data), owner[1], hex(p))
+        forbidden = list(preparation.protected_ranges())
+        forbidden += [(p, p + loading.CAPACITY) for p in loading.BUFFERS]
+        forbidden += [(cpu.BASE, cpu.END), (clash.BASE, clash.END)]
+        self.assertTrue(all(hi <= start or end <= lo for start, end in forbidden))
+
+    def test_the_team_table_sits_inside_the_battle_mode_reservation(self):
+        import battle_mode_policy as policy
+        import battle_modes as modes
+        lo, hi = self.MODE
+        self.assertEqual((policy.SQUAD, policy.SQUAD_END), (policy.CONTROL+0x100, hi))
+        self.assertTrue(modes.FFA_DEFEAT < lo < policy.CONTROL < policy.SQUAD < policy.SQUAD_END <= modes.END)
+        self.assertLessEqual(modes.FFA_DEFEAT+len(modes.squad_defeat_code()), lo)
+        self.assertLessEqual(modes.FFA_DEFEAT+len(modes.defeat_code()), lo)
+        self.assertLessEqual(len(policy.squad_layout((2, 2, 2)).block(0x1870400)), policy.SQUAD_END-policy.SQUAD)
+        # the free part in use: the time-over rule, then the team HUD
+        import squad_hud
+        with policy.building_squads(policy.squad_layout((2, 2, 2))):
+            self.assertLessEqual(modes.TIME_OVER+len(modes.squad_timeover_code()), squad_hud.CODE)
+            for (address, data), limit in zip(squad_hud.pieces(), (squad_hud.BIG_TEXT, squad_hud.DATA, squad_hud.END)):
+                self.assertLessEqual(address+len(data), limit)
+        self.assertTrue(lo <= modes.TIME_OVER < squad_hud.CODE < squad_hud.END <= policy.CONTROL)
+
+    def test_no_other_module_names_an_address_in_either_range(self):
+        import re
+        from pathlib import Path
+        literal = re.compile(r'0x0[67][0-9A-Fa-f]{6}')
+        found = {}
+        for path in sorted(Path(__file__).resolve().parent.glob('*.py')):
+            if path.name.startswith('test_') or path.name in self.OWNERS: continue
+            for text in literal.findall(path.read_text(encoding='utf-8', errors='replace')):
+                value = int(text, 16)
+                if any(lo <= value < hi for lo, hi in (self.MENU, self.MODE)):
+                    found.setdefault(path.name, set()).add(text)
+        self.assertEqual(found, {})
+
+
 if __name__ == '__main__':
     unittest.main()

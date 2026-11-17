@@ -72,6 +72,39 @@ def fusion_buff_rows():
     return rows
 
 
+def revive_rows(fighters=10):
+    """Teammate revive in a match of three to five teams (teammate_revive's data-only ABI, the same blocks as in
+    a two-team match with revive): the control's static words and, for every fighter, what a second PC must agree
+    on: target, progress, hp, lock_target, recovering, recovery_ticks, revives, insufficient.
+
+    NOT part of a profile: the online kit appends these rows to the table of a team match with the setting
+    revive_enabled only. Left out on purpose: the control's +0x50..+0x5C (each PC's own ring display settings),
+    the ring's drawing clock at +0x60, and the rows' position floats (copies of actor positions already
+    hashed)."""
+    control, rows, stride = 0x070BF000, 0x070BF100, 64
+    out = [(DIRECT, 6, control, 0, 20, 'teammate revive control: magic, manager, count, engine, cost, channel, '
+                                      'options version, hook words, radius, health')]
+    for fighter in range(fighters):
+        base = rows + stride * fighter
+        out += [(DIRECT, 6, base + 4, 0, 4, f'revive row {fighter}: target, progress, hp, lock target'),
+                (DIRECT, 6, base + 44, 0, 4, f'revive row {fighter}: recovering, recovery ticks, revives, '
+                                             'insufficient')]
+    return out
+
+
+def squad_rows():
+    """Team Battle with three to five teams (battle_mode_policy's data-only ABI): the team table from its magic
+    through the winner words (SQUAD+0x00..+0x4C), the battle mode word and the free-for-all winner.
+
+    NOT part of a profile: the online kit appends these rows to the table of such a match only, so every other
+    match keeps its table byte for byte. The colours (+0x50) are static and need no row."""
+    control, squad = 0x0712F000, 0x0712F100
+    return [(DIRECT, 6, squad, 0, 19, 'team table: magic, manager, teams, count, team of every fighter, layout, '
+                                    'members, humans, shared, living teams, winning team, winning fighter'),
+            (DIRECT, 6, control + 12, 0, 1, 'battle mode word (a team match runs on the free-for-all engine)'),
+            (DIRECT, 6, control + 44, 0, 1, 'free-for-all winner')]
+
+
 def descriptors(profile='lean'):
     """(kind, class, address, offset, words, why). USA addresses through A(); guest-owned mod state as-is.
 

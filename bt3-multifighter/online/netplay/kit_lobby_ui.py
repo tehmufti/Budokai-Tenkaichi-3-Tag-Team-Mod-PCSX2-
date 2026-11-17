@@ -67,6 +67,10 @@ DRAG_S = 0.15                            # a window whose size changed this rece
 SCREENS = {'start': 'start', 'check': 'check', 'lobby': 'lobby', 'preparing': 'prep', 'sending': 'prep',
            'loading': 'prep', 'fight': 'fight', 'results': 'results'}
 CHAT_SCREENS = ('lobby', 'prep', 'fight', 'results')
+# Three to five teams: the game's own team colours (battle_mode_policy.TEAM_RGB) and a darker tone of each for the
+# panel headings.
+SQUAD = ('#48bcff', '#ff7848', '#58e078', '#ffd040', '#c080ff')
+SQUAD_DIM = ('#2b7199', '#99482b', '#358648', '#997d26', '#734d99')
 
 
 def px(n):
@@ -460,11 +464,12 @@ def composite(base_png, base_rect, top_png, top_rect):
 class FighterRow:
     """One fighter of the room's teams, updated in place when its character, colour, owner or lock changes."""
 
-    def __init__(self, app, parent, team, index, host):
+    def __init__(self, app, parent, team, index, host, accent=None):
         self.app, self.team, self.index = app, team, index
         self.values = None
+        self.accent = accent or th.TEAM_DIM[team % 2]     # (three to five teams: the team's own colour)
         self.frame = tk.Frame(parent, bg=th.CARD, highlightthickness=max(1, px(2)),
-                              highlightbackground=th.TEAM_DIM[team % 2])
+                              highlightbackground=self.accent)
         self.frame.pack(fill='x', pady=px(3))
         self.frame.columnconfigure(1, weight=1)
         self.pic = th.portrait_frame(self.frame, None, bg=th.INSET)
@@ -535,7 +540,7 @@ class FighterRow:
         if items:
             sub += ' · ' + app.T('potara.count', n=len(items))
         configure_changed(self.sub, text=sub, fg=th.GOLD if mine else (th.GREEN if who else th.DIM))
-        configure_changed(self.frame, highlightbackground=th.GOLD if mine else th.TEAM_DIM[self.team % 2])
+        configure_changed(self.frame, highlightbackground=th.GOLD if mine else self.accent)
         self.editable = (host or mine) and lobby_open
         self.frame.configure(cursor='hand2' if self.editable else '')
         widgets = [self.potara]
@@ -875,8 +880,8 @@ class App:
     def lost(self):
         if self.screen == 'lost':
             return
-        self.go('lost')
-        self.later(8000, self.close_window)
+        self.go('lost')                                  # stays until the player closes it (it used to close
+                                                         # itself after 8 s: the whole kit seemed to crash)
 
     def build_lost(self):
         self.header(self.body, self.T('app.title'), '')
@@ -1592,6 +1597,11 @@ class App:
         self.check_sig = None
         self.check_note = wrap_label(tk.Label(self.body, text='', bg=BG, fg=th.DIM, font=font(10)))
         self.check_note.pack(fill='x', padx=px(18))
+        row = Flow(self.foot, bg=BG, align='right')
+        row.grid(row=0, column=0, sticky='ew')
+        # the way out while a host does not answer (the screen had no button at all)
+        row.set_widgets([self.button(row, self.T('cancel'),
+                                     lambda: self.once('leave', lambda: self.send('leave'), hold=2.0), big=True)])
 
     def update_check(self):
         checks = self.state.get('checks') or []
@@ -1691,7 +1701,8 @@ class App:
         self.ready_button = self.button(buttons, self.T('room.ready_btn'), self.toggle_ready, kind='primary', big=True,
                                         width=14)
         self.start_button = self.button(buttons, self.T('room.start'),
-                                        lambda: self.once('start', lambda: self.send('start'), hold=2.0),
+                                        lambda: self.once('start', lambda: (self.flush_spins(), self.send('start')),
+                                                          hold=2.0),
                                         kind='go', big=True, width=16)
         self.watch_button = self.button(buttons, self.T('room.spectate'),
                                         lambda: self.once('unclaim', lambda: self.send('unclaim')), big=True)
@@ -1764,7 +1775,8 @@ class App:
         teams = match.get('teams') or []
         parts = dict(people=json.dumps([sorted(members), identity]),
                      teams=json.dumps([[len(team) for team in teams], match.get('mode'), match.get('type'),
-                                       lob.get('phase'), identity, catalog]),
+                                       lob.get('phase'), identity, catalog, match.get('team_count'),
+                                       [[f.get('team') for f in team] for team in teams]]),
                      rules=json.dumps([lob.get('phase'), identity, st.get('services'), catalog]))
         if parts['people'] != self.sigs.get('people'):
             self.sigs['people'] = parts['people']
@@ -1843,6 +1855,8 @@ class App:
                 tags.append(self.T('room.you_tag'))
             configure_changed(name, text=m['name'] + (f' ({", ".join(tags)})' if tags else ''))
             at = kit_lobby_console.slot_of(self.match(), ident)
+            if at:
+                at = kit_lobby_console.label_of(self.match(), *at)       # as the team panels number them
             role = self.T('room.playing_fighter', team=at[0] + 1, index=at[1] + 1) if at else self.T('room.watching')
             extra = [self.T('room.ready')] if at and m.get('ready') else []
             if m.get('rtt_ms') is not None:
@@ -1879,42 +1893,76 @@ class App:
         top = Flow(self.teams, bg=th.PANEL)
         top.pack(fill='x', padx=px(10), pady=(px(4), px(2)))
         top.add(tk.Label(top, text=self.T('room.mode'), bg=th.PANEL, fg=th.GOLD, font=heading(10)))
-        for value, label in (('teams', self.T('room.mode.teams')), ('ffa', self.T('room.mode.ffa'))):
+        for value, label in (('teams', self.T('room.mode.team_battle')), ('ffa', self.T('room.mode.ffa'))):
             chosen = match.get('mode') == value
             top.add(self.chip(top, label, chosen, lambda v=value: self.send('mode', mode=v),
                               enabled=host and match.get('type') != 'hub'))
-        top.add(tk.Label(top, text=self.T('room.mode.three'), bg=th.PANEL, fg=th.FAINT, font=font(9, True)))
-        wrap_label(tk.Label(self.teams, text=self.T('room.mode.three_why'), bg=th.PANEL, fg=th.DIM,
-                            font=font(8))).pack(fill='x', padx=px(10))
+        squads = bool(match.get('team_count'))             # three to five teams (two: the two columns)
+        count = match.get('team_count') or 2
+        if match.get('mode') == 'teams' and match.get('type', 'versus') != 'hub':
+            how_many = Flow(self.teams, bg=th.PANEL)
+            how_many.pack(fill='x', padx=px(10), pady=(0, px(2)))
+            how_many.add(tk.Label(how_many, text=self.T('room.teams'), bg=th.PANEL, fg=th.GOLD, font=heading(10)))
+            for n in (2, 3, 4, 5):
+                how_many.add(self.chip(how_many, str(n), count == n,
+                                       lambda n=n: self.once(('teams', n), lambda: self.send('teams', count=n),
+                                                             hold=0.6), enabled=host))
+            if squads:
+                wrap_label(tk.Label(self.teams, text=self.T('room.teams_why'), bg=th.PANEL, fg=th.DIM,
+                                    font=font(8))).pack(fill='x', padx=px(10))
         cols = tk.Frame(self.teams, bg=th.PANEL)
         cols.pack(fill='both', expand=True, padx=px(6), pady=px(4))
         teams = match.get('teams') or []
+        groups = kit_lobby_console.team_members(match)     # [[(column, index), ...] per team]
         columns = []
         self.team_titles = []
-        for t_, team in enumerate(teams):
+        self.team_joins, self.team_join_shown = {}, {}
+        for t_, members_ in enumerate(groups):
+            color = SQUAD_DIM[t_ % len(SQUAD_DIM)] if squads else th.TEAM_DIM[t_ % 2]
             col = tk.Frame(cols, bg=th.PANEL)
             columns.append(col)
-            head = tk.Frame(col, bg=th.TEAM_DIM[t_ % 2])
+            head = tk.Frame(col, bg=color)
             head.pack(fill='x', pady=(px(2), px(2)))
-            title = tk.Label(head, text='', bg=th.TEAM_DIM[t_ % 2], fg=th.INK, font=heading(11))
+            title = tk.Label(head, text='', bg=color, fg=th.INK, font=heading(11))
             title.pack(side='left', padx=px(8), pady=px(3))
             self.team_titles.append(title)
             if host:
-                sizes = [len(x) for x in teams]
+                sizes = [len(x) for x in groups]
                 for delta, sign in ((1, '+'), (-1, '−')):
                     new = list(sizes)
-                    new[t_] += delta                  # edit only this column
+                    new[t_] += delta                  # edit only this team (or column)
                     ok = all(1 <= n <= 5 for n in new) and sum(new) <= 10
                     b = tk.Button(head, text=sign, width=2, command=lambda n=new: self.send('sizes', sizes=n))
-                    th.style_button(b, 'plain', parent_bg=th.TEAM_DIM[t_ % 2])
+                    th.style_button(b, 'plain', parent_bg=color)
                     b.configure(font=font(10, True), padx=px(4), pady=0)
                     th.enable(b, ok)
                     b.pack(side='right', padx=px(2), pady=px(2))
-            for i, _ in enumerate(team):
-                self.team_rows[(t_, i)] = FighterRow(self, col, t_, i, host)
+            if squads:
+                join = tk.Button(head, text=self.T('room.join_team'),
+                                 command=lambda t=t_: self.once(('team', t),
+                                                                lambda: self.send('claim_team', team=t)))
+                th.style_button(join, 'plain', parent_bg=color)
+                join.configure(font=font(9, True), padx=px(6), pady=0)
+                self.team_joins[t_] = join
+            for column, i in members_:
+                self.team_rows[(column, i)] = FighterRow(self, col, column, i, host,
+                                                         accent=color if squads else None)
         layout = [None]
 
         def arrange_teams(width):
+            if squads:
+                # one panel per team, as many side by side as fit
+                per_row = max(1, min(len(columns), max(width, px(300)) // px(290)))
+                if layout[0] == per_row:
+                    return
+                layout[0] = per_row
+                for i in range(len(columns)):
+                    cols.columnconfigure(i, weight=1 if i < per_row else 0,
+                                         uniform='teams' if i < per_row else '')
+                for i, col in enumerate(columns):
+                    col.grid_forget()
+                    col.grid(row=i // per_row, column=i % per_row, sticky='nsew', padx=px(4), pady=px(2))
+                return
             if layout[0] is None:
                 side_by_side = width >= px(620)
             else:
@@ -1947,10 +1995,27 @@ class App:
         members = self.members()
         host = self.is_host() and self.lobby().get('phase') == 'lobby'
         lobby_open = self.lobby().get('phase') == 'lobby'
-        for t_, team in enumerate(teams):
+        mine = self.my_slot()
+        squads = bool(match.get('team_count'))
+        for t_, members_ in enumerate(kit_lobby_console.team_members(match)):
+            here = mine is not None and tuple(mine) in members_
             if t_ < len(self.team_titles):
-                configure_changed(self.team_titles[t_], text=self.T('room.team' if match.get('mode') == 'teams'
-                                                                    else 'room.column', n=t_ + 1))
+                text = self.T('room.team' if match.get('mode') == 'teams' else 'room.column', n=t_ + 1)
+                if squads and here:
+                    text += ' · ' + self.T('room.my_team')
+                configure_changed(self.team_titles[t_], text=text)
+            join = getattr(self, 'team_joins', {}).get(t_)
+            if join is not None:                              # a team with a free fighter can be joined
+                free = any(teams[c][i].get('owner') is None and not teams[c][i].get('locked')
+                           for c, i in members_ if c < len(teams) and i < len(teams[c]))
+                show = bool(lobby_open and free and not here)
+                if show != self.team_join_shown.get(t_):
+                    self.team_join_shown[t_] = show
+                    if show:
+                        join.pack(side='right', padx=px(4), pady=px(2))
+                    else:
+                        join.pack_forget()
+        for t_, team in enumerate(teams):
             for i, f in enumerate(team):
                 row = self.team_rows.get((t_, i))
                 if row is not None:
@@ -2178,6 +2243,7 @@ class App:
 
     # ---- dialogs ---------------------------------------------------------------------------------------------------------
     def close_dialog(self):
+        self.flush_spins()
         if self.dialog is not None:
             try:
                 self.dialog.destroy()
@@ -2273,8 +2339,8 @@ class App:
                                          state='normal' if editable else 'disabled',
                                          increment=1 if kind == 'int' else 0.25,
                                          command=lambda k=key, v=var: self.spin_changed(k, v, on_change, now=True))
-                    widget.bind('<Return>', lambda e, k=key, v=var: self.spin_changed(k, v, on_change, now=True))
-                    widget.bind('<FocusOut>', lambda e, k=key, v=var: self.spin_changed(k, v, on_change, now=True))
+                    widget.bind('<Return>', lambda e, k=key, v=var: self.spin_changed(k, v, on_change, commit=True))
+                    widget.bind('<FocusOut>', lambda e, k=key, v=var: self.spin_changed(k, v, on_change, commit=True))
                     self.setting_vars[key] = var
                 widget.grid(row=r, column=1, sticky='w', padx=px(8), pady=1)
                 self.setting_widgets[key] = widget
@@ -2300,20 +2366,24 @@ class App:
                 rows[col] += 1
         cols.bind('<Configure>', arrange)
 
-    def spin_changed(self, key, var, on_change, now=False):
-        """A spin box sends at most one change per pause: the first click at once, the rest when the clicks stop."""
+    def spin_changed(self, key, var, on_change, now=False, commit=False):
+        """A spin box sends at most one change per pause: the first click at once, the rest when the clicks stop.
+        commit (Enter, or the box losing the focus): the value is final, it is sent at once - never delayed
+        behind the click pause (a second focus change used to push it out again and again)."""
         value = var.get()
         jobs = self.__dict__.setdefault('spin_jobs', {})
         stamp = self.__dict__.setdefault('spin_stamp', {})
+        flushers = self.__dict__.setdefault('spin_flushers', {})
         if jobs.get(key):
             try:
                 self.root.after_cancel(jobs.pop(key))
             except tk.TclError:
                 pass
+        flushers.pop(key, None)
         if value == self.spin_sent.get(key):
             return
         quiet = time.monotonic() - stamp.get(key, 0.0) > 0.35
-        if now and quiet:
+        if commit or (now and quiet):
             self.spin_sent[key] = value
             stamp[key] = time.monotonic()
             on_change(key, value)
@@ -2322,11 +2392,28 @@ class App:
 
         def flush():
             jobs.pop(key, None)
+            flushers.pop(key, None)
             current = var.get()
             if current != self.spin_sent.get(key):
                 self.spin_sent[key] = current
                 on_change(key, current)
+        flushers[key] = flush
         jobs[key] = self.root.after(350, flush)
+
+    def flush_spins(self):
+        """Send every spin-box value still waiting for its click pause (the dialog closes, or START is pressed)."""
+        jobs = self.__dict__.get('spin_jobs') or {}
+        for key, flush in list((self.__dict__.get('spin_flushers') or {}).items()):
+            job = jobs.pop(key, None)
+            if job:
+                try:
+                    self.root.after_cancel(job)
+                except tk.TclError:
+                    pass
+            try:
+                flush()
+            except tk.TclError:                          # its variable went with the dialog
+                pass
 
     def refresh_pickers(self):
         """Keep open dialogs truthful when the room changes underneath them."""
@@ -2361,7 +2448,10 @@ class App:
             current = dict(self.match()['teams'][team][index])
         except (IndexError, KeyError, TypeError):
             return
-        title = self.T('room.team', n=team + 1) + f' · {index + 1}'
+        shown = kit_lobby_console.team_of(self.match(), team, index)
+        members_ = kit_lobby_console.team_members(self.match())
+        rank = members_[shown].index((team, index)) if shown is not None else index
+        title = self.T('room.team', n=(team if shown is None else shown) + 1) + f' · {rank + 1}'
         win = self.toplevel(title)
         self.dialog = win
         win.columnconfigure(0, weight=1)
@@ -2793,13 +2883,18 @@ class App:
     def versus_card(self, parent):
         """Both teams' portraits facing each other (BT3's loading screen), from the room's roster; the portraits
         shrink to half size when the window is too narrow for them (fit_versus, after a resize)."""
-        teams = (self.match().get('teams') or [])[:2]
+        match = self.match()
+        teams = (match.get('teams') or [])[:2]
+        squads = bool(match.get('team_count'))
+        if squads:                                    # three to five teams: one group per team
+            teams = [[teams[c][i] for c, i in members_ if c < len(teams) and i < len(teams[c])]
+                     for members_ in kit_lobby_console.team_members(match)]
         if not teams or not self.catalog:
             self.vs = None
             return None
         card = th.Panel(parent)
         card.pack(fill='x', padx=px(16), pady=(px(10), px(4)))
-        self.vs = dict(card=card, teams=teams, small=None)
+        self.vs = dict(card=card, teams=teams, small=None, squads=squads)
         self.fit_versus()
         return card
 
@@ -2815,6 +2910,8 @@ class App:
         width = self.body.winfo_width()
         n = max(len(team) for team in vs['teams'])
         need = 2 * n * (64 * PZ + px(10)) + px(150)
+        if vs.get('squads'):
+            need = sum(len(team) for team in vs['teams']) * (64 * PZ + px(10)) + px(90) * len(vs['teams'])
         small = 1 < width < need
         if small == vs['small']:
             return
@@ -2824,19 +2921,22 @@ class App:
             w.destroy()
         row = tk.Frame(inner, bg=th.PANEL)
         row.pack(pady=px(10))
+        squads = vs.get('squads')
         for t_, team in enumerate(vs['teams']):
             side = tk.Frame(row, bg=th.PANEL)
-            side.grid(row=0, column=0 if t_ == 0 else 2, padx=px(8))
+            side.grid(row=0, column=2 * t_, padx=px(8))
             for i, f in enumerate(team):
                 mine = f.get('owner') is not None and f.get('owner') == self.me()
                 rel = self.catalog.chars[f['character']]['portrait'] if f['character'] in self.catalog.chars else None
                 img = (self.small(rel) if small else self.image(rel)) if rel else None
                 pic = th.portrait_frame(side, img, glow=th.GLOW if mine else None, bg=th.INSET)
-                pic.grid(row=0, column=i if t_ == 0 else len(team) - 1 - i, padx=px(2))
-            tk.Frame(side, bg=th.TEAM[t_], height=px(4)).grid(row=1, column=0, columnspan=max(1, len(team)),
-                                                              sticky='ew', pady=(px(4), 0))
-        tk.Label(row, text='VS', bg=th.PANEL, fg=th.GOLD, font=heading(18 if small else 26)).grid(
-            row=0, column=1, padx=px(10))
+                pic.grid(row=0, column=i if t_ == 0 or squads else len(team) - 1 - i, padx=px(2))
+            tk.Frame(side, bg=SQUAD[t_ % len(SQUAD)] if squads else th.TEAM[t_ % 2],
+                     height=px(4)).grid(row=1, column=0, columnspan=max(1, len(team)), sticky='ew', pady=(px(4), 0))
+            if t_:
+                tk.Label(row, text='VS', bg=th.PANEL, fg=th.GOLD,
+                         font=heading((12 if small else 16) if squads else (18 if small else 26))).grid(
+                    row=0, column=2 * t_ - 1, padx=px(4) if squads else px(10))
 
     def build_prep(self):
         self.header(self.body, self.T('prep.title'))
@@ -2864,6 +2964,8 @@ class App:
         if self.is_host():
             self.prep_cancel = self.button(row, self.T('prep.cancel'), self.cancel_prep, kind='danger', big=True)
             row.set_widgets([self.prep_cancel])
+        else:                                            # a guest is not locked in while the host prepares
+            row.set_widgets([self.button(row, self.T('room.leave'), self.leave, big=True)])
 
     def build_bottom_chat(self, parent):
         """The chat is part of the window's frame now (pinned at the bottom); kept for callers of the old window."""
@@ -3138,6 +3240,11 @@ class App:
         if how == 'nocontest' or not winner:
             text = self.T('results.nocontest') if not res.get('nocontest') else \
                 self.T('results.nocontest_why', why=res['nocontest'])
+        elif res.get('teams'):                            # three to five teams: the game named the winning team
+            team = res.get('team')
+            text = self.T('results.no_team') if not team else \
+                self.T('results.winner_team', team=team) + ' ' + self.T('results.ko' if how == 'ko' else
+                                                                        'results.time')
         else:
             team = 1 if winner & 1 else 2
             text = self.T('results.winner_team', team=team) + ' ' + self.T('results.ko' if how == 'ko' else
@@ -3173,7 +3280,9 @@ class App:
 
     def draw_winners(self, team):
         """The winning team's portraits under the result (drawn when the result arrives, not on every tick)."""
-        teams = self.match().get('teams') or []
+        columns = self.match().get('teams') or []
+        teams = [[columns[c][i] for c, i in members_ if c < len(columns) and i < len(columns[c])]
+                 for members_ in kit_lobby_console.team_members(self.match())]
         sig = (team, json.dumps(teams[team - 1] if team and team <= len(teams) else None))
         if sig == self.res_faces_sig:
             return
@@ -3282,8 +3391,11 @@ class App:
 
         def remedy(name):
             self.dismiss_error()
-            if name == 'retry':
-                if self.state.get('role') == 'host':
+            if name in ('retry', 'compare_files'):
+                if name == 'compare_files':
+                    self.send('setup', disc_check='quick')
+                # what was tried last (after a failure the session has no role any more)
+                if (self.state.get('role') or self.state.get('last_role')) == 'host':
                     self.send('host')
                 else:
                     self.send('join', address=(self.state.get('settings') or {}).get('host_address', ''))
@@ -3294,8 +3406,6 @@ class App:
                     self.advanced_open = True
             elif name in ('choose_iso', 'choose_bios'):
                 self.choose_file(name.split('_')[1])
-            elif name == 'compare_files':
-                self.send('setup', disc_check='quick')
             elif name == 'logs':
                 folder = self.state.get('run_dir') or str(kit_paths.RUNS)
                 if os.name == 'nt':

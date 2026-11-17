@@ -86,7 +86,10 @@ def ring(waves=True,quad_support=False):
     a.jump('done');a.label('human')
     a.call(A(0x120AB0));a.addiu(4,16,320);a.call(A(0x120B80))
     a.move(19,0)
-    a.label('body');a.branch(4,19,17,'next_body');a.r(0x26,8,19,17);a.i(12,8,8,1);a.branch(5,8,0,'next_body')
+    if r.policy.squad_feature('revive'):
+        a.label('body');r.policy.emit_ally(a,19,17,'next_body',t0=8,t1=9)     # a teammate by the team table
+    else:
+        a.label('body');a.branch(4,19,17,'next_body');a.r(0x26,8,19,17);a.i(12,8,8,1);a.branch(5,8,0,'next_body')
     a.move(4,19);a.call(r.ACTOR);a.branch(4,2,0,'next_body')
     a.move(20,2);a.lw(8,3);a.branch(7,8,0,'next_body');a.lw(8,3,4);a.branch(6,8,0,'next_body')
     r.eligible(a,20,19,True,'next_body')

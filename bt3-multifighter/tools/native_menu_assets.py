@@ -302,3 +302,13 @@ DESCRIPTIONS=tuple(tuple(
     'Choose a team for each player, then fighters.\nShare a team for cooperative play.\nAdd CPU fighters to either team.'
     if page in (1,4) and row in (0,1,5) else text
     for row,text in enumerate(texts)) for page,texts in enumerate(DESCRIPTIONS))
+
+
+# "How many teams?" (native_mode_menu page 7, after Team Battle): its own label atlas. Cells 0..3 are the choices and
+# Back keeps cell 7, the row id the pager treats as Back on every sub page; the cells between are never shown.
+TEAM_LABELS=('2 Teams','3 Teams','4 Teams','5 Teams',' ',' ',' ','Back')
+TEAM_DESCRIPTIONS=(('Two teams, as always.\nPick the fighters for each side.',)+
+                   tuple(f'{count} teams fight at the same time.\nThe last team standing wins.\nUp to 10 fighters in total.' for count in (3,4,5))+
+                   ('','','','Return to the mod mode groups.'))
+# The pager's sixth text page: the gauntlet picker (page 6) has its own table, so page 7 reads this one.
+DESCRIPTIONS+=(TEAM_DESCRIPTIONS,)

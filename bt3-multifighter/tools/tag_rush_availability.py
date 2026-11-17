@@ -15,7 +15,10 @@ def preparation_reason(settings, battle_mode, root, *, adapter=None, online=Fals
             or (Path(root) / ONLINE_PREPARATION_MARKER).is_file()):
         return 'Tag-team rush is unavailable online.'
     if battle_mode == 'ffa':
-        return 'Tag-team rush requires teammates.'
+        # A match of three to five teams is prepared on the free-for-all engine and does have teammates.
+        import battle_mode_policy
+        if not battle_mode_policy.squad_feature('tag_attacks'):
+            return 'Tag-team rush requires teammates.'
     if adapter is None:
         from native_map import ADAPTER
         adapter = ADAPTER

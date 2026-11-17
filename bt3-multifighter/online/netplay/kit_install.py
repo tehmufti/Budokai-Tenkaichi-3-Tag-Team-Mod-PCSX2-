@@ -123,6 +123,8 @@ def read_installation(path):
         bios = bios_dir / name
     python = kit_platform.python(root)
     refused = (load_settings().get('install_refused') or {}).get(str(root))
+    if isinstance(refused, dict) and refused.get('stamp') != refusal_stamp(root, marker.get('version')):
+        refused = None                               # another version or patch since: the mark is history
     return dict(root=str(root), version=marker.get('version'), adapter=profile.get('adapter'), build=build,
                 refused=refused.get('reason') if isinstance(refused, dict) else None,
                 refused_regions=refused.get('regions') if isinstance(refused, dict) else None,
@@ -136,14 +138,38 @@ def build_status(version):
     if version in KNOWN_BUILDS:
         return 'known'
     m = BUILD.fullmatch(str(version or ''))
-    return 'candidate' if m and int(m[1]) >= FIRST_CANDIDATE else 'refused'
+    if m:
+        return 'candidate' if int(m[1]) >= FIRST_CANDIDATE else 'refused'
+    # a later version scheme (0.2.0, 1.0.0-rc.1 ...) is newer than every beta: the code checks decide
+    later = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(?:[-+].*)?', str(version or ''))
+    return 'candidate' if later and tuple(int(n) for n in later.groups()) > (0, 1, 0) else 'refused'
+
+
+def refusal_stamp(root, version=None):
+    """What a refusal of this installation was about: its version and its runtime patch. An update changes it,
+    so a mark made before the update no longer applies."""
+    import hashlib
+    patch = None
+    try:
+        import kit_platform
+        cheats = kit_platform.data(root) / 'cheats'
+        digest = hashlib.sha256()
+        for path in sorted(cheats.glob('*.pnach')):
+            digest.update(path.name.encode('utf-8') + b'\0' + path.read_bytes())
+        patch = digest.hexdigest()[:16]
+    except Exception:  # noqa: BLE001 - only a stamp: None then
+        patch = None
+    if version is None:
+        marker = _json(Path(root) / 'game' / 'player-install.json')
+        version = marker.get('version') if isinstance(marker, dict) else None
+    return f'{version}:{patch}'
 
 
 def mark_unusable(root, reason, regions=None):
     """Remember that this installation's game code was refused (TTM-NET-24); choosing it again clears the mark.
     regions: the guest-code regions that differ ('feedback_draw, ...'), shown in either language."""
     current = load_settings().get('install_refused') or {}
-    current[str(Path(root))] = dict(reason=str(reason)[:400], regions=regions,
+    current[str(Path(root))] = dict(reason=str(reason)[:400], regions=regions, stamp=refusal_stamp(root),
                                     at=time.strftime('%Y-%m-%d %H:%M:%S'))
     save_settings(install_refused=current)
 

@@ -15,6 +15,7 @@ import os
 import secrets
 import select
 import socket
+import threading
 import time
 from pathlib import Path
 
@@ -134,17 +135,22 @@ class Server:
         self.attached_at = None
         self.detached_at = time.monotonic()
         self.on_attach = None                 # callable(): send the snapshot
+        self.lock = threading.RLock()         # job threads log through send() while the loop polls
 
-    def write_info(self, path):
+    def write_info(self, path, **extra):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix('.tmp')
-        tmp.write_text(json.dumps(dict(port=self.port, token=self.token, pid=os.getpid(), at=time.time())),
+        tmp.write_text(json.dumps(dict(port=self.port, token=self.token, pid=os.getpid(), at=time.time(), **extra)),
                        encoding='utf-8')
         tmp.replace(path)
 
     def poll(self):
         """Commands from the attached UI (authenticating new connections on the way)."""
+        with self.lock:
+            return self._poll()
+
+    def _poll(self):
         now = time.monotonic()
         while True:
             try:
@@ -186,13 +192,14 @@ class Server:
         return out
 
     def send(self, ev, **fields):
-        if self.ui is None:
-            return False
-        ok = self.ui.send(dict(ev=ev, **fields))
-        if not ok:
-            self.ui = None
-            self.detached_at = time.monotonic()
-        return ok
+        with self.lock:
+            if self.ui is None:
+                return False
+            ok = self.ui.send(dict(ev=ev, **fields))
+            if not ok:
+                self.ui = None
+                self.detached_at = time.monotonic()
+            return ok
 
     def attached(self):
         return self.ui is not None

@@ -53,17 +53,23 @@ def ready_code():
     for field in ('active','approaching'):
         a.lw(8,17,tag.C[field]);a.branch(5,8,0,'no')
     a.move(4,16);a.call(ELIGIBLE);a.branch(4,2,0,'no');a.move(18,3)
-    a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'no')
+    squads=tag.modes.squad_feature('tag_attacks')
+    if squads:
+        a.i(11,8,18,tag.modes.ENGINE_ACTORS);a.branch(4,8,0,'no');tag.modes.emit_enemy(a,16,18,'no','ready_victim')
+    else:a.r(0x26,8,16,18);a.i(12,8,8,1);a.branch(4,8,0,'no')
     a.li(19,tag.METERS);a.r(0,8,0,16,5);a.r(0x21,19,19,8)
     a.lw(20,17,tag.C['charge_ticks']);a.lw(8,19,tag.T['charge']);a.r(0x2B,8,8,20);a.branch(5,8,0,'no')
     a.lw(8,19,tag.T['inviter']);a.li(9,-1);a.branch(5,8,9,'no')
     a.move(4,18);a.call(VICTIM_ELIGIBLE);a.branch(4,2,0,'no')
-    a.i(12,21,16,1);a.lw(22,17,tag.C['count'])
+    if squads:a.move(21,0)
+    else:a.i(12,21,16,1)
+    a.lw(22,17,tag.C['count'])
     a.label('scan');a.r(0x2B,8,21,22);a.branch(4,8,0,'no');a.branch(4,21,16,'next')
+    if squads:tag.modes.emit_ally(a,21,16,'next')
     a.move(4,21);a.call(ELIGIBLE);a.branch(4,2,0,'next');a.branch(5,3,18,'next')
     a.li(8,tag.METERS);a.r(0,9,0,21,5);a.r(0x21,8,8,9);a.lw(8,8,tag.T['charge'])
     a.r(0x2B,8,8,20);a.branch(4,8,0,'yes')
-    a.label('next');a.addiu(21,21,2);a.jump('scan')
+    a.label('next');a.addiu(21,21,1 if squads else 2);a.jump('scan')
     a.label('yes');a.li(2,1);a.jump('done');a.label('no');a.move(2,0)
     a.label('done');tag.restore(a,2);a.jr();b=a.finish();assert len(b)<=POWER-READY;return b
 

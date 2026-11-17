@@ -53,6 +53,49 @@ class ChosenElf(os.PathLike):
         return 'ChosenElf()'
 
 
+def _leader_models(u, limit):
+    """(reason, models) of the two native leaders, read through u(address).
+
+    reason: what capture() would refuse about a leader's model or its resource record - the words the game itself
+    completes a moment after a battle loads (and rebuilds when it reloads a leader). models: the two model
+    pointers when both leaders are complete. (None, None): this is not a native two-leader match at all (or its
+    identity words are wrong): nothing here to wait for, capture() reports it.
+    """
+    valid = lambda pointer, size, alignment=4: 0x100000 <= pointer <= limit-size and pointer % alignment == 0
+    manager = u(MANAGER_GLOBAL)
+    if not valid(manager, 640) or u(manager) != 2: return None, None
+    actor_array = u(manager+4)
+    if not valid(actor_array, ACTOR_BYTES*2, 16): return None, None
+    for side in range(2):
+        actor = actor_array+side*ACTOR_BYTES
+        if u(actor) != side or u(actor+8) != side or u(actor+12) != side: return None, None
+    models = []
+    for side in range(2):
+        model = u(MODEL_TABLE+side*4)
+        if not valid(model, MODEL_BYTES, 16): return f'Leader{side} model pointer is outside valid aligned game RAM', None
+        if not (u(model+16) == side and u(model+4) == 1 and u(model+8) == 1):
+            return f'Leader{side} model has not completed initialization', None
+        resource = u(model+20)
+        if not valid(resource, 56): return f'Leader{side} resource pointer is outside valid aligned game RAM', None
+        if not (u(resource+52) == side and u(resource+48) == 1):
+            return f'Leader{side} is not using its native reserved loaded resource record', None
+        models.append(model)
+    return None, tuple(models)
+
+
+def leader_models_pending(ram):
+    """Why this image of a fresh native two-leader match cannot be captured yet (a leader's model or resource
+    record is not in place), or None: the image is ready, or it is not such a match and capture() will say why."""
+    if len(ram) != RAM_BYTES: return None
+    return _leader_models(lambda p: struct.unpack_from('<I', ram, p)[0], RAM_BYTES)[0]
+
+
+def leader_models_live(read_u32):
+    """The two leaders' model pointers as the running game shows them now (read_u32 = a PINE client's), or None
+    while a leader's model or resource record is not in place."""
+    return _leader_models(read_u32, RAM_BYTES)[1]
+
+
 def capture(ram, elf_path=ChosenElf(), *, minimum_members=1):
     """Return validated interleaved selection descriptors without modifying ram."""
     if type(minimum_members) is not int or minimum_members not in (1,2):
